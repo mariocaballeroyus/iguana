@@ -1,0 +1,6 @@
+build/
+docs/
+
+CLAUDE.md
+AGENTS.md
+.vscode/
