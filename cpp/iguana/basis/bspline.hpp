@@ -62,6 +62,52 @@ public:
     constexpr int num_functions() const noexcept
     { return static_cast<int>(knots_.size()) - degree_ - 1; }
 
+    /// @brief The number of non-zero functions on any element, \f$ p+1 \f$.
+    constexpr int num_active() const noexcept
+    { return degree_ + 1; }
+
+    /// @brief The number of elements (non-empty spans) of the domain.
+    constexpr int num_elements() const noexcept
+    { return num_elements_; }
+
+    /**
+     * @brief The first non-zero function on a given element.
+     *
+     * An element activates the num_active() consecutive functions that
+     * start at the returned index.
+     *
+     * @param element The element index, in [0, num_elements()).
+     *
+     * @return The index to be passed as their first_active argument.
+     *
+     * @pre @p element lies in [0, num_elements()).
+     *
+     * The precondition is not checked, and violating it reads outside
+     * the multiplicity sums.
+     */
+    constexpr int first_active(int element) const noexcept
+    { return mult_sum_[first_element_ + element] - 1 - degree_; }
+
+    /**
+     * @brief The parameter at which a given element starts.
+     *
+     * @param element The element index, in [0, num_elements()).
+     *
+     * @pre @p element lies in [0, num_elements()). It is not checked.
+     */
+    constexpr T element_start(int element) const noexcept
+    { return knots_[mult_sum_[first_element_ + element] - 1]; }
+
+    /**
+     * @brief The parameter at which a given element ends.
+     *
+     * @param element The element index, in [0, num_elements()).
+     *
+     * @pre @p element lies in [0, num_elements()). It is not checked.
+     */
+    constexpr T element_end(int element) const noexcept
+    { return knots_[mult_sum_[first_element_ + element]]; }
+
     /**
      * @brief Evaluates the non-zero basis functions on a given element.
      *
@@ -123,6 +169,16 @@ private:
 
     /// @brief The non-decreasing sequence of knots.
     std::vector<T> knots_;
+
+    /// @brief One entry per distinct knot value, holding the number of
+    ///        knots up to and including it.
+    std::vector<int> mult_sum_;
+
+    /// @brief The number of distinct knot values before the first element.
+    int first_element_;
+
+    /// @brief The number of elements of the domain.
+    int num_elements_;
 };
 
 } // namespace iguana

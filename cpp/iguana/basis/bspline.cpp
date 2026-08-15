@@ -37,6 +37,37 @@ BSpline<T>::BSpline(int degree, std::vector<T> knots)
     if (knots_.size() < min_knots)
         throw std::invalid_argument("BSpline: "
                                     "too few knots for the given degree");
+
+    // Number of knots up to and including each distinct value
+    for (std::size_t i = 0; i < knots_.size(); ++i) {
+        if (i > 0 && knots_[i] == knots_[i - 1])
+            // Repeated knot value: sum up to the last entry
+            mult_sum_.back() = static_cast<int>(i) + 1;
+        else
+            // Distinct knot value: add new entry
+            mult_sum_.push_back(static_cast<int>(i) + 1);
+    }
+
+    // Spans of the domain, from xi_p to xi_n
+    const int last_span = num_functions() - 1;
+
+    // The last distinct value has no span to its right
+    const int last_entry = static_cast<int>(mult_sum_.size()) - 1;
+
+    first_element_ = 0;
+    num_elements_ = 0;
+
+    for (int j = 0; j < last_entry; ++j) {
+        // Span closed by the last appearance of the distinct value
+        const int span = mult_sum_[static_cast<std::size_t>(j)] - 1;
+
+        if (span < degree_)
+            // Below the domain: the elements start after this value
+            first_element_ = j + 1;
+        else if (span <= last_span)
+            // Inside the domain: a non-empty span, that is an element
+            ++num_elements_;
+    }
 }
 
 template<std::floating_point T>
