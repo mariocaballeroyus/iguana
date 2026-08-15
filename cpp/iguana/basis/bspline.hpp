@@ -81,11 +81,41 @@ public:
      *      non-empty element/span.
      * @pre Every point in @p points lies inside that element.
      *
-     * Neither precondition is checked, and violating them reads outside
+     * No precondition is checked, and violating them reads outside
      * the knot vector.
      */
     void eval_on_element(int first_active, std::span<const T> points,
                          Eigen::MatrixX<T>& values) const;
+
+    /**
+     * @brief Evaluates the non-zero basis functions on a given element,
+     *        together with their derivatives up to a given order.
+     *
+     * The same recursion as eval_on_element is used, but its triangle is
+     * kept and differenced to obtain the derivatives.
+     *
+     * @param first_active The index \f$ a \f$ of the first non-zero
+     *        function on the element.
+     * @param points The parameters at which the basis is evaluated.
+     * @param order The highest derivative order to evaluate. It is 
+     *        safe-guarded against orders higher than the basis degree.
+     * @param values One output buffer per order, resized to @p order + 1.
+     *        Entry \f$ k \f$ holds the derivatives of order \f$ k \f$, of
+     *        size (num_basis,num_points). Being column-major, each column
+     *        holds the \f$ p+1 \f$ values of one point contiguously in
+     *        memory. Each buffer is resized if its shape changes.
+     *
+     * @pre @p first_active is the first non-zero function of an existing,
+     *      non-empty element/span.
+     * @pre Every point in @p points lies inside that element.
+     * @pre @p order is non-negative.
+     *
+     * No precondition is checked, and violating them reads outside the
+     * knot vector.
+     */
+    void eval_ders_on_element(int first_active, std::span<const T> points,
+                              int order,
+                              std::vector<Eigen::MatrixX<T>>& values) const;
 
 private:
     /// @brief The polynomial degree of the basis.
