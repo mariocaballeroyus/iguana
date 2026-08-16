@@ -21,7 +21,7 @@ namespace iguana
  * @brief Tensor-product B-spline basis of a given parametric dimension.
  *
  * The basis is the product of one univariate basis per parametric
- * direction. Functions and elements alike are numbered lexicographically with 
+ * direction. Functions and elements alike are numbered lexicographically with
  * the first direction running fastest.
  *
  * @tparam d Number of parametric directions.
@@ -168,9 +168,9 @@ public:
      * of each direction, so every partial is combined as the values are,
      * with each direction contributing the order that the partial takes
      * along it.
-     * 
-     * Derivatives are ordered with pure derivatives first in direction order, 
-     * and then the mixed ones in lexicographic order of their pairs. Only 
+     *
+     * Derivatives are ordered with pure derivatives first in direction order,
+     * and then the mixed ones in lexicographic order of their pairs. Only
      * up to 2nd order is supported, i.e. \f$ xx, yy, zz, xy, xz, yz \f$.
      *
      * @param first_active The first non-zero function of each direction,
@@ -184,8 +184,8 @@ public:
      *        function being consecutive rows. Each buffer is resized if
      *        its shape changes.
      *
-     * @pre @p first_active belongs to an existing element, every point
-     *      lies inside it, and @p order is non-negative. None are checked.
+     * @pre @p first_active belongs to an existing element, every point lies
+     *      inside it, and @p order lies in  [0, #max_order]. None are checked.
      */
     void eval_ders_on_element(const std::array<int, d>& first_active,
                               const Eigen::MatrixX<T>& points, int order,
