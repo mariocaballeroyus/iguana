@@ -29,6 +29,27 @@ TensorProductBSpline<d, T>::TensorProductBSpline(
     }
 }
 
+template<int d, std::floating_point T>
+std::array<int, d> TensorProductBSpline<d, T>::first_active(
+    int element) const noexcept
+{
+    std::array<int, d> first{};
+
+    // Elements numbered with the first direction running fastest
+    int remaining = element;
+
+    for (std::size_t k = 0; k < d; ++k) {
+        // Take the remainder of the division by its own count
+        const int count = axes_[k].num_elements();
+        first[k] = axes_[k].first_active(remaining % count);
+
+        // Pass the quotient on to the next one
+        remaining /= count;
+    }
+
+    return first;
+}
+
 template class TensorProductBSpline<1, double>;
 template class TensorProductBSpline<2, double>;
 template class TensorProductBSpline<3, double>;

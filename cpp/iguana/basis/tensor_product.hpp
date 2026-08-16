@@ -67,6 +67,22 @@ public:
     constexpr int num_active() const noexcept
     { return num_active_; }
 
+    /**
+     * @brief The first non-zero function of each direction on a given
+     *        element.
+     *
+     * The element is split into the element of every direction, each of
+     * which is asked for its own first active function.
+     *
+     * @param element The element index, in [0, num_elements()).
+     *
+     * @return The index to be passed as the first_active argument of the
+     *         direction, one entry per direction.
+     *
+     * @pre @p element lies in [0, num_elements()). It is not checked.
+     */
+    std::array<int, d> first_active(int element) const noexcept;
+
 private:
     /// @brief The univariate bases, one per parametric direction.
     std::array<BSpline<T>, d> axes_;
