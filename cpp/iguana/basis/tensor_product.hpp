@@ -100,6 +100,28 @@ public:
     std::array<int, d> first_active(int element) const noexcept;
 
     /**
+     * @brief The parameters at which a given element starts.
+     *
+     * @param element The element index, in [0, num_elements()).
+     *
+     * @return The start of the element in every direction.
+     *
+     * @pre @p element lies in [0, num_elements()). It is not checked.
+     */
+    std::array<T, d> element_start(int element) const noexcept;
+
+    /**
+     * @brief The parameters at which a given element ends.
+     *
+     * @param element The element index, in [0, num_elements()).
+     *
+     * @return The end of the element in every direction.
+     *
+     * @pre @p element lies in [0, num_elements()). It is not checked.
+     */
+    std::array<T, d> element_end(int element) const noexcept;
+
+    /**
      * @brief The functions that are non-zero on a given element.
      *
      * The non-zero functions of every direction are combined, so that

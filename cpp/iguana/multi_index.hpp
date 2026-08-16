@@ -47,6 +47,56 @@ bool next_lexicographic(std::array<int, d>& index,
     return false;
 }
 
+/**
+ * @brief Flattens a multi-index, the first direction running fastest.
+ *
+ * @tparam d Number of directions.
+ *
+ * @param index The multi-index.
+ * @param bounds The upper bound of each direction.
+ *
+ * @return The flat index, below the product of the bounds.
+ *
+ * @pre @p index lies below @p bounds. It is not checked.
+ */
+template<std::size_t d>
+int flatten(const std::array<int, d>& index,
+            const std::array<int, d>& bounds) noexcept
+{
+    int flat = 0;
+
+    for (std::size_t k = d; k-- > 0;)
+        flat = flat * bounds[k] + index[k];
+
+    return flat;
+}
+
+/**
+ * @brief Splits a flat index into a multi-index, inverting flatten().
+ *
+ * @tparam d Number of directions.
+ *
+ * @param flat The flat index.
+ * @param bounds The upper bound of each direction.
+ *
+ * @return The multi-index below @p bounds.
+ *
+ * @pre @p flat lies below the product of @p bounds. It is not checked.
+ */
+template<std::size_t d>
+std::array<int, d> unflatten(int flat,
+                             const std::array<int, d>& bounds) noexcept
+{
+    std::array<int, d> index{};
+
+    for (std::size_t k = 0; k < d; ++k) {
+        index[k] = flat % bounds[k];
+        flat /= bounds[k];
+    }
+
+    return index;
+}
+
 } // namespace iguana
 
 #endif // IGUANA_MULTI_INDEX_HPP

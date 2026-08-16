@@ -9,7 +9,6 @@
 #include "tensor_product.hpp"
 
 #include<span>
-#include<stdexcept>
 #include<utility>
 
 #include "iguana/multi_index.hpp"
@@ -33,25 +32,76 @@ TensorProductBSpline<d, T>::TensorProductBSpline(
     }
 }
 
+// Elements --------------------------------------------------------------------
+
+namespace
+{
+
+/**
+ * @brief The element of every direction of a given element.
+ *
+ * @tparam d Number of directions.
+ * @tparam T Floating-point type of the knot values.
+ *
+ * @param axes The univariate bases, one per parametric direction.
+ * @param element The element index, below the product of the counts.
+ *
+ * @return The element of every direction.
+ */
+template<std::size_t d, std::floating_point T>
+std::array<int, d> element_of(const std::array<BSpline<T>, d>& axes,
+                              int element) noexcept
+{
+    std::array<int, d> counts{};
+
+    for (std::size_t k = 0; k < d; ++k)
+        counts[k] = axes[k].num_elements();
+
+    return unflatten(element, counts);
+}
+
+} // namespace
+
 template<int d, std::floating_point T>
 std::array<int, d> TensorProductBSpline<d, T>::first_active(
     int element) const noexcept
 {
+    const std::array<int, d> each = element_of(axes_, element);
+
     std::array<int, d> first{};
 
-    // Elements numbered with the first direction running fastest
-    int remaining = element;
-
-    for (std::size_t k = 0; k < d; ++k) {
-        // Take the remainder of the division by its own count
-        const int count = axes_[k].num_elements();
-        first[k] = axes_[k].first_active(remaining % count);
-
-        // Pass the quotient on to the next one
-        remaining /= count;
-    }
+    for (int k = 0; k < d; ++k)
+        first[k] = axes_[k].first_active(each[k]);
 
     return first;
+}
+
+template<int d, std::floating_point T>
+std::array<T, d> TensorProductBSpline<d, T>::element_start(
+    int element) const noexcept
+{
+    const std::array<int, d> each = element_of(axes_, element);
+
+    std::array<T, d> start{};
+
+    for (int k = 0; k < d; ++k)
+        start[k] = axes_[k].element_start(each[k]);
+
+    return start;
+}
+
+template<int d, std::floating_point T>
+std::array<T, d> TensorProductBSpline<d, T>::element_end(
+    int element) const noexcept
+{
+    const std::array<int, d> each = element_of(axes_, element);
+
+    std::array<T, d> end{};
+
+    for (int k = 0; k < d; ++k)
+        end[k] = axes_[k].element_end(each[k]);
+
+    return end;
 }
 
 template<int d, std::floating_point T>
@@ -64,27 +114,31 @@ void TensorProductBSpline<d, T>::active_on_element(
     // Lowest non-zero function of each direction
     const std::array<int, d> first = first_active(element);
 
-    // Bounds of the multi-index, one non-zero function per direction
+    // Bounds of the multi-index, one non-zero function per direction,
+    // and the counts the whole basis is numbered by
     std::array<int, d> bounds{};
+    std::array<int, d> counts{};
 
-    for (std::size_t k = 0; k < d; ++k)
+    for (int k = 0; k < d; ++k) {
         bounds[k] = axes_[k].num_active();
+        counts[k] = axes_[k].num_functions();
+    }
 
     // Offsets from the lowest function, advanced by next_lexicographic
     std::array<int, d> offset{};
+    std::array<int, d> index{};
     int position = 0;
 
     do {
-        // Flatten the multi-index
-        int index = 0;
-
-        for (std::size_t k = d; k-- > 0;)
-            index = index * axes_[k].num_functions() + first[k] + offset[k];
+        for (int k = 0; k < d; ++k)
+            index[k] = first[k] + offset[k];
 
         // The rows of the evaluation follow the same order
-        actives[position++] = index;
+        actives[position++] = flatten(index, counts);
     } while (next_lexicographic(offset, bounds));
 }
+
+// Evaluation ------------------------------------------------------------------
 
 namespace
 {
