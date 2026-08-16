@@ -8,6 +8,7 @@
 
 #include "tensor_product.hpp"
 
+#include<span>
 #include<utility>
 
 #include "iguana/multi_index.hpp"
@@ -82,6 +83,58 @@ void TensorProductBSpline<d, T>::active_on_element(
         // The rows of the evaluation follow the same order
         actives[position++] = index;
     } while (next_lexicographic(offset, bounds));
+}
+
+template<int d, std::floating_point T>
+void TensorProductBSpline<d, T>::eval_on_element(
+    const std::array<int, d>& first_active, const Eigen::MatrixX<T>& points,
+    Eigen::MatrixX<T>& values) const
+{
+    const Eigen::Index num_pts = points.rows();
+
+    // Values buffer, reused across elements
+    values.resize(num_active_, num_pts);
+
+    // Univariate values of every direction
+    std::array<Eigen::MatrixX<T>, d> axis_values;
+
+    for (int k = 0; k < d; ++k) {
+        // Coordinates of the direction, contiguous as they are a column
+        const std::span<const T> coords(points.col(k).data(), num_pts);
+
+        axes_[k].eval_on_element(first_active[k], coords, axis_values[k]);
+    }
+
+    // Return early if single direction
+    if constexpr (d == 1) {
+        values = axis_values[0];
+        return;
+    }
+
+    // The last one first so that the first one ends up running fastest
+    Eigen::MatrixX<T> accumulated = axis_values[d - 1];
+    Eigen::MatrixX<T> scratch;
+
+    // Khatri-Rao product, column-wise Kronecker of the directions
+    for (int k = d - 2; k >= 0; --k) {
+        const Eigen::MatrixX<T>& factor = axis_values[k];
+
+        const Eigen::Index rows = accumulated.rows();
+        const Eigen::Index block = factor.rows();
+
+        // The last direction to be added writes the values themselves
+        Eigen::MatrixX<T>& destination = (k == 0) ? values : scratch;
+
+        if (k > 0)
+            destination.resize(rows * block, num_pts);
+
+        for (Eigen::Index r = 0; r < rows; ++r)
+            destination.middleRows(r * block, block).array()
+                = factor.array().rowwise() * accumulated.row(r).array();
+
+        if (k > 0)
+            accumulated.swap(scratch);
+    }
 }
 
 template class TensorProductBSpline<1, double>;

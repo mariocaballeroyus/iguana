@@ -99,6 +99,29 @@ public:
      */
     void active_on_element(int element, Eigen::VectorXi& actives) const;
 
+    /**
+     * @brief Evaluates the non-zero basis functions on a given element.
+     *
+     * Every direction evaluates its own non-zero functions at the
+     * coordinates of that direction, and the products of those values
+     * over the directions are the values of the basis.
+     *
+     * @param first_active The first non-zero function of each direction,
+     *        as given by first_active().
+     * @param points Parameters at which the basis is evaluated, of size
+     *        (num_points,dimension). Being column-major, the coordinates
+     *        of one direction are contiguous in memory.
+     * @param values Output buffer of size (num_active,num_points), whose
+     *        rows follow the order of active_on_element(). The buffer is
+     *        resized if its shape changes.
+     *
+     * @pre @p first_active belongs to an existing element, and every
+     *      point lies inside it. It is not checked.
+     */
+    void eval_on_element(const std::array<int, d>& first_active,
+                         const Eigen::MatrixX<T>& points,
+                         Eigen::MatrixX<T>& values) const;
+
 private:
     /// @brief The univariate bases, one per parametric direction.
     std::array<BSpline<T>, d> axes_;
