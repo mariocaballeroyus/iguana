@@ -10,6 +10,8 @@
 
 #include<utility>
 
+#include "iguana/multi_index.hpp"
+
 namespace iguana
 {
 
@@ -48,6 +50,38 @@ std::array<int, d> TensorProductBSpline<d, T>::first_active(
     }
 
     return first;
+}
+
+template<int d, std::floating_point T>
+void TensorProductBSpline<d, T>::active_on_element(
+    int element, Eigen::VectorXi& actives) const
+{
+    // Actives buffer, reused across elements
+    actives.resize(num_active_);
+
+    // Lowest non-zero function of each direction
+    const std::array<int, d> first = first_active(element);
+
+    // Bounds of the multi-index, one non-zero function per direction
+    std::array<int, d> bounds{};
+
+    for (std::size_t k = 0; k < d; ++k)
+        bounds[k] = axes_[k].num_active();
+
+    // Offsets from the lowest function, advanced by next_lexicographic
+    std::array<int, d> offset{};
+    int position = 0;
+
+    do {
+        // Flatten the multi-index
+        int index = 0;
+
+        for (std::size_t k = d; k-- > 0;)
+            index = index * axes_[k].num_functions() + first[k] + offset[k];
+
+        // The rows of the evaluation follow the same order
+        actives[position++] = index;
+    } while (next_lexicographic(offset, bounds));
 }
 
 template class TensorProductBSpline<1, double>;

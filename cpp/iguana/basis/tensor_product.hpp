@@ -83,6 +83,22 @@ public:
      */
     std::array<int, d> first_active(int element) const noexcept;
 
+    /**
+     * @brief The functions that are non-zero on a given element.
+     *
+     * The non-zero functions of every direction are combined, so that
+     * their indices are those of the whole basis. They are numbered as
+     * the basis is, with the first direction running fastest, and are
+     * not consecutive as soon as there is more than one direction.
+     *
+     * @param element The element index, in [0, num_elements()).
+     * @param actives Output buffer of num_active() indices, resized if
+     *        its size changes.
+     *
+     * @pre @p element lies in [0, num_elements()). It is not checked.
+     */
+    void active_on_element(int element, Eigen::VectorXi& actives) const;
+
 private:
     /// @brief The univariate bases, one per parametric direction.
     std::array<BSpline<T>, d> axes_;
