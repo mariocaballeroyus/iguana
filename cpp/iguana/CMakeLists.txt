@@ -1,4 +1,6 @@
-add_library(iguana basis/bspline.cpp)
+add_library(iguana
+    basis/bspline.cpp
+    basis/tensor_product.cpp)
 
 target_compile_features(iguana PUBLIC cxx_std_20)
 
