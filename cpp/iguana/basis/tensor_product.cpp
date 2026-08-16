@@ -9,6 +9,7 @@
 #include "tensor_product.hpp"
 
 #include<span>
+#include<stdexcept>
 #include<utility>
 
 #include "iguana/multi_index.hpp"
@@ -85,6 +86,68 @@ void TensorProductBSpline<d, T>::active_on_element(
     } while (next_lexicographic(offset, bounds));
 }
 
+namespace
+{
+
+/**
+ * @brief Combines one matrix per direction into a Khatri-Rao product.
+ *
+ * @tparam d Number of directions.
+ * @tparam T Floating-point type of the values.
+ * @tparam Dst Type of the destination, which is either a whole matrix or
+ *         a selection of the rows of one.
+ *
+ * @param factors The matrix of every direction, all of them holding the
+ *        same number of columns.
+ * @param accumulated Scratch, holding the product on return.
+ * @param scratch Further scratch, reused between the directions.
+ * @param destination Filled with the product, one row per combination of the
+ *        rows of the factors.
+ */
+template<std::size_t d, std::floating_point T, typename Dst>
+void khatri_rao_into(const std::array<const Eigen::MatrixX<T>*, d>& factors,
+                     Eigen::MatrixX<T>& accumulated,
+                     Eigen::MatrixX<T>& scratch, Dst&& destination)
+{
+    if constexpr (d == 1) {
+        // A single direction is already the product
+        destination = *factors[0];
+        return;
+    }
+    else {
+        // The last one first so that the first one ends up running fastest
+        accumulated = *factors[d - 1];
+
+        for (int k = d - 2; k >= 0; --k) {
+            const Eigen::MatrixX<T>& factor = *factors[k];
+
+            const Eigen::Index rows = accumulated.rows();
+            const Eigen::Index block = factor.rows();
+
+            if (k > 0) {
+                scratch.resize(rows * block, factor.cols());
+
+                // Each accumulated row broadcasts over a whole block
+                for (Eigen::Index r = 0; r < rows; ++r)
+                    scratch.middleRows(r * block, block).array()
+                        = factor.array().rowwise()
+                          * accumulated.row(r).array();
+
+                accumulated.swap(scratch);
+            }
+            else {
+                // The last direction writes the destination itself
+                for (Eigen::Index r = 0; r < rows; ++r)
+                    destination.middleRows(r * block, block).array()
+                        = factor.array().rowwise()
+                          * accumulated.row(r).array();
+            }
+        }
+    }
+}
+
+} // namespace
+
 template<int d, std::floating_point T>
 void TensorProductBSpline<d, T>::eval_on_element(
     const std::array<int, d>& first_active, const Eigen::MatrixX<T>& points,
@@ -105,35 +168,104 @@ void TensorProductBSpline<d, T>::eval_on_element(
         axes_[k].eval_on_element(first_active[k], coords, axis_values[k]);
     }
 
-    // Return early if single direction
-    if constexpr (d == 1) {
-        values = axis_values[0];
-        return;
-    }
+    // Khatri-Rao product, column-wise Kronecker of the directions
+    std::array<const Eigen::MatrixX<T>*, d> factors{};
 
-    // The last one first so that the first one ends up running fastest
-    Eigen::MatrixX<T> accumulated = axis_values[d - 1];
+    for (int k = 0; k < d; ++k)
+        factors[k] = &axis_values[k];
+
+    Eigen::MatrixX<T> accumulated;
     Eigen::MatrixX<T> scratch;
 
+    khatri_rao_into(factors, accumulated, scratch, values);
+}
+
+template<int d, std::floating_point T>
+void TensorProductBSpline<d, T>::eval_ders_on_element(
+    const std::array<int, d>& first_active, const Eigen::MatrixX<T>& points,
+    int order, std::vector<Eigen::MatrixX<T>>& values) const
+{
+    const Eigen::Index num_pts = points.rows();
+
+    // Univariate values and derivatives of every direction
+    std::array<std::vector<Eigen::MatrixX<T>>, d> axis_ders;
+
+    for (int k = 0; k < d; ++k) {
+        // Coordinates of the direction, contiguous as they are a column
+        const std::span<const T> coords(points.col(k).data(), num_pts);
+
+        axes_[k].eval_ders_on_element(first_active[k], coords, order,
+                                      axis_ders[k]);
+    }
+
+    // One buffer per order, the slots of a function being consecutive
+    values.resize(static_cast<std::size_t>(order) + 1);
+
+    for (int k = 0; k <= order; ++k)
+        values[static_cast<std::size_t>(k)].resize(
+            num_active_ * num_slots(k), num_pts);
+
     // Khatri-Rao product, column-wise Kronecker of the directions
-    for (int k = d - 2; k >= 0; --k) {
-        const Eigen::MatrixX<T>& factor = axis_values[k];
+    std::array<const Eigen::MatrixX<T>*, d> factors{};
 
-        const Eigen::Index rows = accumulated.rows();
-        const Eigen::Index block = factor.rows();
+    Eigen::MatrixX<T> accumulated;
+    Eigen::MatrixX<T> scratch;
 
-        // The last direction to be added writes the values themselves
-        Eigen::MatrixX<T>& destination = (k == 0) ? values : scratch;
+    // A slot is written into the rows it occupies in every function
+    using Eigen::placeholders::all;
+    using Eigen::seqN;
 
-        if (k > 0)
-            destination.resize(rows * block, num_pts);
+    // Order 0, every direction taking its own values
+    for (int k = 0; k < d; ++k)
+        factors[k] = &axis_ders[k][0];
 
-        for (Eigen::Index r = 0; r < rows; ++r)
-            destination.middleRows(r * block, block).array()
-                = factor.array().rowwise() * accumulated.row(r).array();
+    khatri_rao_into(factors, accumulated, scratch, values[0]);
 
-        if (k > 0)
-            accumulated.swap(scratch);
+    if (order >= 1) {
+        const int slots = num_slots(1);
+
+        // Order 1, one direction at a time taking its first derivative
+        for (int k = 0; k < d; ++k) {
+            factors[k] = &axis_ders[k][1];
+            const auto rows = seqN(k, num_active_, slots);
+
+            khatri_rao_into(factors, accumulated, scratch,
+                            values[1](rows, all));
+
+            factors[k] = &axis_ders[k][0];
+        }
+    }
+
+    if (order >= 2) {
+        const int slots = num_slots(2);
+
+        // Order 2, the pure derivatives in direction order
+        for (int k = 0; k < d; ++k) {
+            factors[k] = &axis_ders[k][2];
+            const auto rows = seqN(k, num_active_, slots);
+
+            khatri_rao_into(factors, accumulated, scratch,
+                            values[2](rows, all));
+
+            factors[k] = &axis_ders[k][0];
+        }
+
+        // Then the mixed ones, in the lexicographic order of the pairs
+        int slot = d;
+
+        for (int k = 0; k < d; ++k) {
+            for (int l = k + 1; l < d; ++l) {
+                factors[k] = &axis_ders[k][1];
+                factors[l] = &axis_ders[l][1];
+                const auto rows = seqN(slot++, num_active_, slots);
+
+                khatri_rao_into(factors, accumulated, scratch,
+                                values[2](rows, all));
+
+                factors[k] = &axis_ders[k][0];
+                factors[l] = &axis_ders[l][0];
+            }
+        }
     }
 }
 

@@ -37,6 +37,22 @@ public:
     /// @brief The number of parametric directions, \f$ d \f$.
     static constexpr int dimension = d;
 
+    /// @brief The highest derivative order that can be evaluated.
+    static constexpr int max_order = 2;
+
+    /**
+     * @brief The number of distinct partial derivatives of an order.
+     *
+     * An order has one partial for each way of splitting it over the
+     * directions: one at order 0, one per direction at order 1, and one
+     * per unordered pair of directions at order 2.
+     *
+     * @param order The derivative order, in [0, #max_order].
+     */
+    static constexpr int num_slots(int order) noexcept
+    { return order == 0 ? 1 : (order == 1 ? d : d * (d + 1) / 2); }
+
+public:
     /**
      * @brief Constructs the basis from one univariate basis per direction.
      *
@@ -121,6 +137,37 @@ public:
     void eval_on_element(const std::array<int, d>& first_active,
                          const Eigen::MatrixX<T>& points,
                          Eigen::MatrixX<T>& values) const;
+
+    /**
+     * @brief Evaluates the non-zero basis functions on a given element,
+     *        together with their derivatives up to a given order.
+     *
+     * A partial derivative of a product is the product of the derivatives
+     * of each direction, so every partial is combined as the values are,
+     * with each direction contributing the order that the partial takes
+     * along it.
+     * 
+     * Derivatives are ordered with pure derivatives first in direction order, 
+     * and then the mixed ones in lexicographic order of their pairs. Only 
+     * up to 2nd order is supported, i.e. \f$ xx, yy, zz, xy, xz, yz \f$.
+     *
+     * @param first_active The first non-zero function of each direction,
+     *        as given by first_active().
+     * @param points Parameters at which the basis is evaluated, of size
+     *        (num_points,dimension), as in eval_on_element().
+     * @param order The highest derivative order to evaluate.
+     * @param values One output buffer per order, resized to @p order + 1.
+     *        Entry \f$ k \f$ holds the partials of order \f$ k \f$, of
+     *        size (num_active * num_slots(k),num_points), the slots of a
+     *        function being consecutive rows. Each buffer is resized if
+     *        its shape changes.
+     *
+     * @pre @p first_active belongs to an existing element, every point
+     *      lies inside it, and @p order is non-negative. None are checked.
+     */
+    void eval_ders_on_element(const std::array<int, d>& first_active,
+                              const Eigen::MatrixX<T>& points, int order,
+                              std::vector<Eigen::MatrixX<T>>& values) const;
 
 private:
     /// @brief The univariate bases, one per parametric direction.
