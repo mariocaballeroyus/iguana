@@ -66,48 +66,6 @@ std::array<int, d> element_of(const std::array<BSpline<T>, d>& axes,
 } // namespace
 
 template<int d, std::floating_point T>
-std::array<int, d> TensorProductBSpline<d, T>::first_active(
-    int element) const noexcept
-{
-    const std::array<int, d> each = element_of(axes_, element);
-
-    std::array<int, d> first{};
-
-    for (int k = 0; k < d; ++k)
-        first[k] = axes_[k].first_active(each[k]);
-
-    return first;
-}
-
-template<int d, std::floating_point T>
-std::array<T, d> TensorProductBSpline<d, T>::element_start(
-    int element) const noexcept
-{
-    const std::array<int, d> each = element_of(axes_, element);
-
-    std::array<T, d> start{};
-
-    for (int k = 0; k < d; ++k)
-        start[k] = axes_[k].element_start(each[k]);
-
-    return start;
-}
-
-template<int d, std::floating_point T>
-std::array<T, d> TensorProductBSpline<d, T>::element_end(
-    int element) const noexcept
-{
-    const std::array<int, d> each = element_of(axes_, element);
-
-    std::array<T, d> end{};
-
-    for (int k = 0; k < d; ++k)
-        end[k] = axes_[k].element_end(each[k]);
-
-    return end;
-}
-
-template<int d, std::floating_point T>
 void TensorProductBSpline<d, T>::active_on_element(
     int element, Eigen::VectorXi& actives) const
 {
@@ -115,7 +73,12 @@ void TensorProductBSpline<d, T>::active_on_element(
     actives.resize(num_active_);
 
     // Lowest non-zero function of each direction
-    const std::array<int, d> first = first_active(element);
+    const std::array<int, d> each = element_of(axes_, element);
+
+    std::array<int, d> first{};
+
+    for (int k = 0; k < d; ++k)
+        first[k] = axes_[k].first_active(each[k]);
 
     // Bounds of the multi-index, one non-zero function per direction,
     // and the counts the whole basis is numbered by

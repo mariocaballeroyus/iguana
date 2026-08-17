@@ -84,44 +84,6 @@ public:
     { return num_active_; }
 
     /**
-     * @brief The first non-zero function of each direction on a given
-     *        element.
-     *
-     * The element is split into the element of every direction, each of
-     * which is asked for its own first active function.
-     *
-     * @param element The element index, in [0, num_elements()).
-     *
-     * @return The index to be passed as the first_active argument of the
-     *         direction, one entry per direction.
-     *
-     * @pre @p element lies in [0, num_elements()). It is not checked.
-     */
-    std::array<int, d> first_active(int element) const noexcept;
-
-    /**
-     * @brief The parameters at which a given element starts.
-     *
-     * @param element The element index, in [0, num_elements()).
-     *
-     * @return The start of the element in every direction.
-     *
-     * @pre @p element lies in [0, num_elements()). It is not checked.
-     */
-    std::array<T, d> element_start(int element) const noexcept;
-
-    /**
-     * @brief The parameters at which a given element ends.
-     *
-     * @param element The element index, in [0, num_elements()).
-     *
-     * @return The end of the element in every direction.
-     *
-     * @pre @p element lies in [0, num_elements()). It is not checked.
-     */
-    std::array<T, d> element_end(int element) const noexcept;
-
-    /**
      * @brief The functions that are non-zero on a given element.
      *
      * The non-zero functions of every direction are combined, so that
@@ -144,8 +106,8 @@ public:
      * coordinates of that direction, and the products of those values
      * over the directions are the values of the basis.
      *
-     * @param first_active The first non-zero function of each direction,
-     *        as given by first_active().
+     * @param first_active The first non-zero function of each direction
+     *        on the element, as the univariate bases count them.
      * @param points Parameters at which the basis is evaluated, of size
      *        (num_points,dimension). Being column-major, the coordinates
      *        of one direction are contiguous in memory.
@@ -173,8 +135,8 @@ public:
      * and then the mixed ones in lexicographic order of their pairs. Only
      * up to 2nd order is supported, i.e. \f$ xx, yy, zz, xy, xz, yz \f$.
      *
-     * @param first_active The first non-zero function of each direction,
-     *        as given by first_active().
+     * @param first_active The first non-zero function of each direction
+     *        on the element, as the univariate bases count them.
      * @param points Parameters at which the basis is evaluated, of size
      *        (num_points,dimension), as in eval_on_element().
      * @param order The highest derivative order to evaluate.

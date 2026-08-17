@@ -47,19 +47,37 @@ std::vector<double> greville(const BSpline<double>& basis)
     return abscissae;
 }
 
+/// @brief The element of every direction, split from the flat index.
+std::array<int, 2> element_of(const TensorProductBSpline<2, double>& basis,
+                              int element)
+{
+    std::array<int, 2> each{};
+
+    for (int k = 0; k < 2; ++k) {
+        const int count = basis.axis(k).num_elements();
+
+        each[k] = element % count;
+        element /= count;
+    }
+
+    return each;
+}
+
 /// @brief Points spread inside an element of a bivariate basis.
 Eigen::MatrixXd points_on(const TensorProductBSpline<2, double>& basis,
                           int element)
 {
-    const std::array<double, 2> start = basis.element_start(element);
-    const std::array<double, 2> end = basis.element_end(element);
+    const std::array<int, 2> each = element_of(basis, element);
 
     Eigen::MatrixXd points(3, 2);
 
-    for (int k = 0; k < 2; ++k)
+    for (int k = 0; k < 2; ++k) {
+        const double start = basis.axis(k).element_start(each[k]);
+        const double end = basis.axis(k).element_end(each[k]);
+
         for (int q = 0; q < 3; ++q)
-            points(q, k) = start[k]
-                           + (end[k] - start[k]) * (.25 + .25 * q);
+            points(q, k) = start + (end - start) * (.25 + .25 * q);
+    }
 
     return points;
 }
@@ -110,9 +128,15 @@ TEST_CASE("A patch over Greville points reproduces an affine map",
     for (int e = 0; e < basis.num_elements(); ++e) {
         const Eigen::MatrixXd points = points_on(basis, e);
 
+        const std::array<int, 2> each = element_of(basis, e);
+
+        std::array<int, 2> first{};
+
+        for (int k = 0; k < 2; ++k)
+            first[k] = basis.axis(k).first_active(each[k]);
+
         basis.active_on_element(e, actives);
-        basis.eval_ders_on_element(basis.first_active(e), points, 1,
-                                   ders);
+        basis.eval_ders_on_element(first, points, 1, ders);
 
         patch.position(actives, ders[0], positions);
         patch.tangents(actives, ders[1], tangents);

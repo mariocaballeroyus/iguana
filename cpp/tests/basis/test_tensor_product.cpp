@@ -49,20 +49,52 @@ BSpline<double> uniform()
     return BSpline<double>(2, {0., .5, 1., 1.5, 2., 2.5, 3., 3.5});
 }
 
+/// @brief The element of every direction, split from the flat index.
+template<int d>
+std::array<int, d> element_of(const Tensor<d>& basis, int element)
+{
+    std::array<int, d> each{};
+
+    for (int k = 0; k < d; ++k) {
+        const int count = basis.axis(k).num_elements();
+
+        each[k] = element % count;
+        element /= count;
+    }
+
+    return each;
+}
+
+/// @brief The first non-zero function of each direction on an element.
+template<int d>
+std::array<int, d> first_active_of(const Tensor<d>& basis, int element)
+{
+    const std::array<int, d> each = element_of(basis, element);
+
+    std::array<int, d> first{};
+
+    for (int k = 0; k < d; ++k)
+        first[k] = basis.axis(k).first_active(each[k]);
+
+    return first;
+}
+
 /// @brief Points spread inside an element, its boundary left out so that
 ///        the differences of the derivative tests stay inside it.
 template<int d>
 Eigen::MatrixXd points_on(const Tensor<d>& basis, int element)
 {
-    const std::array<double, d> start = basis.element_start(element);
-    const std::array<double, d> end = basis.element_end(element);
+    const std::array<int, d> each = element_of(basis, element);
 
     Eigen::MatrixXd points(3, d);
 
-    for (int k = 0; k < d; ++k)
+    for (int k = 0; k < d; ++k) {
+        const double start = basis.axis(k).element_start(each[k]);
+        const double end = basis.axis(k).element_end(each[k]);
+
         for (int q = 0; q < 3; ++q)
-            points(q, k) = start[k]
-                           + (end[k] - start[k]) * (.25 + .25 * q);
+            points(q, k) = start + (end - start) * (.25 + .25 * q);
+    }
 
     return points;
 }
@@ -149,41 +181,6 @@ TEST_CASE("The actives of an element are distinct and cover the basis",
     REQUIRE(static_cast<int>(covered.size()) == basis.num_functions());
 }
 
-TEST_CASE("The element boxes fill the whole domain",
-          "[tensor_product]")
-{
-    const Tensor<3> basis({quadratic(), repeated(), uniform()});
-
-    double volume = 0.;
-
-    for (int e = 0; e < basis.num_elements(); ++e) {
-        const std::array<double, 3> start = basis.element_start(e);
-        const std::array<double, 3> end = basis.element_end(e);
-
-        double cell = 1.;
-
-        for (int k = 0; k < 3; ++k) {
-            REQUIRE(start[k] < end[k]);
-
-            cell *= end[k] - start[k];
-        }
-
-        volume += cell;
-    }
-
-    // As many boxes as elements, none empty, together the whole domain
-    double whole = 1.;
-
-    for (int k = 0; k < 3; ++k) {
-        const BSpline<double>& axis = basis.axis(k);
-
-        whole *= axis.element_end(axis.num_elements() - 1)
-                 - axis.element_start(0);
-    }
-
-    REQUIRE(std::abs(volume - whole) < 1e-12);
-}
-
 TEST_CASE("The basis is a partition of unity on every element",
           "[tensor_product]")
 {
@@ -194,7 +191,7 @@ TEST_CASE("The basis is a partition of unity on every element",
     for (int e = 0; e < basis.num_elements(); ++e) {
         const Eigen::MatrixXd points = points_on(basis, e);
 
-        basis.eval_on_element(basis.first_active(e), points, values);
+        basis.eval_on_element(first_active_of(basis, e), points, values);
 
         REQUIRE(values.rows() == basis.num_active());
         REQUIRE(values.cols() == points.rows());
@@ -211,7 +208,7 @@ TEST_CASE("The values are the products over the directions",
     const Tensor<2> basis({uniform(), cubic()});
 
     const Eigen::MatrixXd points = points_on(basis, 1);
-    const std::array<int, 2> first = basis.first_active(1);
+    const std::array<int, 2> first = first_active_of(basis, 1);
 
     Eigen::MatrixXd values;
     basis.eval_on_element(first, points, values);
@@ -242,7 +239,7 @@ TEST_CASE("The derivatives factorise, in the slot order of an order",
     const Tensor<3> basis({quadratic(), cubic(), linear()});
 
     const Eigen::MatrixXd points = points_on(basis, 2);
-    const std::array<int, 3> first = basis.first_active(2);
+    const std::array<int, 3> first = first_active_of(basis, 2);
 
     std::vector<Eigen::MatrixXd> values;
     basis.eval_ders_on_element(first, points, 2, values);
@@ -303,7 +300,7 @@ TEST_CASE("The derivatives agree with central differences",
 
     for (int e = 0; e < basis.num_elements(); ++e) {
         const Eigen::MatrixXd points = points_on(basis, e);
-        const std::array<int, 2> first = basis.first_active(e);
+        const std::array<int, 2> first = first_active_of(basis, e);
 
         basis.eval_ders_on_element(first, points, 2, values);
 
