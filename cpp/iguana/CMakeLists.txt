@@ -1,6 +1,7 @@
 add_library(iguana
     basis/bspline.cpp
     basis/tensor_product.cpp
+    geometry/patch.cpp
     quadrature/gauss_legendre.cpp)
 
 target_compile_features(iguana PUBLIC cxx_std_20)
