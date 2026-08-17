@@ -1,6 +1,7 @@
 add_executable(iguana_tests
     basis/test_bspline.cpp
     basis/test_tensor_product.cpp
+    domain/test_tensor_domain.cpp
     geometry/test_differential.cpp
     geometry/test_patch.cpp
     quadrature/test_gauss_legendre.cpp)
