@@ -16,6 +16,9 @@
 namespace iguana
 {
 
+using Eigen::placeholders::all;
+using Eigen::seqN;
+
 template<int d, std::floating_point T>
 TensorProductBSpline<d, T>::TensorProductBSpline(
     std::array<BSpline<T>, d> axes)
@@ -266,9 +269,6 @@ void TensorProductBSpline<d, T>::eval_ders_on_element(
     Eigen::MatrixX<T> scratch;
 
     // A slot is written into the rows it occupies in every function
-    using Eigen::placeholders::all;
-    using Eigen::seqN;
-
     // Order 0, every direction taking its own values
     for (int k = 0; k < d; ++k)
         factors[k] = &axis_ders[k][0];
