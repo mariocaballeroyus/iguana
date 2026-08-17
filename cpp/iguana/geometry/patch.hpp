@@ -55,6 +55,27 @@ public:
     constexpr const Eigen::MatrixX3<T>& coefficients() const noexcept
     { return coefficients_; }
 
+    /**
+     * @brief Maps points of an element into physical space.
+     *
+     * The physical points are the control points of the active
+     * functions weighted by the function values, so that the basis
+     * evaluation of the caller is reused rather than repeated.
+     *
+     * @param actives The functions that are non-zero on the element, as
+     *        given by active_on_element().
+     * @param values Their values at the points, of size
+     *        (num_active,num_points), as given by eval_on_element().
+     * @param physical Output buffer of size (num_points,3), resized if
+     *        its shape changes.
+     *
+     * @pre @p actives and @p values come from the same element. It is
+     *      not checked.
+     */
+    void eval(const Eigen::VectorXi& actives,
+              const Eigen::MatrixX<T>& values,
+              Eigen::MatrixX3<T>& physical) const;
+
 private:
     /// @brief The basis of the map.
     TensorProductBSpline<d, T> basis_;

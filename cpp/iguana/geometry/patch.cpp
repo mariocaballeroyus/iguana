@@ -14,6 +14,8 @@
 namespace iguana
 {
 
+using Eigen::placeholders::all;
+
 template<int d, std::floating_point T>
 Patch<d, T>::Patch(TensorProductBSpline<d, T> basis,
                    Eigen::MatrixX3<T> coefficients)
@@ -23,6 +25,18 @@ Patch<d, T>::Patch(TensorProductBSpline<d, T> basis,
         throw std::invalid_argument("Patch: "
                                     "there must be one control point per "
                                     "basis function");
+}
+
+template<int d, std::floating_point T>
+void Patch<d, T>::eval(const Eigen::VectorXi& actives,
+                       const Eigen::MatrixX<T>& values,
+                       Eigen::MatrixX3<T>& physical) const
+{
+    // Output buffer, reused across elements
+    physical.resize(values.cols(), 3);
+
+    // The active rows of the control points, gathered by the product
+    physical.noalias() = values.transpose() * coefficients_(actives, all);
 }
 
 template class Patch<1, double>;
