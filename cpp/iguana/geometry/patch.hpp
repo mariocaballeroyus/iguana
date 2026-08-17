@@ -9,6 +9,7 @@
 #ifndef IGUANA_GEOMETRY_PATCH_HPP
 #define IGUANA_GEOMETRY_PATCH_HPP
 
+#include<array>
 #include<concepts>
 
 #include "iguana/basis/tensor_product.hpp"
@@ -56,25 +57,49 @@ public:
     { return coefficients_; }
 
     /**
-     * @brief Maps points of an element into physical space.
+     * @brief The position of points of an element in physical space.
      *
-     * The physical points are the control points of the active
-     * functions weighted by the function values, so that the basis
-     * evaluation of the caller is reused rather than repeated.
+     * The positions are the control points of the active functions
+     * weighted by the function values, so that the basis evaluation of
+     * the caller is reused rather than repeated: the position vector of
+     * the map at every point.
      *
      * @param actives The functions that are non-zero on the element, as
      *        given by active_on_element().
      * @param values Their values at the points, of size
      *        (num_active,num_points), as given by eval_on_element().
-     * @param physical Output buffer of size (num_points,3), resized if
+     * @param positions Output buffer of size (num_points,3), resized if
      *        its shape changes.
      *
      * @pre @p actives and @p values come from the same element. It is
      *      not checked.
      */
-    void eval(const Eigen::VectorXi& actives,
-              const Eigen::MatrixX<T>& values,
-              Eigen::MatrixX3<T>& physical) const;
+    void position(const Eigen::VectorXi& actives,
+                  const Eigen::MatrixX<T>& values,
+                  Eigen::MatrixX3<T>& positions) const;
+
+    /**
+     * @brief The tangent of every parametric direction at points of an
+     *        element.
+     *
+     * The tangents are the derivatives of the map along the directions,
+     * the covariant basis of the patch, and the columns of the Jacobian
+     * of the map.
+     *
+     * @param actives The functions that are non-zero on the element, as
+     *        given by active_on_element().
+     * @param ders Their first derivatives at the points, of size
+     *        (num_active * d,num_points), as eval_ders_on_element()
+     *        fills its order-1 buffer.
+     * @param tangents One output buffer per direction, each of size
+     *        (num_points,3) and resized if its shape changes.
+     *
+     * @pre @p actives and @p ders come from the same element. It is not
+     *      checked.
+     */
+    void tangents(const Eigen::VectorXi& actives,
+                  const Eigen::MatrixX<T>& ders,
+                  std::array<Eigen::MatrixX3<T>, d>& tangents) const;
 
 private:
     /// @brief The basis of the map.

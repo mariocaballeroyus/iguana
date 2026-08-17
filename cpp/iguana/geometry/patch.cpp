@@ -28,15 +28,34 @@ Patch<d, T>::Patch(TensorProductBSpline<d, T> basis,
 }
 
 template<int d, std::floating_point T>
-void Patch<d, T>::eval(const Eigen::VectorXi& actives,
-                       const Eigen::MatrixX<T>& values,
-                       Eigen::MatrixX3<T>& physical) const
+void Patch<d, T>::position(const Eigen::VectorXi& actives,
+                           const Eigen::MatrixX<T>& values,
+                           Eigen::MatrixX3<T>& positions) const
 {
     // Output buffer, reused across elements
-    physical.resize(values.cols(), 3);
+    positions.resize(values.cols(), 3);
 
     // The active rows of the control points, gathered by the product
-    physical.noalias() = values.transpose() * coefficients_(actives, all);
+    positions.noalias() = values.transpose() * coefficients_(actives, all);
+}
+
+template<int d, std::floating_point T>
+void Patch<d, T>::tangents(const Eigen::VectorXi& actives,
+                           const Eigen::MatrixX<T>& ders,
+                           std::array<Eigen::MatrixX3<T>, d>& tangents)
+    const
+{
+    const int num_active = static_cast<int>(actives.size());
+
+    // One gather per direction, over the slot rows of the direction
+    for (int k = 0; k < d; ++k) {
+        auto& tangent = tangents[static_cast<std::size_t>(k)];
+
+        tangent.resize(ders.cols(), 3);
+        tangent.noalias() = ders(Eigen::seqN(k, num_active, d), all)
+                                .transpose()
+                            * coefficients_(actives, all);
+    }
 }
 
 template class Patch<1, double>;
