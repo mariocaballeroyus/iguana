@@ -1,4 +1,5 @@
 add_executable(iguana_tests
+    assembly/test_assembler.cpp
     basis/test_bspline.cpp
     basis/test_tensor_product.cpp
     domain/test_tensor_domain.cpp

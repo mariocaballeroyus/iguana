@@ -1,4 +1,6 @@
 add_library(iguana
+    assembly/assembler.cpp
+    assembly/element_data.cpp
     basis/bspline.cpp
     basis/tensor_product.cpp
     domain/tensor_domain.cpp
