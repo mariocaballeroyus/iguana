@@ -278,6 +278,30 @@ int BSpline<T>::element_at(T point) const noexcept
     return low;
 }
 
+template<std::floating_point T>
+int BSpline<T>::insert_knot(T knot)
+{
+    if (!(knot > element_start(0) && knot < element_end(num_elements_ - 1)))
+        throw std::invalid_argument("BSpline: "
+                                    "the knot must lie strictly inside "
+                                    "the domain");
+
+    if (std::ranges::count(knots_, knot) >= degree_)
+        throw std::invalid_argument("BSpline: "
+                                    "the knot multiplicity would exceed "
+                                    "the degree");
+
+    // The span the knot lies in, the one of the element holding it
+    const int span = first_active(element_at(knot)) + degree_;
+
+    // The basis is rebuilt, so that the constructor indexes the knots
+    std::vector<T> knots = knots_;
+    knots.insert(knots.begin() + span + 1, knot);
+    *this = BSpline(degree_, std::move(knots));
+
+    return span;
+}
+
 template class BSpline<double>;
 
 } // namespace iguana

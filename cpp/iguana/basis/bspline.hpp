@@ -123,6 +123,25 @@ public:
     int element_at(T point) const noexcept;
 
     /**
+     * @brief Inserts a knot, refining the basis.
+     *
+     * The knot joins the sequence, so that the span it lies in is split
+     * and one function is gained. The refined basis spans every function
+     * of the original one.
+     *
+     * @param knot The knot value, strictly inside the domain.
+     *
+     * @return The span the knot is inserted in, \f$ k \f$ such that
+     *         \f$ \xi_k \le \bar{\xi} < \xi_{k+1} \f$ in the knots before
+     *         the insertion.
+     *
+     * @throws std::invalid_argument If @p knot lies outside the domain
+     *         or on its ends, or if its multiplicity would exceed the
+     *         degree.
+     */
+    int insert_knot(T knot);
+
+    /**
      * @brief Evaluates the non-zero basis functions on a given element.
      *
      * Due to the local support property, only the \f$ p+1 \f$ consecutive

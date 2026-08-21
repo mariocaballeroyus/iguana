@@ -183,3 +183,34 @@ TEST_CASE("The derivatives agree with central differences", "[bspline]")
         }
     }
 }
+
+TEST_CASE("Knot insertion splits an element and keeps the domain",
+          "[bspline]")
+{
+    BSpline<double> basis(2, {0., 0., 0., 1., 2., 3., 3., 3.});
+
+    // A new value splits its element and gains one function
+    REQUIRE(basis.insert_knot(1.5) == 3);
+    REQUIRE(basis.num_elements() == 4);
+    REQUIRE(basis.num_functions() == 6);
+
+    // A repeated value gains a function but splits nothing
+    REQUIRE(basis.insert_knot(1.5) == 4);
+    REQUIRE(basis.num_elements() == 4);
+    REQUIRE(basis.num_functions() == 7);
+
+    // The multiplicity may not exceed the degree
+    REQUIRE_THROWS_AS(basis.insert_knot(1.5), std::invalid_argument);
+
+    // The domain may not be touched
+    REQUIRE_THROWS_AS(basis.insert_knot(0.), std::invalid_argument);
+    REQUIRE_THROWS_AS(basis.insert_knot(3.), std::invalid_argument);
+    REQUIRE_THROWS_AS(basis.insert_knot(4.), std::invalid_argument);
+
+    // The elements still tile the domain
+    REQUIRE(basis.element_start(0) == 0.);
+    REQUIRE(basis.element_end(basis.num_elements() - 1) == 3.);
+
+    for (int e = 1; e < basis.num_elements(); ++e)
+        REQUIRE(basis.element_start(e) == basis.element_end(e - 1));
+}
