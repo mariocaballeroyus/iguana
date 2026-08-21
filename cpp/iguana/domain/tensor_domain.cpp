@@ -57,6 +57,21 @@ bool TensorDomainIterator<d, T>::operator==(
 }
 
 template<int d, std::floating_point T>
+int TensorDomain<d, T>::element_at(
+    const std::array<T, d>& point) const noexcept
+{
+    std::array<int, d> each{};
+    std::array<int, d> counts{};
+
+    for (int k = 0; k < d; ++k) {
+        each[k] = basis_.axis(k).element_at(point[k]);
+        counts[k] = basis_.axis(k).num_elements();
+    }
+
+    return flatten(each, counts);
+}
+
+template<int d, std::floating_point T>
 TensorDomainIterator<d, T> TensorDomain<d, T>::begin() const noexcept
 {
     return TensorDomainIterator<d, T>(basis_);

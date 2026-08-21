@@ -136,6 +136,21 @@ public:
     constexpr int num_elements() const noexcept
     { return basis_.num_elements(); }
 
+    /**
+     * @brief The element a parametric point lies in.
+     *
+     * Coordinates on an interior element interface belong to the later
+     * element, and the end of the domain to the last one, as the
+     * univariate query decides per direction.
+     *
+     * @param point The parametric point, inside the domain.
+     *
+     * @return The element index, in [0, num_elements()).
+     *
+     * @pre @p point lies inside the domain. It is not checked.
+     */
+    int element_at(const std::array<T, d>& point) const noexcept;
+
     /// @brief An iterator at the first element, borrowing the basis.
     TensorDomainIterator<d, T> begin() const noexcept;
 

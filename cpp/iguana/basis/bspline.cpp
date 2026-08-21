@@ -259,6 +259,25 @@ void BSpline<T>::eval_ders_on_element(int first_active,
     }
 }
 
+template<std::floating_point T>
+int BSpline<T>::element_at(T point) const noexcept
+{
+    // The last element starting at or before the point, by bisection
+    int low = 0;
+    int high = num_elements() - 1;
+
+    while (low < high) {
+        const int mid = (low + high + 1) / 2;
+
+        if (element_start(mid) <= point)
+            low = mid;
+        else
+            high = mid - 1;
+    }
+
+    return low;
+}
+
 template class BSpline<double>;
 
 } // namespace iguana

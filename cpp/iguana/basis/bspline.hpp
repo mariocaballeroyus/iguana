@@ -109,6 +109,20 @@ public:
     { return knots_[mult_sum_[first_element_ + element]]; }
 
     /**
+     * @brief The element a parameter lies in.
+     *
+     * Parameters on an interior element interface belong to the later
+     * element, and the end of the domain to the last one.
+     *
+     * @param point The parameter, inside the domain of the basis.
+     *
+     * @return The element index, in [0, num_elements()).
+     *
+     * @pre @p point lies inside the domain. It is not checked.
+     */
+    int element_at(T point) const noexcept;
+
+    /**
      * @brief Evaluates the non-zero basis functions on a given element.
      *
      * Due to the local support property, only the \f$ p+1 \f$ consecutive
