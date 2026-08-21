@@ -84,6 +84,22 @@ public:
     { return num_active_; }
 
     /**
+     * @brief Inserts a knot along a direction, refining the basis.
+     *
+     * @param direction The direction index, in [0, dimension).
+     * @param knot The knot value, strictly inside the domain of the
+     *        direction.
+     *
+     * @return The span the knot is inserted in along the direction, as
+     *         BSpline::insert_knot() returns it.
+     *
+     * @throws std::invalid_argument As BSpline::insert_knot() does.
+     *
+     * @pre @p direction lies in [0, dimension). It is not checked.
+     */
+    int insert_knot(int direction, T knot);
+
+    /**
      * @brief The functions that are non-zero on a given element.
      *
      * The non-zero functions of every direction are combined, so that

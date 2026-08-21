@@ -35,6 +35,18 @@ TensorProductBSpline<d, T>::TensorProductBSpline(
     }
 }
 
+template<int d, std::floating_point T>
+int TensorProductBSpline<d, T>::insert_knot(int direction, T knot)
+{
+    // The basis is rebuilt, so that the constructor counts over the axes
+    std::array<BSpline<T>, d> axes = axes_;
+    const int span
+        = axes[static_cast<std::size_t>(direction)].insert_knot(knot);
+    *this = TensorProductBSpline(std::move(axes));
+
+    return span;
+}
+
 // Elements --------------------------------------------------------------------
 
 namespace
