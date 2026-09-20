@@ -6,4 +6,6 @@
 #ifndef IGUANA_IGUANA_HPP
 #define IGUANA_IGUANA_HPP
 
+#include "basis/bspline.hpp"
+
 #endif // IGUANA_IGUANA_HPP
