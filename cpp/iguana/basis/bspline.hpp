@@ -52,6 +52,33 @@ public:
     constexpr const std::vector<T>& knots() const noexcept
     { return knots_; }
 
+    /**
+     * @brief Index of the first function active on an element.
+     *
+     * @param element Element index.
+     * @return Index of the first active basis function.
+     *
+     * @pre @p element lies in [0, num_elements()).
+     */
+    constexpr int first_active(int element) const noexcept
+    { return element_spans_[static_cast<std::size_t>(element)] - degree_; }
+
+    /**
+     * @brief Evaluates the non-zero functions on an element using the Cox-de
+     *        Boor recursion.
+     *
+     * @param first_active Index of the first function active on the element.
+     * @param points Parameters at which the functions are evaluated.
+     * @param values Output matrix with size (num_active,num_points). It is
+     *        resized when necessary.
+     *
+     * @pre @p first_active is the first active function of an existing,
+     *      non-empty knot span.
+     * @pre Every point in @p points lies inside that element.
+     */
+    void eval_on_element(int first_active, std::span<const T> points,
+                         Eigen::MatrixX<T>& values) const;
+
 private:
     /// @brief Polynomial degree of the basis.
     int degree_;
