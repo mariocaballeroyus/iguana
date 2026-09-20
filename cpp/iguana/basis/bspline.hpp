@@ -52,6 +52,18 @@ public:
     constexpr const std::vector<T>& knots() const noexcept
     { return knots_; }
 
+    /// @brief Number of basis functions.
+    constexpr int num_functions() const noexcept
+    { return static_cast<int>(knots_.size()) - degree_ - 1; }
+
+    /// @brief Number of functions active on each element.
+    constexpr int num_active() const noexcept
+    { return degree_ + 1; }
+
+    /// @brief Number of non-empty knot spans in the parametric domain.
+    constexpr int num_elements() const noexcept
+    { return static_cast<int>(element_spans_.size()); }
+
     /**
      * @brief Index of the first function active on an element.
      *
@@ -62,6 +74,28 @@ public:
      */
     constexpr int first_active(int element) const noexcept
     { return element_spans_[static_cast<std::size_t>(element)] - degree_; }
+
+    /**
+     * @brief Parameter at which an element starts.
+     *
+     * @param element Element index.
+     * @return Left endpoint of the element.
+     *
+     * @pre @p element lies in [0, num_elements()).
+     */
+    constexpr T element_start(int element) const noexcept
+    { return knots_[element_spans_[element]]; }
+
+    /**
+     * @brief Parameter at which an element ends.
+     *
+     * @param element Element index.
+     * @return Right endpoint of the element.
+     *
+     * @pre @p element lies in [0, num_elements()).
+     */
+    constexpr T element_end(int element) const noexcept
+    { return knots_[element_spans_[element] + 1]; }
 
     /**
      * @brief Evaluates the non-zero functions on an element using the Cox-de
