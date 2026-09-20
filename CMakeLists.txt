@@ -8,4 +8,5 @@ include(CTest)
 
 if(BUILD_TESTING)
     add_subdirectory(external/catch2)
+    add_subdirectory(cpp/tests)
 endif()
