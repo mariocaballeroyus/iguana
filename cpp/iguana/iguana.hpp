@@ -7,5 +7,6 @@
 #define IGUANA_IGUANA_HPP
 
 #include "basis/bspline.hpp"
+#include "basis/tensor_bspline.hpp"
 
 #endif // IGUANA_IGUANA_HPP

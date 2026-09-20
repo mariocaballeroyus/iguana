@@ -1,4 +1,6 @@
-add_library(iguana basis/bspline.cpp)
+add_library(iguana
+    basis/bspline.cpp
+    basis/tensor_bspline.cpp)
 
 add_library(IGUANA::iguana ALIAS iguana)
 
