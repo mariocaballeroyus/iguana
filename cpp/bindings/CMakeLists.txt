@@ -12,3 +12,19 @@ target_compile_options(iguana_python PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4>)
 
 target_link_libraries(iguana_python PRIVATE IGUANA::iguana)
+
+if(BUILD_TESTING)
+    execute_process(
+        COMMAND ${Python_EXECUTABLE} -c "import pytest"
+        RESULT_VARIABLE iguana_pytest_status
+        OUTPUT_QUIET ERROR_QUIET)
+
+    if(iguana_pytest_status EQUAL 0)
+        add_test(NAME iguana_python
+                 COMMAND ${Python_EXECUTABLE} -m pytest -q
+                         ${PROJECT_SOURCE_DIR}/python/tests)
+
+        set_tests_properties(iguana_python PROPERTIES
+            ENVIRONMENT "PYTHONPATH=$<TARGET_FILE_DIR:iguana_python>")
+    endif()
+endif()
