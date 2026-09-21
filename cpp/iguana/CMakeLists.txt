@@ -6,7 +6,9 @@ add_library(IGUANA::iguana ALIAS iguana)
 
 target_compile_features(iguana PUBLIC cxx_std_20)
 
-set_target_properties(iguana PROPERTIES CXX_EXTENSIONS OFF)
+set_target_properties(iguana PROPERTIES
+    CXX_EXTENSIONS OFF
+    POSITION_INDEPENDENT_CODE ON)
 
 target_compile_options(iguana PRIVATE
     $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall;-Wextra;-Wpedantic>
