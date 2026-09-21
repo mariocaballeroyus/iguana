@@ -10,6 +10,8 @@
 #include <concepts>
 #include <cstddef>
 
+#include <Eigen/Core>
+
 #include "bspline.hpp"
 
 namespace iguana
@@ -63,6 +65,20 @@ public:
     /// @brief Number of functions active on each element.
     constexpr int num_active() const noexcept
     { return num_active_; }
+
+    /**
+     * @brief Functions that are non-zero on an element.
+     *
+     * The returned indices follow the tensor-product numbering, with the
+     * first parametric direction running fastest.
+     *
+     * @param element Element index.
+     * @param actives Output vector of num_active() function indices. It is
+     *        resized when necessary.
+     *
+     * @pre @p element lies in [0, num_elements()).
+     */
+    void active_on_element(int element, Eigen::VectorXi& actives) const;
 
 private:
     /// @brief Univariate bases, one per parametric direction.
