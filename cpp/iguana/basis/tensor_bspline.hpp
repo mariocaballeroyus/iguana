@@ -80,6 +80,25 @@ public:
      */
     void active_on_element(int element, Eigen::VectorXi& actives) const;
 
+    /**
+     * @brief Evaluates the non-zero functions on an element
+     *
+     * Each value is the product of one univariate value per direction
+     * The rows follow the order of active_on_element()
+     *
+     * @param first_active First active function in each direction
+     * @param points Evaluation points, one per row and one coordinate per
+     *        column, with size (num_points, dimension)
+     * @param values Output matrix of size (num_active(), num_points). It is
+     *        resized when necessary
+     *
+     * @pre @p first_active belongs to an existing element, @p points has
+     *      dimension columns, and every point lies inside that element
+     */
+    void eval_on_element(const std::array<int, d>& first_active,
+                         const Eigen::MatrixX<T>& points,
+                         Eigen::MatrixX<T>& values) const;
+
 private:
     /// @brief Univariate bases, one per parametric direction.
     std::array<BSpline<T>, d> axes_;
