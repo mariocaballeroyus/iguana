@@ -1,6 +1,10 @@
+set(IGUANA_PYTHON_DIR ${PROJECT_BINARY_DIR}/python/iguana)
+
 pybind11_add_module(iguana_python module.cpp)
 
-set_target_properties(iguana_python PROPERTIES OUTPUT_NAME iguana)
+set_target_properties(iguana_python PROPERTIES
+    OUTPUT_NAME cpp
+    LIBRARY_OUTPUT_DIRECTORY ${IGUANA_PYTHON_DIR})
 
 target_compile_features(iguana_python PRIVATE cxx_std_20)
 
@@ -12,6 +16,13 @@ target_compile_options(iguana_python PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4>)
 
 target_link_libraries(iguana_python PRIVATE IGUANA::iguana)
+
+add_custom_target(iguana_package ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${PROJECT_SOURCE_DIR}/python/iguana ${IGUANA_PYTHON_DIR}
+    COMMENT "Staging the Python package")
+
+add_dependencies(iguana_package iguana_python)
 
 if(BUILD_TESTING)
     execute_process(
@@ -25,6 +36,6 @@ if(BUILD_TESTING)
                          ${PROJECT_SOURCE_DIR}/python/tests)
 
         set_tests_properties(iguana_python PROPERTIES
-            ENVIRONMENT "PYTHONPATH=$<TARGET_FILE_DIR:iguana_python>")
+            ENVIRONMENT "PYTHONPATH=${PROJECT_BINARY_DIR}/python")
     endif()
 endif()

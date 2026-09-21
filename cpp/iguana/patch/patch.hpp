@@ -17,6 +17,15 @@ namespace iguana
 {
 
 /**
+ * @brief Matrix of points in physical space, one per row. The storage is
+ *        row-major, so that a point is contiguous.
+ *
+ * @tparam T Floating-point type of the coordinates
+ */
+template<std::floating_point T>
+using PointMatrix = Eigen::Matrix<T, Eigen::Dynamic, 3, Eigen::RowMajor>;
+
+/**
  * @brief Tensor-product B-spline patch, a map from the parameter box into
  *        physical space
  *
@@ -43,14 +52,19 @@ public:
      * @throws std::invalid_argument If the rows do not match the number of
      *         basis functions
      */
-    Patch(TensorBSpline<T, d> basis, Eigen::MatrixX3<T> coefficients);
+    Patch(TensorBSpline<T, d> basis, PointMatrix<T> coefficients);
 
     /// @brief Basis of the map
     constexpr const TensorBSpline<T, d>& basis() const noexcept
     { return basis_; }
 
-    /// @brief Control points, of size (num_functions,3)
-    constexpr const Eigen::MatrixX3<T>& coefficients() const noexcept
+    /**
+     * @brief Control points, of size (num_functions,3)
+     *
+     * @pre The patch outlives any reference taken to them, which a binding
+     *      may expose without copying
+     */
+    constexpr const PointMatrix<T>& coefficients() const noexcept
     { return coefficients_; }
 
     /**
@@ -72,14 +86,14 @@ public:
      */
     void position_on_element(const Eigen::VectorXi& actives,
                              const Eigen::MatrixX<T>& values,
-                             Eigen::MatrixX3<T>& positions) const;
+                             PointMatrix<T>& positions) const;
 
 private:
     /// @brief Basis of the map
     TensorBSpline<T, d> basis_;
 
     /// @brief Control points, one row per basis function
-    Eigen::MatrixX3<T> coefficients_;
+    PointMatrix<T> coefficients_;
 };
 
 } // namespace iguana

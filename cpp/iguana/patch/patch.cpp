@@ -15,7 +15,7 @@ using Eigen::placeholders::all;
 
 template<std::floating_point T, std::size_t d>
 Patch<T, d>::Patch(TensorBSpline<T, d> basis,
-                   Eigen::MatrixX3<T> coefficients)
+                   PointMatrix<T> coefficients)
     : basis_(std::move(basis)),
       coefficients_(std::move(coefficients))
 {
@@ -28,7 +28,7 @@ Patch<T, d>::Patch(TensorBSpline<T, d> basis,
 template<std::floating_point T, std::size_t d>
 void Patch<T, d>::position_on_element(const Eigen::VectorXi& actives,
                                       const Eigen::MatrixX<T>& values,
-                                      Eigen::MatrixX3<T>& positions) const
+                                      PointMatrix<T>& positions) const
 {
     // Reuse the output buffer when its shape is unchanged
     positions.resize(values.cols(), 3);

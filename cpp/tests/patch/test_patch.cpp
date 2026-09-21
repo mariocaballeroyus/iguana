@@ -23,6 +23,8 @@ using iguana::BSpline;
 using iguana::Patch;
 using iguana::TensorBSpline;
 
+using Points = iguana::PointMatrix<double>;
+
 BSpline<double> quadratic()
 {
     return BSpline<double>(2, {0., 0., 0., .4, 1., 1., 1.});
@@ -58,12 +60,12 @@ TEST_CASE("Patch requires one control point per basis function", "[patch]")
     const int expected = basis.num_functions();
 
     REQUIRE_THROWS_AS(Surface(basis,
-                              Eigen::MatrixX3d::Zero(expected - 1, 3)),
+                              Points::Zero(expected - 1, 3)),
                       std::invalid_argument);
     REQUIRE_THROWS_AS(Surface(basis,
-                              Eigen::MatrixX3d::Zero(expected + 1, 3)),
+                              Points::Zero(expected + 1, 3)),
                       std::invalid_argument);
-    REQUIRE_NOTHROW(Surface(basis, Eigen::MatrixX3d::Zero(expected, 3)));
+    REQUIRE_NOTHROW(Surface(basis, Points::Zero(expected, 3)));
 }
 
 TEST_CASE("Patch reproduces affine maps exactly", "[patch]")
@@ -109,7 +111,7 @@ TEST_CASE("Patch reproduces affine maps exactly", "[patch]")
 
             // Sampling an affine function at the Greville abscissae gives
             // control points that reproduce it exactly
-            Eigen::MatrixX3d coefficients(basis.num_functions(), 3);
+            Points coefficients(basis.num_functions(), 3);
             Eigen::VectorXd node(d);
 
             for (int fun = 0; fun < basis.num_functions(); ++fun) {
@@ -129,7 +131,7 @@ TEST_CASE("Patch reproduces affine maps exactly", "[patch]")
             const Patch<double, d> patch(basis, coefficients);
             Eigen::MatrixXd values;
             Eigen::VectorXi actives;
-            Eigen::MatrixX3d positions;
+            Points positions;
 
             for (int element = 0; element < basis.num_elements();
                  ++element) {
