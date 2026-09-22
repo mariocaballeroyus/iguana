@@ -13,6 +13,48 @@ import numpy.typing as npt
 from iguana import cpp as _cpp
 
 
+class CurvePatch:
+    """A spline map from an interval into space."""
+
+    _cpp_object: _cpp.CurvePatch
+
+    def __init__(
+        self,
+        curve: _cpp.CurvePatch,
+        degree: int,
+        knots: npt.NDArray[np.float64],
+    ) -> None:
+        """Initialize the curve from a C++ curve.
+
+        Args:
+            curve: A C++ curve patch.
+            degree: Polynomial degree of the curve.
+            knots: Knot vector of the curve.
+        """
+        self._cpp_object = curve
+        self._degree = degree
+        self._knots = knots
+
+    @property
+    def degree(self) -> int:
+        """Polynomial degree of the curve."""
+        return self._degree
+
+    @property
+    def knots(self) -> npt.NDArray[np.float64]:
+        """Knot vector of the curve."""
+        return self._knots
+
+    @property
+    def control_points(self) -> npt.NDArray[np.float64]:
+        """Control points, of shape ``(num_control_points, 3)``."""
+        return self._cpp_object.coefficients
+
+    def __repr__(self) -> str:
+        return (f'CurvePatch(degree={self._degree}, '
+                f'num_control_points={len(self.control_points)})')
+
+
 class VolumePatch:
     """A spline map from a three-dimensional parameter box into space."""
 
@@ -53,6 +95,19 @@ class VolumePatch:
         long as the patch does.
         """
         return self._cpp_object.coefficients
+
+    def isocurves(self) -> list[CurvePatch]:
+        """Isocurves of the patch along every knot line."""
+        curves = []
+
+        for direction, group in enumerate(self._cpp_object.isocurves()):
+            degree = self._degrees[direction]
+            knots = self._knots[direction]
+
+            curves.extend(CurvePatch(curve, degree, knots)
+                          for curve in group)
+
+        return curves
 
     def __repr__(self) -> str:
         return (f'VolumePatch(degrees={self._degrees}, '
