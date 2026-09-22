@@ -1,0 +1,48 @@
+# Copyright (c) 2026 Mario Caballero
+# SPDX-License-Identifier: MIT
+
+[build-system]
+requires = ['scikit-build-core>=0.10']
+build-backend = 'scikit_build_core.build'
+
+[project]
+name = 'iguana'
+description = 'Immersogeometric framework for boundary-unfitted analysis'
+readme = 'README.md'
+license = 'MIT'
+license-files = ['LICENSE']
+authors = [
+    {name = 'Mario Caballero', email = 'mariocaballeroyus@gmail.com'},
+]
+
+# Rhino 8 embeds CPython 3.9, which the Grasshopper build must target
+requires-python = '>=3.9'
+
+dependencies = ['numpy>=1.21']
+
+dynamic = ['version']
+
+[tool.scikit-build]
+minimum-version = 'build-system.requires'
+
+# One tree per interpreter, so builds for different Python versions do
+# not overwrite each other
+build-dir = 'build/{wheel_tag}'
+
+# The pure Python package, which the extension is installed next to
+wheel.packages = ['python/iguana']
+
+cmake.version = '>=3.21'
+
+sdist.exclude = ['build', '.github', '.pytest_cache']
+
+[tool.scikit-build.cmake.define]
+IGUANA_BUILD_PYTHON = 'ON'
+BUILD_TESTING = 'OFF'
+
+# The version the extension reports comes from the CMake project, so the
+# wheel reads it from there rather than holding a second copy
+[tool.scikit-build.metadata.version]
+provider = 'scikit_build_core.metadata.regex'
+input = 'CMakeLists.txt'
+regex = 'project\(IGUANA VERSION (?P<value>[0-9.]+)'

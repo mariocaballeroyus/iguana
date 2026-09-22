@@ -17,12 +17,16 @@ target_compile_options(iguana_python PRIVATE
 
 target_link_libraries(iguana_python PRIVATE IGUANA::iguana)
 
-add_custom_target(iguana_package ALL
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-            ${PROJECT_SOURCE_DIR}/python/iguana ${IGUANA_PYTHON_DIR}
-    COMMENT "Staging the Python package")
+if(SKBUILD)
+    install(TARGETS iguana_python DESTINATION ${SKBUILD_PROJECT_NAME})
+else()
+    add_custom_target(iguana_package ALL
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                ${PROJECT_SOURCE_DIR}/python/iguana ${IGUANA_PYTHON_DIR}
+        COMMENT "Staging the Python package")
 
-add_dependencies(iguana_package iguana_python)
+    add_dependencies(iguana_package iguana_python)
+endif()
 
 if(BUILD_TESTING)
     execute_process(
