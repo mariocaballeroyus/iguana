@@ -112,3 +112,67 @@ class VolumePatch:
     def __repr__(self) -> str:
         return (f'VolumePatch(degrees={self._degrees}, '
                 f'num_control_points={len(self.control_points)})')
+
+
+def _uniform_knots(degree: int, elements: int) -> npt.NDArray[np.float64]:
+    """Clamped knot vector of a uniform basis on the unit interval."""
+    interior = np.linspace(0., 1., elements + 1)[1:-1]
+
+    return np.concatenate([np.zeros(degree + 1), interior,
+                           np.ones(degree + 1)])
+
+
+def _greville(degree: int,
+              knots: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+    """Greville abscissa of every function of a univariate basis."""
+    return np.array([knots[i + 1:i + degree + 1].mean()
+                     for i in range(len(knots) - degree - 1)])
+
+
+def create_box(
+    lengths: Sequence[float],
+    elements: Sequence[int],
+    degrees: Sequence[int] = (2, 2, 2),
+    origin: Sequence[float] = (0., 0., 0.),
+) -> VolumePatch:
+    """Create a patch mapping the parameter box onto a block.
+
+    The block is axis-aligned and its basis uniform. The map is affine,
+    so sampling it at the Greville abscissae reproduces the block
+    exactly rather than approximating it.
+
+    Args:
+        lengths: Side of the block along each direction.
+        elements: Number of knot spans of each direction.
+        degrees: Polynomial degree of each direction.
+        origin: Corner of the block the parameter box maps its own
+            origin to.
+
+    Returns:
+        The patch of the block.
+
+    Raises:
+        ValueError: If an argument does not hold three entries.
+    """
+    given = (lengths, elements, degrees, origin)
+
+    if any(len(argument) != 3 for argument in given):
+        raise ValueError('every argument must hold three entries, one '
+                         'per direction')
+
+    knots = [_uniform_knots(degree, span)
+             for degree, span in zip(degrees, elements)]
+
+    nodes = np.meshgrid(*(_greville(degree, knot)
+                          for degree, knot in zip(degrees, knots)),
+                        indexing='ij')
+
+    box = np.column_stack([node.ravel(order='F') for node in nodes])
+    points = np.asarray(origin, float) + box * np.asarray(lengths, float)
+
+    basis = _cpp.TrivariateBSpline(
+        axes=[_cpp.BSpline(degree=degree, knots=list(knot))
+              for degree, knot in zip(degrees, knots)])
+
+    return VolumePatch(_cpp.VolumePatch(basis=basis, coefficients=points),
+                       degrees=degrees, knots=knots)
