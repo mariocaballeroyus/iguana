@@ -6,10 +6,8 @@
 #ifndef IGUANA_PATCH_PATCH_HPP
 #define IGUANA_PATCH_PATCH_HPP
 
-#include <array>
 #include <concepts>
 #include <cstddef>
-#include <vector>
 
 #include <Eigen/Core>
 
@@ -90,40 +88,7 @@ public:
                              const Eigen::MatrixX<T>& values,
                              PointMatrix<T>& positions) const;
 
-    /**
-     * @brief Isocurves of the patch along every knot line
-     *
-     * Each curve lies in the univariate space of the direction it runs
-     * along, so that it keeps its degree and knots and reproduces the
-     * patch along its line rather than sampling it
-     *
-     * @return One group of curves per direction, holding the knot lines of
-     *         the remaining directions with the first of them running
-     *         fastest. A univariate patch pins nothing, so its single
-     *         group holds the patch itself
-     */
-    std::array<std::vector<Patch<T, 1>>, d> isocurves() const;
-
 private:
-    /**
-     * @brief Isocurve running along one direction, at knot lines of the
-     *        others
-     *
-     * Only the control points are formed, by contracting the control net
-     * against the values of the pinned directions at their knot lines
-     *
-     * @param direction Direction the curve runs along
-     * @param lines Knot line pinning each remaining direction, in
-     *        increasing order of direction
-     *
-     * @return Curve patch of the isocurve
-     *
-     * @pre @p direction is a direction of the patch and every line lies in
-     *      [0,num_elements] of its own axis, which isocurves() ensures
-     */
-    Patch<T, 1> isocurve(std::size_t direction,
-                         const std::array<int, d - 1>& lines) const;
-
     /// @brief Basis of the map
     TensorBSpline<T, d> basis_;
 
