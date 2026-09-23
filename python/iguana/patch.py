@@ -29,12 +29,12 @@ class CurvePatch:
     @property
     def degree(self) -> int:
         """Polynomial degree of the curve."""
-        return self._cpp_object.degree
+        return self._cpp_object.basis.axis(0).degree
 
     @property
     def knots(self) -> npt.NDArray[np.float64]:
         """Knot vector of the curve."""
-        return np.asarray(self._cpp_object.knots, float)
+        return np.asarray(self._cpp_object.basis.axis(0).knots, float)
 
     @property
     def control_points(self) -> npt.NDArray[np.float64]:
@@ -51,32 +51,29 @@ class VolumePatch:
 
     _cpp_object: _cpp.VolumePatch
 
-    def __init__(
-        self,
-        patch: _cpp.VolumePatch,
-        degrees: Sequence[int],
-        knots: Sequence[Sequence[float]],
-    ) -> None:
+    def __init__(self, patch: _cpp.VolumePatch) -> None:
         """Initialize the patch from a C++ patch.
 
         Args:
             patch: A C++ patch object.
-            degrees: Polynomial degree of each parametric direction.
-            knots: Knot vector of each parametric direction.
         """
         self._cpp_object = patch
-        self._degrees = tuple(degrees)
-        self._knots = tuple(np.asarray(k, float) for k in knots)
 
     @property
     def degrees(self) -> tuple[int, ...]:
         """Polynomial degree of each parametric direction."""
-        return self._degrees
+        basis = self._cpp_object.basis
+
+        return tuple(basis.axis(direction).degree
+                     for direction in range(3))
 
     @property
     def knots(self) -> tuple[npt.NDArray[np.float64], ...]:
         """Knot vector of each parametric direction."""
-        return self._knots
+        basis = self._cpp_object.basis
+
+        return tuple(np.asarray(basis.axis(direction).knots, float)
+                     for direction in range(3))
 
     @property
     def control_points(self) -> npt.NDArray[np.float64]:
@@ -88,16 +85,11 @@ class VolumePatch:
         return self._cpp_object.coefficients
 
     def isocurves(self) -> list[CurvePatch]:
-        """Isocurves of the patch along the knot lines of its faces.
-
-        Only the curves on the boundary of the parameter box are kept,
-        so that the lines through the interior do not clutter a view of
-        the patch.
-        """
+        """Isocurves of the patch along the knot lines of its faces."""
         return [CurvePatch(curve) for curve in self._cpp_object.isocurves()]
 
     def __repr__(self) -> str:
-        return (f'VolumePatch(degrees={self._degrees}, '
+        return (f'VolumePatch(degrees={self.degrees}, '
                 f'num_control_points={len(self.control_points)})')
 
 
@@ -161,5 +153,4 @@ def create_box(
         axes=[_cpp.BSpline(degree=degree, knots=list(knot))
               for degree, knot in zip(degrees, knots)])
 
-    return VolumePatch(_cpp.VolumePatch(basis=basis, coefficients=points),
-                       degrees=degrees, knots=knots)
+    return VolumePatch(_cpp.VolumePatch(basis=basis, coefficients=points))

@@ -21,12 +21,16 @@ def test_invalid_arguments():
 
 
 def test_control_net():
-    """The net of a block holds one point per function and spans it."""
+    """The patch of a block carries its basis and a net spanning it."""
     patch = iguana.create_box(lengths=LENGTHS, elements=(3, 2, 2),
                               degrees=(2, 3, 1))
     points = patch.control_points
 
-    # A direction of degree p and n elements carries p + n functions
+    assert patch.degrees == (2, 3, 1)
+
+    # A direction of degree p and n elements carries p + n functions,
+    # and p + 1 more knots than functions
+    assert [len(knot) for knot in patch.knots] == [8, 9, 5]
     assert points.shape == (5 * 5 * 3, 3)
     assert np.allclose(points.min(axis=0), 0.)
     assert np.allclose(points.max(axis=0), LENGTHS)

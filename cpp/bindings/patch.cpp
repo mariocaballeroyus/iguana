@@ -171,34 +171,18 @@ std::vector<CurvePatch> isocurves(const VolumePatch& patch)
     return curves;
 }
 
-/**
- * @brief Polynomial degree of a curve
- */
-int degree(const CurvePatch& curve)
-{
-    return curve.basis().axis(0).degree();
-}
-
-/**
- * @brief Knot vector of a curve
- */
-const std::vector<double>& knots(const CurvePatch& curve)
-{
-    return curve.basis().axis(0).knots();
-}
-
 } // namespace
 
 void patch(py::module_& module)
 {
     py::class_<CurvePatch>(module, "CurvePatch")
-        .def_property_readonly("degree", &degree)
-        .def_property_readonly("knots", &knots)
+        .def_property_readonly("basis", &CurvePatch::basis)
         .def_property_readonly("coefficients", &CurvePatch::coefficients);
 
     py::class_<VolumePatch>(module, "VolumePatch")
         .def(py::init<TensorBSpline<double, 3>, PointMatrix<double>>(),
              py::arg("basis"), py::arg("coefficients"))
+        .def_property_readonly("basis", &VolumePatch::basis)
         .def_property_readonly("coefficients", &VolumePatch::coefficients)
         .def("isocurves", &isocurves);
 }
