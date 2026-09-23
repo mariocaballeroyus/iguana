@@ -18,32 +18,23 @@ class CurvePatch:
 
     _cpp_object: _cpp.CurvePatch
 
-    def __init__(
-        self,
-        curve: _cpp.CurvePatch,
-        degree: int,
-        knots: npt.NDArray[np.float64],
-    ) -> None:
+    def __init__(self, curve: _cpp.CurvePatch) -> None:
         """Initialize the curve from a C++ curve.
 
         Args:
             curve: A C++ curve patch.
-            degree: Polynomial degree of the curve.
-            knots: Knot vector of the curve.
         """
         self._cpp_object = curve
-        self._degree = degree
-        self._knots = knots
 
     @property
     def degree(self) -> int:
         """Polynomial degree of the curve."""
-        return self._degree
+        return self._cpp_object.degree
 
     @property
     def knots(self) -> npt.NDArray[np.float64]:
         """Knot vector of the curve."""
-        return self._knots
+        return np.asarray(self._cpp_object.knots, float)
 
     @property
     def control_points(self) -> npt.NDArray[np.float64]:
@@ -51,7 +42,7 @@ class CurvePatch:
         return self._cpp_object.coefficients
 
     def __repr__(self) -> str:
-        return (f'CurvePatch(degree={self._degree}, '
+        return (f'CurvePatch(degree={self.degree}, '
                 f'num_control_points={len(self.control_points)})')
 
 
@@ -97,17 +88,13 @@ class VolumePatch:
         return self._cpp_object.coefficients
 
     def isocurves(self) -> list[CurvePatch]:
-        """Isocurves of the patch along every knot line."""
-        curves = []
+        """Isocurves of the patch along the knot lines of its faces.
 
-        for direction, group in enumerate(self._cpp_object.isocurves()):
-            degree = self._degrees[direction]
-            knots = self._knots[direction]
-
-            curves.extend(CurvePatch(curve, degree, knots)
-                          for curve in group)
-
-        return curves
+        Only the curves on the boundary of the parameter box are kept,
+        so that the lines through the interior do not clutter a view of
+        the patch.
+        """
+        return [CurvePatch(curve) for curve in self._cpp_object.isocurves()]
 
     def __repr__(self) -> str:
         return (f'VolumePatch(degrees={self._degrees}, '

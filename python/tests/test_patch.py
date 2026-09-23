@@ -55,11 +55,12 @@ def test_box_edges():
             for curve in curves} == edges
 
 
-def test_grid_lines():
-    """The isocurves of a linear box are the lines of its own grid."""
+def test_boundary_grid_lines():
+    """The isocurves of a linear box are the grid lines on its faces."""
     # A different number of elements per direction, so that pairing a
-    # direction with the wrong one cannot pass unnoticed
-    elements = (1, 2, 3)
+    # direction with the wrong one cannot pass unnoticed, and at least
+    # two per direction, so that each has interior lines to leave out
+    elements = (2, 3, 4)
 
     patch = iguana.create_box(lengths=LENGTHS, elements=elements,
                               degrees=(1, 1, 1))
@@ -67,8 +68,11 @@ def test_grid_lines():
     lines = [np.linspace(0., LENGTHS[axis], elements[axis] + 1).tolist()
              for axis in range(3)]
 
+    def on_face(axis, station):
+        return station in (lines[axis][0], lines[axis][-1])
+
     # A linear box is its own grid: one curve per direction and knot
-    # line of the other two, running the whole side
+    # line of the other two on a face, running the whole side
     expected = set()
 
     for direction in range(3):
@@ -76,6 +80,9 @@ def test_grid_lines():
 
         for one in lines[first]:
             for other in lines[second]:
+                if not (on_face(first, one) or on_face(second, other)):
+                    continue
+
                 point = [0., 0., 0.]
                 point[first] = one
                 point[second] = other
@@ -88,10 +95,13 @@ def test_grid_lines():
 
                 expected.add(tuple(curve))
 
+    curves = patch.isocurves()
     found = {tuple(map(tuple, curve.control_points.tolist()))
-             for curve in patch.isocurves()}
+             for curve in curves}
 
-    assert len(expected) == 26
+    # 14, 12 and 10 of the 20, 15 and 12 lines along each direction
+    assert len(expected) == 36
+    assert len(curves) == len(expected)
     assert found == expected
 
 

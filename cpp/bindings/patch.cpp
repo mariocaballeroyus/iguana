@@ -130,59 +130,61 @@ CurvePatch isocurve(const VolumePatch& patch,
 }
 
 /**
- * @brief Isocurves of a patch along every knot line
- *
- * Each curve lies in the univariate space of the direction it runs along,
- * so that it keeps its degree and knots and reproduces the patch along its
- * line rather than sampling it
+ * @brief Isocurves of a patch along the knot lines of its bounding faces
  *
  * @param patch Patch the curves are read from
  *
- * @return One group of curves per direction, holding the knot lines of the
- *         remaining directions with the first of them running fastest
+ * @return Curves along each direction in turn, holding the boundary knot
+ *         lines of the remaining directions with the first of them running
+ *         fastest
  */
-std::array<std::vector<CurvePatch>, 3> isocurves(const VolumePatch& patch)
+std::vector<CurvePatch> isocurves(const VolumePatch& patch)
 {
     const TensorBSpline<double, 3>& basis = patch.basis();
-    std::array<std::vector<CurvePatch>, 3> groups;
+    std::vector<CurvePatch> curves;
 
     for (std::size_t direction = 0; direction < 3; ++direction) {
-        // n elements are bounded by n + 1 knot lines
-        std::array<int, 2> counts{};
-        std::size_t pin = 0;
-        int total = 1;
+        // The two pinned directions, in increasing order
+        const std::size_t first = direction == 0 ? 1 : 0;
+        const std::size_t second = direction == 2 ? 1 : 2;
 
-        for (std::size_t dir = 0; dir < 3; ++dir) {
-            if (dir == direction)
-                continue;
+        // n elements are bounded by the knot lines 0 to n
+        const int first_last = basis.axis(first).num_elements();
+        const int second_last = basis.axis(second).num_elements();
 
-            counts[pin] = basis.axis(dir).num_elements() + 1;
-            total *= counts[pin];
-            ++pin;
-        }
+        for (int second_line = 0; second_line <= second_last;
+             ++second_line) {
+            for (int first_line = 0; first_line <= first_last;
+                 ++first_line) {
+                // A line strictly inside both axes crosses the interior
+                const bool interior =
+                    first_line > 0 && first_line < first_last
+                    && second_line > 0 && second_line < second_last;
 
-        groups[direction].reserve(static_cast<std::size_t>(total));
-
-        // Walk the knot lines, the first pinned direction fastest
-        std::array<int, 2> lines{};
-        bool remaining = true;
-
-        while (remaining) {
-            groups[direction].push_back(isocurve(patch, direction, lines));
-            remaining = false;
-
-            for (std::size_t k = 0; k < 2; ++k) {
-                if (++lines[k] < counts[k]) {
-                    remaining = true;
-                    break;
-                }
-
-                lines[k] = 0;
+                if (!interior)
+                    curves.push_back(isocurve(patch, direction,
+                                              {first_line, second_line}));
             }
         }
     }
 
-    return groups;
+    return curves;
+}
+
+/**
+ * @brief Polynomial degree of a curve
+ */
+int degree(const CurvePatch& curve)
+{
+    return curve.basis().axis(0).degree();
+}
+
+/**
+ * @brief Knot vector of a curve
+ */
+const std::vector<double>& knots(const CurvePatch& curve)
+{
+    return curve.basis().axis(0).knots();
 }
 
 } // namespace
@@ -190,6 +192,8 @@ std::array<std::vector<CurvePatch>, 3> isocurves(const VolumePatch& patch)
 void patch(py::module_& module)
 {
     py::class_<CurvePatch>(module, "CurvePatch")
+        .def_property_readonly("degree", &degree)
+        .def_property_readonly("knots", &knots)
         .def_property_readonly("coefficients", &CurvePatch::coefficients);
 
     py::class_<VolumePatch>(module, "VolumePatch")
