@@ -5,6 +5,7 @@
 
 #include "tensor_domain.hpp"
 
+#include <stdexcept>
 #include <utility>
 
 namespace iguana
@@ -12,8 +13,21 @@ namespace iguana
 
 template<std::floating_point T, std::size_t d>
 TensorDomain<T, d>::TensorDomain(Patch<T, d> patch)
-    : patch_(std::move(patch))
+    : patch_(std::move(patch)),
+      cell_types_(static_cast<std::size_t>(patch_.basis().num_elements()),
+                  CellType::inside)
 {
+}
+
+template<std::floating_point T, std::size_t d>
+TensorDomain<T, d>::TensorDomain(Patch<T, d> patch,
+                                 std::vector<CellType> cell_types)
+    : patch_(std::move(patch)),
+      cell_types_(std::move(cell_types))
+{
+    if (cell_types_.size() != static_cast<std::size_t>(num_elements()))
+        throw std::invalid_argument("TensorDomain: "
+                                    "there must be one cell type per element");
 }
 
 template<std::floating_point T, std::size_t d>
