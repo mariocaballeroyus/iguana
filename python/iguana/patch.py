@@ -134,10 +134,6 @@ class VolumePatch:
         """
         return self._cpp_object.coefficients
 
-    def isocurves(self) -> list[CurvePatch]:
-        """Isocurves of the patch along the knot lines of its faces."""
-        return [CurvePatch(curve) for curve in self._cpp_object.isocurves()]
-
     def isosurfaces(self) -> list[SurfacePatch]:
         """Isosurfaces of the patch along all of its knot planes.
 
