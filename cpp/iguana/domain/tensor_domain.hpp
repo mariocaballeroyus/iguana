@@ -8,8 +8,10 @@
 
 #include <concepts>
 #include <cstddef>
+#include <iterator>
 
 #include "iguana/basis/tensor_bspline.hpp"
+#include "iguana/domain/tensor_domain_iterator.hpp"
 #include "iguana/patch/patch.hpp"
 
 namespace iguana
@@ -50,6 +52,13 @@ public:
     /// @brief Number of elements
     constexpr int num_elements() const noexcept
     { return patch_.basis().num_elements(); }
+
+    /// @brief Iterator at the first element
+    TensorDomainIterator<T, d> begin() const noexcept;
+
+    /// @brief Sentinel past the last element
+    constexpr std::default_sentinel_t end() const noexcept
+    { return std::default_sentinel; }
 
 private:
     /// @brief Background patch
