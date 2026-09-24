@@ -8,8 +8,9 @@ types that hold their C++ instance as _cpp_object
 """
 
 from iguana import cpp
-from iguana.patch import CurvePatch, VolumePatch, create_box
+from iguana.patch import (CurvePatch, SurfacePatch, VolumePatch,
+                          create_box)
 
 __version__ = cpp.__version__
 
-__all__ = ['CurvePatch', 'VolumePatch', 'create_box']
+__all__ = ['CurvePatch', 'SurfacePatch', 'VolumePatch', 'create_box']
