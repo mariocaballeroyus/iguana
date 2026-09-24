@@ -1,7 +1,8 @@
 add_library(iguana
     basis/bspline.cpp
     basis/tensor_bspline.cpp
-    patch/patch.cpp)
+    patch/patch.cpp
+    quadrature/gauss_legendre.cpp)
 
 add_library(IGUANA::iguana ALIAS iguana)
 
