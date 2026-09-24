@@ -1,7 +1,8 @@
 add_executable(iguana_tests
     basis/test_bspline.cpp
     basis/test_tensor_bspline.cpp
-    patch/test_patch.cpp)
+    patch/test_patch.cpp
+    quadrature/test_gauss_legendre.cpp)
 
 target_compile_features(iguana_tests PRIVATE cxx_std_20)
 
