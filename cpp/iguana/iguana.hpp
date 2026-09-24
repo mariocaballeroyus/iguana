@@ -9,5 +9,6 @@
 #include "basis/bspline.hpp"
 #include "basis/tensor_bspline.hpp"
 #include "patch/patch.hpp"
+#include "quadrature/gauss_legendre.hpp"
 
 #endif // IGUANA_IGUANA_HPP
