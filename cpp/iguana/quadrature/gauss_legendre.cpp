@@ -5,9 +5,12 @@
 
 #include "gauss_legendre.hpp"
 
+#include <array>
 #include <cstddef>
 #include <span>
 #include <stdexcept>
+
+#include "iguana/multi_index.hpp"
 
 namespace iguana
 {
@@ -106,43 +109,90 @@ ReferenceRule reference_rule(int num_points)
     case 8: return {nodes_8, weights_8};
     default:
         throw std::invalid_argument("GaussLegendre: "
-                                    "the number of points must lie in "
-                                    "[1, max_points]");
+                                    "the number of points per direction "
+                                    "must lie in [1, max_points]");
     }
+}
+
+/// @brief Same count in every direction
+template<std::size_t d>
+std::array<int, d> uniform(int num_points)
+{
+    std::array<int, d> counts{};
+    counts.fill(num_points);
+
+    return counts;
 }
 
 } // namespace
 
-template<std::floating_point T>
-GaussLegendre<T>::GaussLegendre(int num_points)
+template<std::floating_point T, std::size_t d>
+GaussLegendre<T, d>::GaussLegendre(int num_points)
+    : GaussLegendre(uniform<d>(num_points))
 {
-    const ReferenceRule rule = reference_rule(num_points);
+}
 
-    points_.resize(num_points);
-    weights_.resize(num_points);
+template<std::floating_point T, std::size_t d>
+GaussLegendre<T, d>::GaussLegendre(const std::array<int, d>& num_points)
+{
+    // Univariate rule of each direction, which checks its count
+    std::array<ReferenceRule, d> rules;
+    int total = 1;
 
-    for (int point = 0; point < num_points; ++point) {
-        const std::size_t node = static_cast<std::size_t>(point);
-
-        points_[point] = static_cast<T>(rule.nodes[node]);
-        weights_[point] = static_cast<T>(rule.weights[node]);
+    for (std::size_t direction = 0; direction < d; ++direction) {
+        rules[direction] = reference_rule(num_points[direction]);
+        total *= num_points[direction];
     }
+
+    points_.resize(total, d);
+    weights_.resize(total);
+
+    // Product of the univariate rules, first direction running fastest
+    std::array<int, d> index{};
+    Eigen::Index point = 0;
+
+    do {
+        T weight{1};
+
+        for (std::size_t direction = 0; direction < d; ++direction) {
+            const int node = index[direction];
+
+            points_(point, direction) =
+                static_cast<T>(rules[direction].nodes[node]);
+            weight *= static_cast<T>(rules[direction].weights[node]);
+        }
+
+        weights_[point] = weight;
+        ++point;
+    } while (next_lexicographic(index, num_points));
 }
 
-template<std::floating_point T>
-void GaussLegendre<T>::map_to(T start, T end, Eigen::VectorX<T>& points,
-                              Eigen::VectorX<T>& weights) const
+template<std::floating_point T, std::size_t d>
+void GaussLegendre<T, d>::map_to(const std::array<T, d>& start,
+                                 const std::array<T, d>& end,
+                                 Eigen::MatrixX<T>& points,
+                                 Eigen::VectorX<T>& weights) const
 {
-    // Affine map from the reference interval to parameter space
-    const T half = (end - start) / T{2};
-    const T middle = (start + end) / T{2};
+    points.resize(num_points(), d);
 
-    points = (half * points_.array() + middle).matrix();
+    T jacobian{1};
 
-    // Jacobian scaling (half of element length)
-    weights = half * weights_;
+    for (std::size_t direction = 0; direction < d; ++direction) {
+        // Affine map from the reference interval to parameter space
+        const T half = (end[direction] - start[direction]) / T{2};
+        const T middle = (start[direction] + end[direction]) / T{2};
+
+        points.col(direction).array() =
+            half * points_.col(direction).array() + middle;
+        jacobian *= half;
+    }
+
+    // Jacobian scaling (product of half the element sides)
+    weights = jacobian * weights_;
 }
 
-template class GaussLegendre<double>;
+template class GaussLegendre<double, 1>;
+template class GaussLegendre<double, 2>;
+template class GaussLegendre<double, 3>;
 
 } // namespace iguana
