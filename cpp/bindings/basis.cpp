@@ -27,6 +27,9 @@ void basis(py::module_& module)
     py::class_<TensorBSpline<double, 1>>(module, "UnivariateBSpline")
         .def("axis", &TensorBSpline<double, 1>::axis);
 
+    py::class_<TensorBSpline<double, 2>>(module, "BivariateBSpline")
+        .def("axis", &TensorBSpline<double, 2>::axis);
+
     py::class_<TensorBSpline<double, 3>>(module, "TrivariateBSpline")
         .def(py::init<std::array<BSpline<double>, 3>>(), py::arg("axes"))
         .def("axis", &TensorBSpline<double, 3>::axis);
