@@ -8,6 +8,7 @@
 
 #include "basis/bspline.hpp"
 #include "basis/tensor_bspline.hpp"
+#include "domain/tensor_domain.hpp"
 #include "patch/patch.hpp"
 #include "quadrature/gauss_legendre.hpp"
 
