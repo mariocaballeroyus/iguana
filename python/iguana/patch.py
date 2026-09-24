@@ -46,6 +46,56 @@ class CurvePatch:
                 f'num_control_points={len(self.control_points)})')
 
 
+class SurfacePatch:
+    """A spline map from a two-dimensional parameter box into space."""
+
+    _cpp_object: _cpp.SurfacePatch
+
+    def __init__(self, patch: _cpp.SurfacePatch) -> None:
+        """Initialize the patch from a C++ patch.
+
+        Args:
+            patch: A C++ patch object.
+        """
+        self._cpp_object = patch
+
+    @property
+    def degrees(self) -> tuple[int, ...]:
+        """Polynomial degree of each parametric direction."""
+        basis = self._cpp_object.basis
+
+        return tuple(basis.axis(direction).degree
+                     for direction in range(2))
+
+    @property
+    def knots(self) -> tuple[npt.NDArray[np.float64], ...]:
+        """Knot vector of each parametric direction."""
+        basis = self._cpp_object.basis
+
+        return tuple(np.asarray(basis.axis(direction).knots, float)
+                     for direction in range(2))
+
+    @property
+    def control_points(self) -> npt.NDArray[np.float64]:
+        """Control points, of shape ``(num_control_points, 3)``.
+
+        They are numbered with the first direction running fastest.
+        """
+        return self._cpp_object.coefficients
+
+    def isocurves(self) -> list[CurvePatch]:
+        """Isocurves of the patch along all of its knot lines.
+
+        The curves pinned in the first direction come first, then those
+        pinned in the second, each group in increasing order of knot line.
+        """
+        return [CurvePatch(curve) for curve in self._cpp_object.isocurves()]
+
+    def __repr__(self) -> str:
+        return (f'SurfacePatch(degrees={self.degrees}, '
+                f'num_control_points={len(self.control_points)})')
+
+
 class VolumePatch:
     """A spline map from a three-dimensional parameter box into space."""
 
@@ -84,9 +134,16 @@ class VolumePatch:
         """
         return self._cpp_object.coefficients
 
-    def isocurves(self) -> list[CurvePatch]:
-        """Isocurves of the patch along the knot lines of its faces."""
-        return [CurvePatch(curve) for curve in self._cpp_object.isocurves()]
+    def isosurfaces(self) -> list[SurfacePatch]:
+        """Isosurfaces of the patch along all of its knot planes.
+
+        The surfaces pinned in the first direction come first, then those
+        pinned in the second and third, each group in increasing order of
+        knot plane. Each surface keeps the remaining two directions, in
+        increasing order.
+        """
+        return [SurfacePatch(surface)
+                for surface in self._cpp_object.isosurfaces()]
 
     def __repr__(self) -> str:
         return (f'VolumePatch(degrees={self.degrees}, '
