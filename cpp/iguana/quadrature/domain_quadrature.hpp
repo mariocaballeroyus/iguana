@@ -11,6 +11,8 @@
 
 #include <Eigen/Core>
 
+#include "iguana/domain/tensor_domain.hpp"
+
 namespace iguana
 {
 
@@ -21,6 +23,10 @@ namespace iguana
  * marks where the points of each element start. Elements may hold different
  * numbers of points, so that cut elements can carry rules of their own, and
  * elements that are not integrated are left out
+ *
+ * A quadrature is filled one cell type at a time, each with a rule of its
+ * own, such as Gauss-Legendre on inside cells and moment fitting on cut
+ * cells
  *
  * The points lie in the parameter space of the domain. The weights include
  * the measure of their element in parameter space but not the Jacobian of
@@ -35,6 +41,9 @@ class DomainQuadrature
 public:
     /// @brief Number of parametric directions
     static constexpr std::size_t dimension = d;
+
+    /// @brief Constructs an empty quadrature, which integrates nothing
+    DomainQuadrature();
 
     /**
      * @brief Constructs the quadrature from its flat arrays
@@ -53,6 +62,29 @@ public:
      */
     DomainQuadrature(Eigen::VectorXi elements, Eigen::VectorXi offsets,
                      Eigen::MatrixX<T> points, Eigen::VectorX<T> weights);
+
+    /**
+     * @brief Fills the cells of one type of a domain with a rule
+     *
+     * The rule gives the points and weights of every cell of the type,
+     * which are appended in increasing element index after the elements
+     * already held. If it throws, the quadrature is left unchanged
+     *
+     * @tparam Rule Rule with map_to(start, end, points, weights), which
+     *         fills the points, of size (num_points, d), and weights of the
+     *         box from start to end, as GaussLegendre::map_to() does. The
+     *         number of points may differ from one cell to another
+     *
+     * @param domain Domain whose cells are integrated
+     * @param cell_type Type of the cells to fill
+     * @param rule Rule giving the points and weights of each cell
+     *
+     * @throws std::invalid_argument If an element already held lies
+     *         outside the domain, or if a cell of this type is already held
+     */
+    template<typename Rule>
+    void fill(const TensorDomain<T, d>& domain, CellType cell_type,
+              const Rule& rule);
 
     /// @brief Number of integrated elements
     constexpr int num_elements() const noexcept
