@@ -1,6 +1,6 @@
 set(IGUANA_PYTHON_DIR ${PROJECT_BINARY_DIR}/python/iguana)
 
-pybind11_add_module(iguana_python module.cpp basis.cpp patch.cpp)
+pybind11_add_module(iguana_python module.cpp basis.cpp patch.cpp domain.cpp)
 
 set_target_properties(iguana_python PROPERTIES
     OUTPUT_NAME cpp
