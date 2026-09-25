@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef IGUANA_PATCH_PATCH_HPP
-#define IGUANA_PATCH_PATCH_HPP
+#ifndef IGUANA_GEOMETRY_PATCH_HPP
+#define IGUANA_GEOMETRY_PATCH_HPP
 
 #include <concepts>
 #include <cstddef>
@@ -98,4 +98,4 @@ private:
 
 } // namespace iguana
 
-#endif // IGUANA_PATCH_PATCH_HPP
+#endif // IGUANA_GEOMETRY_PATCH_HPP

@@ -15,7 +15,7 @@
 #include <pybind11/stl.h>
 
 #include "iguana/iguana.hpp"
-#include "iguana/multi_index.hpp"
+#include "iguana/utils/multi_index.hpp"
 
 namespace py = pybind11;
 

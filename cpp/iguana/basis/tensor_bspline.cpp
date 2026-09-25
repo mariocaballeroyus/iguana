@@ -8,7 +8,7 @@
 #include <span>
 #include <utility>
 
-#include "iguana/multi_index.hpp"
+#include "iguana/utils/multi_index.hpp"
 
 namespace iguana
 {

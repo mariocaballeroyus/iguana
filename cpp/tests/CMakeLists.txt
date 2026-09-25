@@ -2,7 +2,7 @@ add_executable(iguana_tests
     basis/test_bspline.cpp
     basis/test_tensor_bspline.cpp
     domain/test_tensor_domain.cpp
-    patch/test_patch.cpp
+    geometry/test_patch.cpp
     quadrature/test_domain_quadrature.cpp
     quadrature/test_gauss_legendre.cpp)
 

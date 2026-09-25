@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef IGUANA_MULTI_INDEX_HPP
-#define IGUANA_MULTI_INDEX_HPP
+#ifndef IGUANA_UTILS_MULTI_INDEX_HPP
+#define IGUANA_UTILS_MULTI_INDEX_HPP
 
 #include <array>
 #include <cstddef>
@@ -63,4 +63,4 @@ int flatten(const std::array<int, d>& index,
 
 } // namespace iguana
 
-#endif // IGUANA_MULTI_INDEX_HPP
+#endif // IGUANA_UTILS_MULTI_INDEX_HPP

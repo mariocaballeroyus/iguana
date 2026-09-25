@@ -3,7 +3,7 @@ add_library(iguana
     basis/tensor_bspline.cpp
     domain/tensor_domain.cpp
     domain/tensor_domain_iterator.cpp
-    patch/patch.cpp
+    geometry/patch.cpp
     quadrature/domain_quadrature.cpp
     quadrature/gauss_legendre.cpp)
 
