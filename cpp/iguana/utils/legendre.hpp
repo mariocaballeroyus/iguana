@@ -6,12 +6,15 @@
 #ifndef IGUANA_UTILS_LEGENDRE_HPP
 #define IGUANA_UTILS_LEGENDRE_HPP
 
+#include <array>
 #include <concepts>
 #include <cstddef>
 #include <span>
 #include <type_traits>
 
 #include <Eigen/Core>
+
+#include "iguana/utils/multi_index.hpp"
 
 namespace iguana
 {
@@ -101,6 +104,64 @@ void legendre_antiderivatives(int degree,
             current = next;
         }
     }
+}
+
+/**
+ * @brief Evaluates the tensor-product Legendre polynomials up to a degree
+ *        in each direction
+ *
+ * The products P_{j_1}(xi_1) ... P_{j_d}(xi_d), with every j_k from 0 to
+ * degree, are ordered with j_1 running fastest, as the multi-indices of
+ * the library run
+ *
+ * @param degree Highest degree of each direction
+ * @param points Points at which the products are evaluated, usually in
+ *        [-1, 1]^d, with size (num_points, d)
+ * @param values Output matrix with size ((degree + 1)^d, num_points), one
+ *        row per product. It is resized when necessary
+ *
+ * @pre @p degree is non-negative and @p points has d columns
+ */
+template<std::floating_point T, std::size_t d>
+void tensor_legendre_polynomials(int degree,
+                                 const Eigen::MatrixX<T>& points,
+                                 Eigen::MatrixX<T>& values)
+{
+    const Eigen::Index num_points = points.rows();
+
+    // Polynomials of each direction, one row per degree
+    std::array<Eigen::MatrixX<T>, d> univariate;
+
+    for (std::size_t direction = 0; direction < d; ++direction) {
+        const std::span<const T> coordinates(points.col(direction).data(),
+                                             num_points);
+
+        legendre_polynomials(degree, coordinates, univariate[direction]);
+    }
+
+    std::array<int, d> degrees{};
+    std::array<int, d> bounds{};
+    bounds.fill(degree + 1);
+
+    int num_products = 1;
+
+    for (std::size_t direction = 0; direction < d; ++direction)
+        num_products *= degree + 1;
+
+    values.resize(num_products, num_points);
+
+    // One row per product, with the first degree running fastest
+    int product = 0;
+
+    do {
+        values.row(product) = univariate[0].row(degrees[0]);
+
+        for (std::size_t direction = 1; direction < d; ++direction)
+            values.row(product).array() *=
+                univariate[direction].row(degrees[direction]).array();
+
+        ++product;
+    } while (next_lexicographic(degrees, bounds));
 }
 
 } // namespace iguana
