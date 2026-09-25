@@ -4,7 +4,8 @@ add_executable(iguana_tests
     domain/test_tensor_domain.cpp
     geometry/test_patch.cpp
     quadrature/test_domain_quadrature.cpp
-    quadrature/test_gauss_legendre.cpp)
+    quadrature/test_gauss_legendre.cpp
+    utils/test_legendre.cpp)
 
 target_compile_features(iguana_tests PRIVATE cxx_std_20)
 
