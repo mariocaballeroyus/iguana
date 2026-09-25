@@ -5,7 +5,7 @@
 
 #include "tensor_domain_iterator.hpp"
 
-#include "iguana/multi_index.hpp"
+#include "iguana/utils/multi_index.hpp"
 
 namespace iguana
 {

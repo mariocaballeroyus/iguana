@@ -10,7 +10,7 @@
 #include <span>
 #include <stdexcept>
 
-#include "iguana/multi_index.hpp"
+#include "iguana/utils/multi_index.hpp"
 
 namespace iguana
 {

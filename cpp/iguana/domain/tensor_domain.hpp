@@ -14,7 +14,7 @@
 
 #include "iguana/basis/tensor_bspline.hpp"
 #include "iguana/domain/tensor_domain_iterator.hpp"
-#include "iguana/patch/patch.hpp"
+#include "iguana/geometry/patch.hpp"
 
 namespace iguana
 {
