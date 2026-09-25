@@ -12,6 +12,8 @@
 
 #include <Eigen/Core>
 
+#include "iguana/quadrature/quadrature_rule.hpp"
+
 namespace iguana
 {
 
@@ -25,15 +27,12 @@ namespace iguana
  * @tparam d Number of parametric directions
  */
 template<std::floating_point T, std::size_t d>
-class GaussLegendre
+class GaussLegendre final : public QuadratureRule<T, d>
 {
     static_assert(d > 0, "GaussLegendre: "
                          "the parametric dimension must be positive");
 
 public:
-    /// @brief Number of parametric directions
-    static constexpr std::size_t dimension = d;
-
     /// @brief Largest tabulated number of points per direction
     static constexpr int max_points = 8;
 
@@ -90,7 +89,8 @@ public:
      * @pre @p start lies below @p end in every direction
      */
     void map_to(const std::array<T, d>& start, const std::array<T, d>& end,
-                Eigen::MatrixX<T>& points, Eigen::VectorX<T>& weights) const;
+                Eigen::MatrixX<T>& points,
+                Eigen::VectorX<T>& weights) const override;
 
 private:
     /// @brief Reference points on [-1, 1]^d, with size (num_points, d)

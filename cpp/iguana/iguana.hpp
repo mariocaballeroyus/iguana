@@ -13,5 +13,6 @@
 #include "patch/patch.hpp"
 #include "quadrature/domain_quadrature.hpp"
 #include "quadrature/gauss_legendre.hpp"
+#include "quadrature/quadrature_rule.hpp"
 
 #endif // IGUANA_IGUANA_HPP
