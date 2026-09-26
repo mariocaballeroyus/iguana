@@ -32,13 +32,14 @@ namespace
 template<std::floating_point T>
 std::array<std::vector<T>, 2> tabulated_rule(int degree)
 {
-    if (degree == 1) {
+    switch (degree) {
+    case 1: {
         // Xiao-Gimbutas, 1 point, degree 1
         std::vector<T> x = {0.3333333333333333, 0.3333333333333333};
         std::vector<T> w = {0.5};
         return {std::move(x), std::move(w)};
     }
-    else if (degree == 2) {
+    case 2: {
         // Xiao-Gimbutas, 3 points, degree 2
         std::vector<T> x
             = {0.16666666666666666, 0.16666666666666666, 0.16666666666666666,
@@ -47,7 +48,7 @@ std::array<std::vector<T>, 2> tabulated_rule(int degree)
             = {0.16666666666666666, 0.16666666666666666, 0.16666666666666666};
         return {std::move(x), std::move(w)};
     }
-    else if (degree == 3) {
+    case 3: {
         // Xiao-Gimbutas, 6 points, degree 3
         std::vector<T> x
             = {0.4459484909159649,  0.4459484909159649, 0.09157621350977085,
@@ -59,7 +60,7 @@ std::array<std::vector<T>, 2> tabulated_rule(int degree)
                0.05497587182766094, 0.11169079483900574, 0.05497587182766094};
         return {std::move(x), std::move(w)};
     }
-    else if (degree == 4) {
+    case 4: {
         // Xiao-Gimbutas, 6 points, degree 4
         std::vector<T> x
             = {0.4459484909159649,  0.4459484909159649, 0.09157621350977085,
@@ -71,7 +72,7 @@ std::array<std::vector<T>, 2> tabulated_rule(int degree)
                0.05497587182766094, 0.11169079483900574, 0.05497587182766094};
         return {std::move(x), std::move(w)};
     }
-    else if (degree == 5) {
+    case 5: {
         // Xiao-Gimbutas, 7 points, degree 5
         std::vector<T> x
             = {0.3333333333333333,  0.3333333333333333,  0.1012865073234564,
@@ -85,7 +86,7 @@ std::array<std::vector<T>, 2> tabulated_rule(int degree)
                0.0661970763942531};
         return {std::move(x), std::move(w)};
     }
-    else if (degree == 6) {
+    case 6: {
         // Xiao-Gimbutas, 12 points, degree 6
         std::vector<T> x
             = {0.21942998254978302,  0.21942998254978302,  0.48013796411221504,
@@ -103,7 +104,7 @@ std::array<std::vector<T>, 2> tabulated_rule(int degree)
                0.02031727989683033, 0.02031727989683033, 0.02031727989683033};
         return {std::move(x), std::move(w)};
     }
-    else if (degree == 7) {
+    case 7: {
         // Xiao-Gimbutas, 15 points, degree 7
         std::vector<T> x
             = {0.47319565368925104,  0.47319565368925104,  0.057797640054506494,
@@ -127,7 +128,7 @@ std::array<std::vector<T>, 2> tabulated_rule(int degree)
                0.027877270270345547};
         return {std::move(x), std::move(w)};
     }
-    else if (degree == 8) {
+    case 8: {
         // Xiao-Gimbutas, 16 points, degree 8
         std::vector<T> x
             = {0.3333333333333333,   0.3333333333333333,  0.17056930775176027,
@@ -150,7 +151,7 @@ std::array<std::vector<T>, 2> tabulated_rule(int degree)
                0.013615157087217498};
         return {std::move(x), std::move(w)};
     }
-    else if (degree == 9) {
+    case 9: {
         // Xiao-Gimbutas, 19 points, degree 9
         std::vector<T> x
             = {0.3333333333333333,  0.3333333333333333,  0.4896825191987376,
@@ -176,7 +177,7 @@ std::array<std::vector<T>, 2> tabulated_rule(int degree)
                0.021641769688644688};
         return {std::move(x), std::move(w)};
     }
-    else if (degree == 10) {
+    case 10: {
         // Xiao-Gimbutas, 25 points, degree 10
         std::vector<T> x
             = {0.3333333333333333,   0.3333333333333333,   0.4951734598011705,
@@ -208,7 +209,7 @@ std::array<std::vector<T>, 2> tabulated_rule(int degree)
                0.019369524543009452};
         return {std::move(x), std::move(w)};
     }
-    else if (degree == 11) {
+    case 11: {
         // Xiao-Gimbutas, 28 points, degree 11
         std::vector<T> x
             = {0.3333333333333333,    0.3333333333333333,
@@ -256,7 +257,7 @@ std::array<std::vector<T>, 2> tabulated_rule(int degree)
                0.007278811668904623,  0.020321424327943236};
         return {std::move(x), std::move(w)};
     }
-    else if (degree == 12) {
+    case 12: {
         // Xiao-Gimbutas, 33 points, degree 12
         std::vector<T> x
             = {0.27146250701492614,  0.27146250701492614,  0.10925782765935432,
@@ -301,7 +302,7 @@ std::array<std::vector<T>, 2> tabulated_rule(int degree)
                0.01089179251930378};
         return {std::move(x), std::move(w)};
     }
-    else if (degree == 13) {
+    case 13: {
         // Xiao-Gimbutas, 37 points, degree 13
         std::vector<T> x
             = {0.3333333333333333,   0.3333333333333333,   0.4961358947410461,
@@ -351,9 +352,10 @@ std::array<std::vector<T>, 2> tabulated_rule(int degree)
                0.007696536341891089};
         return {std::move(x), std::move(w)};
     }
-    else
+    default:
         throw std::invalid_argument("XiaoGimbutas: "
                                     "the degree must lie in [1, max_degree]");
+    }
 }
 
 } // namespace
