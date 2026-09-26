@@ -16,6 +16,7 @@
 #include <Eigen/LU>
 
 #include "iguana/embedding/clipper.hpp"
+#include "iguana/embedding/inside.hpp"
 #include "iguana/embedding/slicer.hpp"
 #include "iguana/quadrature/gauss_legendre.hpp"
 #include "iguana/quadrature/xiao_gimbutas.hpp"
@@ -72,31 +73,24 @@ template<std::floating_point T>
 Eigen::VectorX<T> point_moments(const std::vector<std::pair<T, int>>& points,
                                 int order)
 {
-    std::vector<T> inside;
+    // The points within the cell
+    std::vector<T> within;
     std::vector<T> signs;
 
-    // Entries minus exits up to the upper end, positive if it is inside
-    int depth = 0;
-
     for (const auto& [coordinate, sign] : points) {
-        if (coordinate > 1)
-            continue;
-
-        depth -= sign;
-
-        if (coordinate >= -1) {
-            inside.push_back(coordinate);
+        if (coordinate >= -1 && coordinate <= 1) {
+            within.push_back(coordinate);
             signs.push_back(sign);
         }
     }
 
-    const Eigen::Index num_inside = inside.size();
+    const Eigen::Index num_within = within.size();
     Eigen::VectorX<T> result = integrate<T, 1>(
         order,
-        Eigen::Map<const Eigen::MatrixX<T>>(inside.data(), num_inside, 1),
-        Eigen::Map<const Eigen::VectorX<T>>(signs.data(), num_inside));
+        Eigen::Map<const Eigen::MatrixX<T>>(within.data(), num_within, 1),
+        Eigen::Map<const Eigen::VectorX<T>>(signs.data(), num_within));
 
-    if (depth > 0)
+    if (is_inside(points, T{1}))
         add_upper_face(result, Eigen::VectorX<T>::Ones(1).eval());
 
     return result;
