@@ -8,11 +8,13 @@
 #include <array>
 #include <cstddef>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 #include <Eigen/Core>
 #include <unsupported/Eigen/NNLS>
 
+#include "iguana/embedding/inside.hpp"
 #include "iguana/quadrature/moments.hpp"
 #include "iguana/utils/legendre.hpp"
 #include "iguana/utils/multi_index.hpp"
@@ -49,41 +51,56 @@ int checked(int order, int max_order)
     return order;
 }
 
-/// @brief Points of a rule on each of 2^level boxes per direction of
-///        [-1, 1]^d, one per row
+/// @brief Candidates of a cell, the grid of the nodes of a rule on each of
+///        2^level intervals of [-1, 1] per direction, those inside the domain
 template<std::floating_point T, std::size_t d>
-Eigen::MatrixX<T> box_points(const GaussLegendre<T, d>& rule, int level)
+Eigen::MatrixX<T>
+candidate_points(const std::vector<Eigen::Matrix<T, d, d>>& facets,
+                 const GaussLegendre<T, 1>& rule, int level)
 {
-    const int num_boxes = 1 << level;
-    const T size = T{2} / num_boxes;
+    const int num_intervals = 1 << level;
+    const int num_nodes = num_intervals * rule.num_points();
+    const T size = T{2} / num_intervals;
 
-    std::array<int, d> box{};
-    std::array<int, d> bounds{};
-    bounds.fill(num_boxes);
-
-    int total = rule.num_points();
-
-    for (std::size_t axis = 0; axis < d; ++axis)
-        total *= num_boxes;
-
-    Eigen::MatrixX<T> result(total, d);
-
-    std::array<T, d> lower;
-    std::array<T, d> upper;
+    // The nodes of one direction, the rule on each interval
+    Eigen::VectorX<T> nodes(num_nodes);
     Eigen::MatrixX<T> points;
     Eigen::VectorX<T> weights;
-    Eigen::Index offset = 0;
+
+    for (int interval = 0; interval < num_intervals; ++interval) {
+        const T lower = -1 + interval * size;
+
+        rule.map_to({lower}, {lower + size}, points, weights);
+        nodes.segment(interval * rule.num_points(), rule.num_points()) =
+            points.col(0);
+    }
+
+    // The grid line by line along x_1, through the nodes of the others
+    std::array<int, d - 1> index{};
+    std::array<int, d - 1> bounds{};
+    bounds.fill(num_nodes);
+
+    Eigen::MatrixX<T> line(num_nodes, d);
+    line.col(0) = nodes;
+
+    std::vector<Eigen::Vector<T, d>> inside;
 
     do {
-        for (std::size_t axis = 0; axis < d; ++axis) {
-            lower[axis] = -1 + box[axis] * size;
-            upper[axis] = lower[axis] + size;
-        }
+        for (std::size_t axis = 1; axis < d; ++axis)
+            line.col(axis).setConstant(nodes(index[axis - 1]));
 
-        rule.map_to(lower, upper, points, weights);
-        result.middleRows(offset, points.rows()) = points;
-        offset += points.rows();
-    } while (next_lexicographic(box, bounds));
+        const Eigen::Array<bool, Eigen::Dynamic, 1> is_in =
+            is_inside<T, d>(facets, line);
+
+        for (Eigen::Index point = 0; point < num_nodes; ++point)
+            if (is_in(point))
+                inside.push_back(line.row(point));
+    } while (next_lexicographic(index, bounds));
+
+    Eigen::MatrixX<T> result(inside.size(), d);
+
+    for (std::size_t row = 0; row < inside.size(); ++row)
+        result.row(row) = inside[row];
 
     return result;
 }
@@ -94,6 +111,11 @@ template<std::floating_point T, std::size_t d>
 T fit(int order, const Eigen::MatrixX<T>& candidates,
       const Eigen::VectorX<T>& moments, Eigen::VectorX<T>& weights)
 {
+    if (candidates.rows() == 0) {
+        weights.resize(0);
+        return T{1};
+    }
+
     // Each Legendre product at each candidate, one column per candidate
     Eigen::MatrixX<T> system;
     tensor_legendre_polynomials<T, d>(order, candidates, system);
@@ -163,7 +185,7 @@ void MomentFitting<T, d>::reference_rule(const std::array<T, d>& start,
 
     for (int level = 1; level <= max_level && residual > target_residual;
          ++level) {
-        candidates = box_points(candidate_rule_, level);
+        candidates = candidate_points<T, d>(facets, candidate_rule_, level);
         residual = fit<T, d>(order_, candidates, moments, fitted);
     }
 

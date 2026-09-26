@@ -64,11 +64,11 @@ public:
      * @brief Rule of a cell on the reference cell, fitted to the moments of
      *        its part inside the domain
      *
-     * Non-negative least squares weights the Gauss points of 2, then 4,
-     * boxes per direction to reproduce reference_moments(), keeping at most
-     * (order + 1)^d of positive weight. A cell whose part inside is below a
-     * thousandth of it, or whose fit misses by more than a hundredth, gets
-     * no points
+     * Non-negative least squares weights the Gauss points inside the domain
+     * of 2, then 4, boxes per direction to reproduce reference_moments(),
+     * keeping at most (order + 1)^d of positive weight. A cell whose part
+     * inside is below a thousandth of it, or whose fit misses by more than
+     * a hundredth, gets no points
      *
      * @param start Parameters at which the cell starts
      * @param end Parameters at which the cell ends
@@ -91,8 +91,9 @@ private:
     /// @brief Highest Legendre degree of each direction
     int order_;
 
-    /// @brief Rule whose points in each box are the candidates
-    GaussLegendre<T, d> candidate_rule_;
+    /// @brief Rule on each interval whose nodes, per direction, grid the
+    ///        candidates
+    GaussLegendre<T, 1> candidate_rule_;
 };
 
 } // namespace iguana
