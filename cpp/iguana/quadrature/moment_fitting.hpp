@@ -13,6 +13,7 @@
 
 #include <Eigen/Core>
 
+#include "iguana/quadrature/gauss_legendre.hpp"
 #include "iguana/quadrature/quadrature_rule.hpp"
 
 namespace iguana
@@ -42,12 +43,12 @@ reference_moments(const std::vector<Eigen::Matrix<T, d, d>>& facets,
                   int order);
 
 /**
- * @brief Moment-fitted rules on the cut cells of a domain bounded by
- *        closed facets
+ * @brief Moment-fitted rules on the cut cells of a domain bounded by closed
+ *        facets
  *
- * The rule of a cell integrates exactly the tensor-product Legendre
- * polynomials up to an order in each direction, over the part of the cell
- * inside the trimmed domain
+ * The rule of a cell integrates the Legendre products up to an order in
+ * each direction over its part inside the domain, fitted by non-negative
+ * least squares after Messmer et al. (CMAME 400, 2022)
  *
  * @tparam T Floating-point type
  * @tparam d Number of parametric directions, two or three
@@ -60,34 +61,37 @@ class MomentFitting final : public QuadratureRule<T, d>
                                     "parametric directions");
 
 public:
+    /// @brief Highest order, the one the rules on the facets reach
+    static constexpr int max_order = d == 3 ? 4 : 7;
+
     /**
      * @brief Constructs the rules of a domain
      *
      * @param vertices Vertices of the facets in parameter space, with size
      *        (num_vertices, d)
-     * @param facets Vertices of each facet, triangles in three directions
-     *        and segments in two, ordered so that its normal points
-     *        outwards, with size (num_facets, d)
+     * @param facets Vertices of each facet, with size (num_facets, d):
+     *        segments with the domain on their left, or triangles
+     *        counterclockwise seen from outside
      * @param order Highest Legendre degree of each direction
-     * @param subdivisions Number of intervals per direction over a cell
-     *        whose Gauss points the rays pass through
      *
      * @throws std::invalid_argument If the vertices or facets do not have
-     *         d columns, if a facet refers to a missing vertex, if
-     *         @p order is negative, or if @p subdivisions is not positive
+     *         d columns, if a facet refers to a missing vertex, or if
+     *         @p order lies outside [0, max_order]
+     *
+     * @pre The facets close the domain
      */
-    MomentFitting(Eigen::MatrixX<T> vertices, Eigen::MatrixXi facets,
-                  int order, int subdivisions);
+    MomentFitting(const Eigen::MatrixX<T>& vertices,
+                  const Eigen::MatrixXi& facets, int order);
 
     /**
      * @brief Rule of a cell on the reference cell, fitted to the moments of
      *        its part inside the domain
      *
-     * The moments, the integrals of the Legendre polynomials over that
-     * part, are taken along rays through the cell. Non-negative least
-     * squares then keeps some points of the rays inside the domain, at most
-     * (order + 1)^d, with positive weights that reproduce the moments. A
-     * cell outside the domain gets no points
+     * Non-negative least squares weights the Gauss points of 2, then 4,
+     * boxes per direction to reproduce reference_moments(), keeping at most
+     * (order + 1)^d of positive weight. A cell whose part inside is below a
+     * thousandth of it, or whose fit misses by more than a hundredth, gets
+     * no points
      *
      * @param start Parameters at which the cell starts
      * @param end Parameters at which the cell ends
@@ -104,17 +108,14 @@ public:
                         Eigen::VectorX<T>& weights) const override;
 
 private:
-    /// @brief Vertices of the facets, with size (num_vertices, d)
-    Eigen::MatrixX<T> vertices_;
-
-    /// @brief Vertices of each facet, with size (num_facets, d)
-    Eigen::MatrixXi facets_;
+    /// @brief Vertices of each facet in parameter space, one per column
+    std::vector<Eigen::Matrix<T, d, d>> facets_;
 
     /// @brief Highest Legendre degree of each direction
     int order_;
 
-    /// @brief Number of intervals per direction the rays of a cell cover
-    int subdivisions_;
+    /// @brief Rule whose points in each box are the candidates
+    GaussLegendre<T, d> candidate_rule_;
 };
 
 } // namespace iguana
