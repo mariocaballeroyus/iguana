@@ -56,8 +56,8 @@ public:
                   int order, int subdivisions);
 
     /**
-     * @brief Rule of a cell fitted to the moments of its part inside the
-     *        domain
+     * @brief Rule of a cell on the reference cell, fitted to the moments of
+     *        its part inside the domain
      *
      * The moments, the integrals of the Legendre polynomials over that
      * part, are taken along rays through the cell. Non-negative least
@@ -67,16 +67,17 @@ public:
      *
      * @param start Parameters at which the cell starts
      * @param end Parameters at which the cell ends
-     * @param points Output matrix of the points, with size (num_points, d).
-     *        It is resized when necessary
+     * @param points Output matrix of the points in [-1, 1]^d, with size
+     *        (num_points, d). It is resized when necessary
      * @param weights Output vector of their weights, with size num_points.
      *        It is resized when necessary
      *
      * @pre @p start lies below @p end in every direction
      */
-    void map_to(const std::array<T, d>& start, const std::array<T, d>& end,
-                Eigen::MatrixX<T>& points,
-                Eigen::VectorX<T>& weights) const override;
+    void reference_rule(const std::array<T, d>& start,
+                        const std::array<T, d>& end,
+                        Eigen::MatrixX<T>& points,
+                        Eigen::VectorX<T>& weights) const override;
 
 private:
     /// @brief Vertices of the facets, with size (num_vertices, d)

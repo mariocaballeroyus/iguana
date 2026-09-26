@@ -66,14 +66,14 @@ public:
     /**
      * @brief Fills the cells of one type of a domain with a rule
      *
-     * The rule gives the points and weights of every cell of the type,
-     * which are appended in increasing element index after the elements
-     * already held. If it throws, the quadrature is left unchanged
+     * The rule gives the points and weights of every cell of the type on the
+     * reference cell, which map_to_cell() places on the cell and which are
+     * appended in increasing element index after the elements already held.
+     * If it throws, the quadrature is left unchanged
      *
-     * @tparam Rule Rule with map_to(start, end, points, weights), which
-     *         fills the points, of size (num_points, d), and weights of the
-     *         box from start to end, as GaussLegendre::map_to() does. The
-     *         number of points may differ from one cell to another
+     * @tparam Rule Rule with reference_rule(start, end, points, weights), as
+     *         QuadratureRule states it. The number of points may differ
+     *         from one cell to another
      *
      * @param domain Domain whose cells are integrated
      * @param cell_type Type of the cells to fill
