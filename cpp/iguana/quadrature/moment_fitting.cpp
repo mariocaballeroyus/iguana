@@ -5,16 +5,20 @@
 
 #include "moment_fitting.hpp"
 
+#include <array>
 #include <cstddef>
 #include <span>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
 #include <Eigen/Core>
+#include <Eigen/LU>
 
 #include "iguana/embedding/clipper.hpp"
 #include "iguana/embedding/slicer.hpp"
 #include "iguana/quadrature/gauss_legendre.hpp"
+#include "iguana/quadrature/xiao_gimbutas.hpp"
 #include "iguana/utils/legendre.hpp"
 
 namespace iguana
@@ -23,15 +27,8 @@ namespace iguana
 namespace
 {
 
-/**
- * @brief Integrals of Q_{j_1} P_{j_2} ... P_{j_k} n_1 over pieces of a
- *        boundary in [-1, 1]^k, from their quadrature points
- *
- * @param order Highest Legendre degree of each direction
- * @param points Quadrature points on the pieces, one per row
- * @param weights Their weights, carrying n_1 and the measure of the pieces
- * @return Integrals, with j_1 running fastest
- */
+/// @brief Integrals of Q_{j_1} P_{j_2} ... P_{j_k} n_1 over boundary points,
+///        whose weights carry n_1, with j_1 running fastest
 template<std::floating_point T, std::size_t k>
 Eigen::VectorX<T> integrate(int order, const Eigen::MatrixX<T>& points,
                             const Eigen::VectorX<T>& weights)
@@ -49,8 +46,7 @@ Eigen::VectorX<T> integrate(int order, const Eigen::MatrixX<T>& points,
         tensor_legendre_polynomials<T, k - 1>(order, points.rightCols(k - 1),
                                               products);
 
-        // One row per degree of the first direction and one column per
-        // product of the others, whose column-major order runs j_1 fastest
+        // Rows over j_1 and columns over the rest, so j_1 runs fastest
         const Eigen::MatrixX<T> result =
             antiderivatives * weights.asDiagonal() * products.transpose();
 
@@ -58,8 +54,7 @@ Eigen::VectorX<T> integrate(int order, const Eigen::MatrixX<T>& points,
     }
 }
 
-/// @brief Adds the upper face x_1 = 1 to the moments of a cell: twice the
-///        moments of the section there, to those with j_1 = 0
+/// @brief Adds the upper face: twice the section's moments, where j_1 = 0
 template<std::floating_point T>
 void add_upper_face(Eigen::VectorX<T>& moments,
                     const Eigen::VectorX<T>& section)
@@ -71,14 +66,8 @@ void add_upper_face(Eigen::VectorX<T>& moments,
     matrix.row(0) += 2 * section.transpose();
 }
 
-/**
- * @brief Moments of the part of [-1, 1] inside a domain bounded by points
- *
- * @param points Points bounding the domain, each with +1 where the domain
- *        ends and -1 where it starts
- * @param order Highest Legendre degree
- * @return Moments, with size order + 1
- */
+/// @brief Moments of the part of [-1, 1] bounded by signed points, +1 where
+///        the domain ends and -1 where it starts
 template<std::floating_point T>
 Eigen::VectorX<T> point_moments(const std::vector<std::pair<T, int>>& points,
                                 int order)
@@ -115,52 +104,101 @@ Eigen::VectorX<T> point_moments(const std::vector<std::pair<T, int>>& points,
 
 } // namespace
 
-template<std::floating_point T>
+template<std::floating_point T, std::size_t d>
 Eigen::VectorX<T>
-reference_moments(const std::vector<Eigen::Matrix2<T>>& segments, int order)
+reference_moments(const std::vector<Eigen::Matrix<T, d, d>>& facets,
+                  int order)
 {
-    // Parts of the segments inside the square, and the section at u = 1
-    std::vector<Eigen::Matrix2<T>> pieces;
-    std::vector<std::pair<T, int>> section;
+    static_assert(d == 2 || d == 3, "reference_moments: "
+                                    "the cell must have two or three "
+                                    "directions");
 
-    for (const Eigen::Matrix2<T>& segment : segments) {
-        if (const auto piece = clip_segment<T>(segment, {-1, -1}, {1, 1}))
-            pieces.push_back(*piece);
+    std::array<T, d> lower;
+    std::array<T, d> upper;
+    lower.fill(-1);
+    upper.fill(1);
 
-        if (const auto point = slice_segment<T>(segment, 0, 1))
-            section.push_back(*point);
+    // Parts inside the cell, as a vertex and edges, and the section at x_1 = 1
+    std::vector<Eigen::Matrix<T, d, d>> pieces;
+    std::vector<std::conditional_t<d == 2, std::pair<T, int>,
+                                   Eigen::Matrix2<T>>>
+        section;
+
+    for (const Eigen::Matrix<T, d, d>& facet : facets) {
+        if constexpr (d == 2) {
+            if (const auto part = clip_segment<T>(facet, lower, upper)) {
+                Eigen::Matrix2<T> piece;
+                piece << part->col(0), part->col(1) - part->col(0);
+                pieces.push_back(piece);
+            }
+
+            if (const auto point = slice_segment<T>(facet, 0, 1))
+                section.push_back(*point);
+        }
+        else if constexpr (d == 3) {
+            // The clipped polygon, fanned from its first vertex
+            const auto polygon = clip_triangle<T>(facet, lower, upper);
+
+            for (Eigen::Index vertex = 1; vertex + 1 < polygon.cols();
+                 ++vertex) {
+                Eigen::Matrix3<T> piece;
+                piece << polygon.col(0), polygon.col(vertex) - polygon.col(0),
+                    polygon.col(vertex + 1) - polygon.col(0);
+                pieces.push_back(piece);
+            }
+
+            if (const auto segment = slice_triangle<T>(facet, 0, 1))
+                section.push_back(*segment);
+        }
     }
 
-    // Gauss rule on [0, 1], exact to degree 2 order + 1, that of the
-    // integrand along a segment
-    Eigen::MatrixX<T> nodes;
-    Eigen::VectorX<T> node_weights;
-    GaussLegendre<T, 1>(order + 1).map_to({0}, {1}, nodes, node_weights);
+    // Simplex rule exact for the integrand, of degree d order + 1
+    Eigen::MatrixX<T> rule_points;
+    Eigen::VectorX<T> rule_weights;
 
-    const Eigen::Index rule_size = node_weights.size();
-    Eigen::MatrixX<T> points(pieces.size() * rule_size, 2);
+    if constexpr (d == 2) {
+        GaussLegendre<T, 1>(order + 1).map_to({0}, {1}, rule_points,
+                                              rule_weights);
+    }
+    else if constexpr (d == 3) {
+        const XiaoGimbutas<T> rule(3 * order + 1);
+        rule_points = rule.points();
+        rule_weights = rule.weights();
+    }
+
+    const Eigen::Index rule_size = rule_weights.size();
+    Eigen::MatrixX<T> points(pieces.size() * rule_size, d);
     Eigen::VectorX<T> weights(points.rows());
 
     for (std::size_t piece = 0; piece < pieces.size(); ++piece) {
-        const Eigen::Vector2<T> edge = pieces[piece].col(1)
-                                       - pieces[piece].col(0);
+        const Eigen::Matrix<T, d, d>& vertex_and_edges = pieces[piece];
+        const Eigen::Matrix<T, d, d - 1> edges =
+            vertex_and_edges.template rightCols<d - 1>();
         const Eigen::Index offset = piece * rule_size;
 
         points.middleRows(offset, rule_size) =
-            (nodes * edge.transpose()).rowwise()
-            + pieces[piece].col(0).transpose();
+            (rule_points * edges.transpose()).rowwise()
+            + vertex_and_edges.col(0).transpose();
 
-        // n_1 ds is the change of the second coordinate along the segment
-        weights.segment(offset, rule_size) = edge(1) * node_weights;
+        // n_1 per reference measure, the edges' determinant across x_1
+        const T normal = edges.template bottomRows<d - 1>().determinant();
+
+        weights.segment(offset, rule_size) = normal * rule_weights;
     }
 
-    Eigen::VectorX<T> result = integrate<T, 2>(order, points, weights);
-    add_upper_face(result, point_moments(section, order));
+    Eigen::VectorX<T> result = integrate<T, d>(order, points, weights);
+
+    if constexpr (d == 2)
+        add_upper_face(result, point_moments(section, order));
+    else if constexpr (d == 3)
+        add_upper_face(result, reference_moments<T, 2>(section, order));
 
     return result;
 }
 
-template Eigen::VectorXd reference_moments(const std::vector<Eigen::Matrix2d>&,
-                                           int);
+template Eigen::VectorXd
+reference_moments<double, 2>(const std::vector<Eigen::Matrix2d>&, int);
+template Eigen::VectorXd
+reference_moments<double, 3>(const std::vector<Eigen::Matrix3d>&, int);
 
 } // namespace iguana

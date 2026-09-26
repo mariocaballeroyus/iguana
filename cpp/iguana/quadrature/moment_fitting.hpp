@@ -19,26 +19,27 @@ namespace iguana
 {
 
 /**
- * @brief Moments of the part of the reference square [-1, 1]^2 inside a
- *        domain bounded by segments
+ * @brief Moments of the part of [-1, 1]^d inside a domain bounded by facets
  *
- * The moments, the integrals of P_{j_1}(u) P_{j_2}(v) over that part with
- * j_1 running fastest, follow from the divergence theorem with the field
- * (Q_{j_1}(u) P_{j_2}(v), 0), where Q_{j_1} is the antiderivative of
- * P_{j_1} vanishing at -1. Its flux crosses the segments clipped to the
- * square and, only when j_1 = 0, the upper edge u = 1, where it adds twice
- * the moments of the section of the domain
+ * The integrals of P_{j_1} ... P_{j_d} over that part, with j_1 running
+ * fastest, by the divergence theorem with the field
+ * (Q_{j_1} P_{j_2} ... P_{j_d}, 0, ...), Q_{j_1} vanishing at -1: the facets
+ * clipped to the cell, plus twice the section's moments at x_1 = 1 where
+ * j_1 = 0
  *
- * @param segments Segments bounding the domain, with the domain on their
- *        left, one end per column
+ * @tparam d Number of directions, two or three
+ * @param facets Facets bounding the domain, one vertex per column: segments
+ *        with the domain on their left, or triangles counterclockwise seen
+ *        from outside
  * @param order Highest Legendre degree of each direction
- * @return Moments, with size (order + 1)^2
+ * @return Moments, with size (order + 1)^d
  *
- * @pre @p order lies in [0, GaussLegendre::max_points - 1]
+ * @pre @p order lies in [0, 7] in two directions and in [0, 4] in three
  */
-template<std::floating_point T>
+template<std::floating_point T, std::size_t d>
 Eigen::VectorX<T>
-reference_moments(const std::vector<Eigen::Matrix2<T>>& segments, int order);
+reference_moments(const std::vector<Eigen::Matrix<T, d, d>>& facets,
+                  int order);
 
 /**
  * @brief Moment-fitted rules on the cut cells of a domain bounded by

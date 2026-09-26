@@ -78,14 +78,14 @@ TEST_CASE("The moments of a cut square integrate over its part inside",
     const Eigen::Vector2d d(-1., 1.);
 
     // A slanted cut, u + v <= 1, by a triangle reaching beyond the square
-    const Eigen::VectorXd slanted = iguana::reference_moments(
+    const Eigen::VectorXd slanted = iguana::reference_moments<double, 2>(
         boundary({{-1., -1.}, {2., -1.}, {-1., 2.}}), order);
 
     REQUIRE(slanted.isApprox(
         polygon_moments({a, b, {1., 0.}, {0., 1.}, d}, order), 1e-14));
 
     // The lower half, whose right side lies on the upper edge u = 1
-    const Eigen::VectorXd half = iguana::reference_moments(
+    const Eigen::VectorXd half = iguana::reference_moments<double, 2>(
         boundary({a, b, {1., 0.}, {-1., 0.}}), order);
 
     REQUIRE(half.isApprox(
@@ -98,13 +98,13 @@ TEST_CASE("A square inside or outside the domain has all or none of its "
     const int order = 3;
 
     // By orthogonality, only P_0(u) P_0(v) integrates to nonzero, the area
-    const Eigen::VectorXd inside = iguana::reference_moments(
+    const Eigen::VectorXd inside = iguana::reference_moments<double, 2>(
         boundary({{-2., -2.}, {3., -2.}, {3., 3.}, {-2., 3.}}), order);
 
     REQUIRE_THAT(inside(0), WithinAbs(4., 1e-14));
     REQUIRE(inside.tail(inside.size() - 1).isZero(1e-14));
 
-    const Eigen::VectorXd outside = iguana::reference_moments(
+    const Eigen::VectorXd outside = iguana::reference_moments<double, 2>(
         boundary({{2., 2.}, {3., 2.}, {3., 3.}, {2., 3.}}), order);
 
     REQUIRE(outside.isZero(1e-14));
