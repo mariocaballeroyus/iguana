@@ -14,6 +14,7 @@
 #include "quadrature/domain_quadrature.hpp"
 #include "quadrature/gauss_legendre.hpp"
 #include "quadrature/moment_fitting.hpp"
+#include "quadrature/moments.hpp"
 #include "quadrature/quadrature_rule.hpp"
 #include "quadrature/xiao_gimbutas.hpp"
 
