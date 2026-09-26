@@ -9,6 +9,7 @@
 #include <array>
 #include <concepts>
 #include <cstddef>
+#include <vector>
 
 #include <Eigen/Core>
 
@@ -16,6 +17,28 @@
 
 namespace iguana
 {
+
+/**
+ * @brief Moments of the part of the reference square [-1, 1]^2 inside a
+ *        domain bounded by segments
+ *
+ * The moments, the integrals of P_{j_1}(u) P_{j_2}(v) over that part with
+ * j_1 running fastest, follow from the divergence theorem with the field
+ * (Q_{j_1}(u) P_{j_2}(v), 0), where Q_{j_1} is the antiderivative of
+ * P_{j_1} vanishing at -1. Its flux crosses the segments clipped to the
+ * square and, only when j_1 = 0, the upper edge u = 1, where it adds twice
+ * the moments of the section of the domain
+ *
+ * @param segments Segments bounding the domain, with the domain on their
+ *        left, one end per column
+ * @param order Highest Legendre degree of each direction
+ * @return Moments, with size (order + 1)^2
+ *
+ * @pre @p order lies in [0, GaussLegendre::max_points - 1]
+ */
+template<std::floating_point T>
+Eigen::VectorX<T>
+reference_moments(const std::vector<Eigen::Matrix2<T>>& segments, int order);
 
 /**
  * @brief Moment-fitted rules on the cut cells of a domain bounded by
