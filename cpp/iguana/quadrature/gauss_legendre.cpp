@@ -7,8 +7,9 @@
 
 #include <array>
 #include <cstddef>
-#include <span>
 #include <stdexcept>
+#include <utility>
+#include <vector>
 
 #include "iguana/utils/multi_index.hpp"
 
@@ -18,100 +19,94 @@ namespace iguana
 namespace
 {
 
-// Nodes and weights on [-1, 1], tabulated to 30 digits
-constexpr double nodes_1[] = {
-    0.000000000000000000000000000000};
-constexpr double weights_1[] = {
-    2.000000000000000000000000000000};
-
-constexpr double nodes_2[] = {
-    -0.577350269189625764509148780502, 0.577350269189625764509148780502};
-constexpr double weights_2[] = {
-    1.000000000000000000000000000000, 1.000000000000000000000000000000};
-
-constexpr double nodes_3[] = {
-    -0.774596669241483377035853079956, 0.000000000000000000000000000000,
-    0.774596669241483377035853079956};
-constexpr double weights_3[] = {
-    0.555555555555555555555555555556, 0.888888888888888888888888888889,
-    0.555555555555555555555555555556};
-
-constexpr double nodes_4[] = {
-    -0.861136311594052575223946488893, -0.339981043584856264802665759103,
-    0.339981043584856264802665759103, 0.861136311594052575223946488893};
-constexpr double weights_4[] = {
-    0.347854845137453857373063949222, 0.652145154862546142626936050778,
-    0.652145154862546142626936050778, 0.347854845137453857373063949222};
-
-constexpr double nodes_5[] = {
-    -0.906179845938663992797626878299, -0.538469310105683091036314420700,
-    0.000000000000000000000000000000, 0.538469310105683091036314420700,
-    0.906179845938663992797626878299};
-constexpr double weights_5[] = {
-    0.236926885056189087514264040720, 0.478628670499366468041291514836,
-    0.568888888888888888888888888889, 0.478628670499366468041291514836,
-    0.236926885056189087514264040720};
-
-constexpr double nodes_6[] = {
-    -0.932469514203152027812301554494, -0.661209386466264513661399595020,
-    -0.238619186083196908630501721681, 0.238619186083196908630501721681,
-    0.661209386466264513661399595020, 0.932469514203152027812301554494};
-constexpr double weights_6[] = {
-    0.171324492379170345040296142173, 0.360761573048138607569833513838,
-    0.467913934572691047389870343990, 0.467913934572691047389870343990,
-    0.360761573048138607569833513838, 0.171324492379170345040296142173};
-
-constexpr double nodes_7[] = {
-    -0.949107912342758524526189684048, -0.741531185599394439863864773281,
-    -0.405845151377397166906606412077, 0.000000000000000000000000000000,
-    0.405845151377397166906606412077, 0.741531185599394439863864773281,
-    0.949107912342758524526189684048};
-constexpr double weights_7[] = {
-    0.129484966168869693270611432679, 0.279705391489276667901467771424,
-    0.381830050505118944950369775489, 0.417959183673469387755102040816,
-    0.381830050505118944950369775489, 0.279705391489276667901467771424,
-    0.129484966168869693270611432679};
-
-constexpr double nodes_8[] = {
-    -0.960289856497536231683560868569, -0.796666477413626739591553936476,
-    -0.525532409916328985817739049189, -0.183434642495649804939476142360,
-    0.183434642495649804939476142360, 0.525532409916328985817739049189,
-    0.796666477413626739591553936476, 0.960289856497536231683560868569};
-constexpr double weights_8[] = {
-    0.101228536290376259152531354310, 0.222381034453374470544355994426,
-    0.313706645877887287337962201987, 0.362683783378361982965150449277,
-    0.362683783378361982965150449277, 0.313706645877887287337962201987,
-    0.222381034453374470544355994426, 0.101228536290376259152531354310};
-
-/// @brief Nodes and weights of a rule on [-1, 1]
-struct ReferenceRule
-{
-    std::span<const double> nodes;
-    std::span<const double> weights;
-};
-
 /**
- * @brief Tabulated rule with a given number of points
+ * @brief Tabulated rule on [-1, 1] with a number of points
+ *
+ * @return Nodes and weights, the doubles nearest to their exact values
  *
  * @throws std::invalid_argument If @p num_points lies outside
- *         [1, max_points]
+ *         [1, GaussLegendre::max_points]
  */
-ReferenceRule reference_rule(int num_points)
+template<std::floating_point T>
+std::array<std::vector<T>, 2> tabulated_rule(int num_points)
 {
-    switch (num_points) {
-    case 1: return {nodes_1, weights_1};
-    case 2: return {nodes_2, weights_2};
-    case 3: return {nodes_3, weights_3};
-    case 4: return {nodes_4, weights_4};
-    case 5: return {nodes_5, weights_5};
-    case 6: return {nodes_6, weights_6};
-    case 7: return {nodes_7, weights_7};
-    case 8: return {nodes_8, weights_8};
-    default:
+    if (num_points == 1) {
+        // Gauss-Legendre, 1 point
+        std::vector<T> x = {0.0};
+        std::vector<T> w = {2.0};
+        return {std::move(x), std::move(w)};
+    }
+    else if (num_points == 2) {
+        // Gauss-Legendre, 2 points
+        std::vector<T> x = {-0.5773502691896257, 0.5773502691896257};
+        std::vector<T> w = {1.0, 1.0};
+        return {std::move(x), std::move(w)};
+    }
+    else if (num_points == 3) {
+        // Gauss-Legendre, 3 points
+        std::vector<T> x = {-0.7745966692414834, 0.0, 0.7745966692414834};
+        std::vector<T> w
+            = {0.5555555555555556, 0.8888888888888888, 0.5555555555555556};
+        return {std::move(x), std::move(w)};
+    }
+    else if (num_points == 4) {
+        // Gauss-Legendre, 4 points
+        std::vector<T> x
+            = {-0.8611363115940526, -0.33998104358485626, 0.33998104358485626,
+               0.8611363115940526};
+        std::vector<T> w
+            = {0.34785484513745385, 0.6521451548625461, 0.6521451548625461,
+               0.34785484513745385};
+        return {std::move(x), std::move(w)};
+    }
+    else if (num_points == 5) {
+        // Gauss-Legendre, 5 points
+        std::vector<T> x
+            = {-0.906179845938664, -0.5384693101056831, 0.0,
+               0.5384693101056831, 0.906179845938664};
+        std::vector<T> w
+            = {0.23692688505618908, 0.47862867049936647, 0.5688888888888889,
+               0.47862867049936647, 0.23692688505618908};
+        return {std::move(x), std::move(w)};
+    }
+    else if (num_points == 6) {
+        // Gauss-Legendre, 6 points
+        std::vector<T> x
+            = {-0.932469514203152, -0.6612093864662645, -0.2386191860831969,
+               0.2386191860831969, 0.6612093864662645,  0.932469514203152};
+        std::vector<T> w
+            = {0.17132449237917036, 0.3607615730481386, 0.46791393457269104,
+               0.46791393457269104, 0.3607615730481386, 0.17132449237917036};
+        return {std::move(x), std::move(w)};
+    }
+    else if (num_points == 7) {
+        // Gauss-Legendre, 7 points
+        std::vector<T> x
+            = {-0.9491079123427585, -0.7415311855993945, -0.4058451513773972,
+               0.0,                 0.4058451513773972,  0.7415311855993945,
+               0.9491079123427585};
+        std::vector<T> w
+            = {0.1294849661688697, 0.27970539148927664, 0.3818300505051189,
+               0.4179591836734694, 0.3818300505051189,  0.27970539148927664,
+               0.1294849661688697};
+        return {std::move(x), std::move(w)};
+    }
+    else if (num_points == 8) {
+        // Gauss-Legendre, 8 points
+        std::vector<T> x
+            = {-0.9602898564975363, -0.7966664774136267, -0.525532409916329,
+               -0.1834346424956498, 0.1834346424956498,  0.525532409916329,
+               0.7966664774136267,  0.9602898564975363};
+        std::vector<T> w
+            = {0.10122853629037626, 0.22238103445337448, 0.31370664587788727,
+               0.362683783378362,   0.362683783378362,   0.31370664587788727,
+               0.22238103445337448, 0.10122853629037626};
+        return {std::move(x), std::move(w)};
+    }
+    else
         throw std::invalid_argument("GaussLegendre: "
                                     "the number of points per direction "
                                     "must lie in [1, max_points]");
-    }
 }
 
 /// @brief Same count in every direction
@@ -135,12 +130,12 @@ GaussLegendre<T, d>::GaussLegendre(int num_points)
 template<std::floating_point T, std::size_t d>
 GaussLegendre<T, d>::GaussLegendre(const std::array<int, d>& num_points)
 {
-    // Univariate rule of each direction, which checks its count
-    std::array<ReferenceRule, d> rules;
+    // Nodes and weights of each direction, which checks its count
+    std::array<std::array<std::vector<T>, 2>, d> rules;
     int total = 1;
 
     for (std::size_t direction = 0; direction < d; ++direction) {
-        rules[direction] = reference_rule(num_points[direction]);
+        rules[direction] = tabulated_rule<T>(num_points[direction]);
         total *= num_points[direction];
     }
 
@@ -157,9 +152,10 @@ GaussLegendre<T, d>::GaussLegendre(const std::array<int, d>& num_points)
         for (std::size_t direction = 0; direction < d; ++direction) {
             const int node = index[direction];
 
-            points_(point, direction) =
-                static_cast<T>(rules[direction].nodes[node]);
-            weight *= static_cast<T>(rules[direction].weights[node]);
+            const auto& [nodes, weights] = rules[direction];
+
+            points_(point, direction) = nodes[node];
+            weight *= weights[node];
         }
 
         weights_[point] = weight;
