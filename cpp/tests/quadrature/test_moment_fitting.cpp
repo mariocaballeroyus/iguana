@@ -65,6 +65,64 @@ Eigen::VectorXd polygon_moments(const std::vector<Eigen::Vector2d>& vertices,
     return result;
 }
 
+/// @brief Triangles of a convex polygon, given counterclockwise, extruded
+///        along w over [bottom, top], counterclockwise seen from outside
+std::vector<Eigen::Matrix3d> prism(const std::vector<Eigen::Vector2d>& polygon,
+                                   double bottom, double top)
+{
+    std::vector<Eigen::Matrix3d> result;
+
+    const auto at = [](const Eigen::Vector2d& vertex, double w) {
+        return Eigen::Vector3d(vertex(0), vertex(1), w);
+    };
+    const auto add = [&result](const Eigen::Vector3d& first,
+                               const Eigen::Vector3d& second,
+                               const Eigen::Vector3d& third) {
+        Eigen::Matrix3d triangle;
+        triangle << first, second, third;
+        result.push_back(triangle);
+    };
+
+    for (std::size_t vertex = 0; vertex < polygon.size(); ++vertex) {
+        const Eigen::Vector2d& first = polygon[vertex];
+        const Eigen::Vector2d& second = polygon[(vertex + 1) % polygon.size()];
+
+        // The side of each edge, facing away from the polygon
+        add(at(first, bottom), at(second, bottom), at(second, top));
+        add(at(first, bottom), at(second, top), at(first, top));
+
+        // The caps, fanned from the first vertex, the lower one facing down
+        if (vertex >= 1 && vertex + 1 < polygon.size()) {
+            add(at(polygon[0], top), at(first, top), at(second, top));
+            add(at(polygon[0], bottom), at(second, bottom),
+                at(first, bottom));
+        }
+    }
+
+    return result;
+}
+
+/// @brief Moments of a convex polygon extruded along w over [bottom, top],
+///        those of the polygon times the integrals of P_k over the interval
+Eigen::VectorXd prism_moments(const std::vector<Eigen::Vector2d>& polygon,
+                              double bottom, double top, int order)
+{
+    const Eigen::VectorXd base = polygon_moments(polygon, order);
+
+    Eigen::MatrixXd antiderivatives;
+    iguana::legendre_antiderivatives<double>(
+        order, std::vector<double>{bottom, top}, antiderivatives);
+
+    // The degree in w runs slowest
+    Eigen::VectorXd result(base.size() * (order + 1));
+
+    for (int degree = 0; degree <= order; ++degree)
+        result.segment(degree * base.size(), base.size()) =
+            (antiderivatives(degree, 1) - antiderivatives(degree, 0)) * base;
+
+    return result;
+}
+
 } // namespace
 
 TEST_CASE("The moments of a cut square integrate over its part inside",
@@ -92,20 +150,55 @@ TEST_CASE("The moments of a cut square integrate over its part inside",
         polygon_moments({a, b, {1., 0.}, {-1., 0.}}, order), 1e-14));
 }
 
-TEST_CASE("A square inside or outside the domain has all or none of its "
+TEST_CASE("The moments of a cut cube integrate over its part inside",
+          "[quadrature]")
+{
+    const int order = 3;
+
+    const Eigen::Vector2d a(-1., -1.);
+    const Eigen::Vector2d b(1., -1.);
+    const Eigen::Vector2d c(1., 1.);
+    const Eigen::Vector2d d(-1., 1.);
+
+    // A slanted cut, u + v <= 1, by a prism reaching beyond the cube
+    const Eigen::VectorXd slanted = iguana::reference_moments<double, 3>(
+        prism({{-1., -1.}, {2., -1.}, {-1., 2.}}, -2., 2.), order);
+
+    REQUIRE(slanted.isApprox(
+        prism_moments({a, b, {1., 0.}, {0., 1.}, d}, -1., 1., order), 1e-13));
+
+    // The lower half in w, whose faces u = -1 and u = 1 lie on the cube's
+    const Eigen::VectorXd half = iguana::reference_moments<double, 3>(
+        prism({a, b, c, d}, -1., 0.), order);
+
+    REQUIRE(half.isApprox(prism_moments({a, b, c, d}, -1., 0., order),
+                          1e-13));
+}
+
+TEST_CASE("A cell inside or outside the domain has all or none of its "
           "moments", "[quadrature]")
 {
     const int order = 3;
 
-    // By orthogonality, only P_0(u) P_0(v) integrates to nonzero, the area
-    const Eigen::VectorXd inside = iguana::reference_moments<double, 2>(
+    // By orthogonality, only the product of P_0 integrates to nonzero, the
+    // area or volume of the cell
+    const Eigen::VectorXd square = iguana::reference_moments<double, 2>(
         boundary({{-2., -2.}, {3., -2.}, {3., 3.}, {-2., 3.}}), order);
 
-    REQUIRE_THAT(inside(0), WithinAbs(4., 1e-14));
-    REQUIRE(inside.tail(inside.size() - 1).isZero(1e-14));
+    REQUIRE_THAT(square(0), WithinAbs(4., 1e-14));
+    REQUIRE(square.tail(square.size() - 1).isZero(1e-14));
 
-    const Eigen::VectorXd outside = iguana::reference_moments<double, 2>(
-        boundary({{2., 2.}, {3., 2.}, {3., 3.}, {2., 3.}}), order);
+    const Eigen::VectorXd cube = iguana::reference_moments<double, 3>(
+        prism({{-2., -2.}, {3., -2.}, {3., 3.}, {-2., 3.}}, -2., 3.), order);
 
-    REQUIRE(outside.isZero(1e-14));
+    REQUIRE_THAT(cube(0), WithinAbs(8., 1e-13));
+    REQUIRE(cube.tail(cube.size() - 1).isZero(1e-13));
+
+    // Domains away from the cell leave it without moments
+    REQUIRE(iguana::reference_moments<double, 2>(
+                boundary({{2., 2.}, {3., 2.}, {3., 3.}, {2., 3.}}), order)
+                .isZero(1e-14));
+    REQUIRE(iguana::reference_moments<double, 3>(
+                prism({{2., 2.}, {3., 2.}, {3., 3.}, {2., 3.}}, 2., 3.), order)
+                .isZero(1e-14));
 }
