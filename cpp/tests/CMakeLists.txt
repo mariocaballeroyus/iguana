@@ -7,6 +7,7 @@ add_executable(iguana_tests
     geometry/test_patch.cpp
     quadrature/test_domain_quadrature.cpp
     quadrature/test_gauss_legendre.cpp
+    quadrature/test_moment_fitting.cpp
     quadrature/test_xiao_gimbutas.cpp
     utils/test_legendre.cpp)
 
