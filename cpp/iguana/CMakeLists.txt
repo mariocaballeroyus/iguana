@@ -5,7 +5,8 @@ add_library(iguana
     domain/tensor_domain_iterator.cpp
     geometry/patch.cpp
     quadrature/domain_quadrature.cpp
-    quadrature/gauss_legendre.cpp)
+    quadrature/gauss_legendre.cpp
+    quadrature/xiao_gimbutas.cpp)
 
 add_library(IGUANA::iguana ALIAS iguana)
 
