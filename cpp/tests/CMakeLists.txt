@@ -3,10 +3,12 @@ add_executable(iguana_tests
     basis/test_tensor_bspline.cpp
     domain/test_tensor_domain.cpp
     embedding/test_clipper.cpp
+    embedding/test_inside.cpp
     embedding/test_slicer.cpp
     geometry/test_patch.cpp
     quadrature/test_domain_quadrature.cpp
     quadrature/test_gauss_legendre.cpp
+    quadrature/test_moments.cpp
     quadrature/test_xiao_gimbutas.cpp
     utils/test_legendre.cpp)
 

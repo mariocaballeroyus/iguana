@@ -166,27 +166,22 @@ GaussLegendre<T, d>::GaussLegendre(const std::array<int, d>& num_points)
 }
 
 template<std::floating_point T, std::size_t d>
+void GaussLegendre<T, d>::reference_rule(const std::array<T, d>&,
+                                         const std::array<T, d>&,
+                                         Eigen::MatrixX<T>& points,
+                                         Eigen::VectorX<T>& weights) const
+{
+    points = points_;
+    weights = weights_;
+}
+
+template<std::floating_point T, std::size_t d>
 void GaussLegendre<T, d>::map_to(const std::array<T, d>& start,
                                  const std::array<T, d>& end,
                                  Eigen::MatrixX<T>& points,
                                  Eigen::VectorX<T>& weights) const
 {
-    points.resize(num_points(), d);
-
-    T jacobian{1};
-
-    for (std::size_t direction = 0; direction < d; ++direction) {
-        // Affine map from the reference interval to parameter space
-        const T half = (end[direction] - start[direction]) / T{2};
-        const T middle = (start[direction] + end[direction]) / T{2};
-
-        points.col(direction).array() =
-            half * points_.col(direction).array() + middle;
-        jacobian *= half;
-    }
-
-    // Jacobian scaling (product of half the element sides)
-    weights = jacobian * weights_;
+    map_to_cell(start, end, points_, weights_, points, weights);
 }
 
 template class GaussLegendre<double, 1>;

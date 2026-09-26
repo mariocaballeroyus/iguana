@@ -6,6 +6,8 @@ add_library(iguana
     geometry/patch.cpp
     quadrature/domain_quadrature.cpp
     quadrature/gauss_legendre.cpp
+    quadrature/moment_fitting.cpp
+    quadrature/moments.cpp
     quadrature/xiao_gimbutas.cpp)
 
 add_library(IGUANA::iguana ALIAS iguana)
