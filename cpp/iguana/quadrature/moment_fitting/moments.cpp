@@ -18,8 +18,8 @@
 #include "iguana/embedding/clipper.hpp"
 #include "iguana/embedding/inside.hpp"
 #include "iguana/embedding/slicer.hpp"
-#include "iguana/quadrature/gauss_legendre.hpp"
-#include "iguana/quadrature/xiao_gimbutas.hpp"
+#include "iguana/quadrature/gauss_legendre/gauss_legendre.hpp"
+#include "iguana/quadrature/xiao_gimbutas/xiao_gimbutas.hpp"
 #include "iguana/utils/legendre.hpp"
 
 namespace iguana

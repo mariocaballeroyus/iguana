@@ -10,8 +10,8 @@
 #include <vector>
 
 #include "iguana/domain/tensor_domain_iterator.hpp"
-#include "iguana/quadrature/gauss_legendre.hpp"
-#include "iguana/quadrature/moment_fitting.hpp"
+#include "iguana/quadrature/gauss_legendre/gauss_legendre.hpp"
+#include "iguana/quadrature/moment_fitting/moment_fitting.hpp"
 #include "iguana/quadrature/quadrature_rule.hpp"
 
 namespace iguana

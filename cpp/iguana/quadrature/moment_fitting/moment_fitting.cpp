@@ -15,7 +15,7 @@
 #include <unsupported/Eigen/NNLS>
 
 #include "iguana/embedding/inside.hpp"
-#include "iguana/quadrature/moments.hpp"
+#include "iguana/quadrature/moment_fitting/moments.hpp"
 #include "iguana/utils/legendre.hpp"
 #include "iguana/utils/multi_index.hpp"
 

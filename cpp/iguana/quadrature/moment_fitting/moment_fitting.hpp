@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef IGUANA_QUADRATURE_MOMENT_FITTING_HPP
-#define IGUANA_QUADRATURE_MOMENT_FITTING_HPP
+#ifndef IGUANA_QUADRATURE_MOMENT_FITTING_MOMENT_FITTING_HPP
+#define IGUANA_QUADRATURE_MOMENT_FITTING_MOMENT_FITTING_HPP
 
 #include <array>
 #include <concepts>
@@ -13,7 +13,7 @@
 
 #include <Eigen/Core>
 
-#include "iguana/quadrature/gauss_legendre.hpp"
+#include "iguana/quadrature/gauss_legendre/gauss_legendre.hpp"
 #include "iguana/quadrature/quadrature_rule.hpp"
 
 namespace iguana
@@ -98,4 +98,4 @@ private:
 
 } // namespace iguana
 
-#endif // IGUANA_QUADRATURE_MOMENT_FITTING_HPP
+#endif // IGUANA_QUADRATURE_MOMENT_FITTING_MOMENT_FITTING_HPP
