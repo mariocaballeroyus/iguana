@@ -6,9 +6,11 @@ add_library(iguana
     geometry/patch.cpp
     quadrature/domain_quadrature.cpp
     quadrature/gauss_legendre/gauss_legendre.cpp
+    quadrature/gauss_legendre/gauss_legendre_tables.cpp
     quadrature/moment_fitting/moment_fitting.cpp
     quadrature/moment_fitting/moments.cpp
-    quadrature/xiao_gimbutas/xiao_gimbutas.cpp)
+    quadrature/xiao_gimbutas/xiao_gimbutas.cpp
+    quadrature/xiao_gimbutas/xiao_gimbutas_tables.cpp)
 
 add_library(IGUANA::iguana ALIAS iguana)
 

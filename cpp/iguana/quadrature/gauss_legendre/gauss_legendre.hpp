@@ -9,6 +9,7 @@
 #include <array>
 #include <concepts>
 #include <cstddef>
+#include <vector>
 
 #include <Eigen/Core>
 
@@ -91,6 +92,16 @@ public:
                 Eigen::MatrixX<T>& points, Eigen::VectorX<T>& weights) const;
 
 private:
+    /**
+     * @brief Tabulated rule on [-1, 1] with a number of points
+     *
+     * @return Nodes and weights, the doubles nearest to their exact values
+     *
+     * @throws std::invalid_argument If @p num_points lies outside
+     *         [1, max_points]
+     */
+    static std::array<std::vector<T>, 2> tabulated_rule(int num_points);
+
     /// @brief Reference points on [-1, 1]^d, with size (num_points, d)
     Eigen::MatrixX<T> points_;
 

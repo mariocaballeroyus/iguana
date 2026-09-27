@@ -6,7 +6,9 @@
 #ifndef IGUANA_QUADRATURE_XIAO_GIMBUTAS_XIAO_GIMBUTAS_HPP
 #define IGUANA_QUADRATURE_XIAO_GIMBUTAS_XIAO_GIMBUTAS_HPP
 
+#include <array>
 #include <concepts>
+#include <vector>
 
 #include <Eigen/Core>
 
@@ -52,6 +54,17 @@ public:
     { return weights_; }
 
 private:
+    /**
+     * @brief Tabulated rule of a degree
+     *
+     * @return Coordinates (s, t) of the points, one pair after another, and
+     *         their weights
+     *
+     * @throws std::invalid_argument If @p degree lies outside
+     *         [1, max_degree]
+     */
+    static std::array<std::vector<T>, 2> tabulated_rule(int degree);
+
     /// @brief Points (s, t) of the triangle, with size (num_points, 2)
     Eigen::MatrixX<T> points_;
 
