@@ -12,6 +12,8 @@
 
 #include <Eigen/Core>
 
+#include "iguana/quadrature/quadrature_rule.hpp"
+
 namespace iguana
 {
 
@@ -25,15 +27,12 @@ namespace iguana
  * @tparam d Number of parametric directions
  */
 template<std::floating_point T, std::size_t d>
-class GaussLegendre
+class GaussLegendre final : public QuadratureRule<T, d>
 {
     static_assert(d > 0, "GaussLegendre: "
                          "the parametric dimension must be positive");
 
 public:
-    /// @brief Number of parametric directions
-    static constexpr std::size_t dimension = d;
-
     /// @brief Largest tabulated number of points per direction
     static constexpr int max_points = 8;
 
@@ -69,21 +68,20 @@ public:
     constexpr const Eigen::VectorX<T>& weights() const noexcept
     { return weights_; }
 
+    /// @brief Rule of any cell on the reference cell, its points() and
+    ///        weights()
+    void reference_rule(const std::array<T, d>& start,
+                        const std::array<T, d>& end,
+                        Eigen::MatrixX<T>& points,
+                        Eigen::VectorX<T>& weights) const override;
+
     /**
-     * @brief Maps the rule onto an element
+     * @brief Maps the rule onto a box, as map_to_cell() places it
      *
-     * Each direction k maps through the affine map
-     *
-     *     x_k(xi_k) = (end_k - start_k) / 2 xi_k + (start_k + end_k) / 2
-     *
-     * and each weight scales by its Jacobian, the product of
-     * (end_k - start_k) / 2 over the directions
-     *
-     * @param start Parameters at which the element starts
-     * @param end Parameters at which the element ends
-     * @param points Output matrix with size (num_points, d), as
-     *        TensorBSpline::eval_on_element() takes it. It is resized when
-     *        necessary
+     * @param start Parameters at which the box starts
+     * @param end Parameters at which the box ends
+     * @param points Output matrix with size (num_points, d). It is resized
+     *        when necessary
      * @param weights Output vector with size num_points. It is resized
      *        when necessary
      *
