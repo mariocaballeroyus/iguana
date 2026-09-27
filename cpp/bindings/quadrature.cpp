@@ -37,6 +37,17 @@ void fill_gauss_legendre(DomainQuadrature<double, d>& quadrature,
     quadrature.fill(domain, cell_type, GaussLegendre<double, d>(num_points));
 }
 
+/// @brief Fills the cells of one type with rules fitted to a solid, given
+///        as a closed triangle mesh in parameter space
+void fill_moment_fitting(VolumeQuadrature& quadrature,
+                         const TensorDomain<double, 3>& domain,
+                         CellType cell_type, const Eigen::MatrixXd& vertices,
+                         const Eigen::MatrixXi& triangles, int order)
+{
+    quadrature.fill(domain, cell_type,
+                    MomentFitting<double, 3>(vertices, triangles, order));
+}
+
 /**
  * @brief Positions of the points in physical space, the only form Python
  *        needs, as it draws them
@@ -98,6 +109,9 @@ PointMatrix<double> positions(const DomainQuadrature<double, d>& quadrature,
 
 void quadrature(py::module_& module)
 {
+    // The weights are copied, as filling reallocates them
+    constexpr py::return_value_policy copy = py::return_value_policy::copy;
+
     py::class_<SurfaceQuadrature>(module, "SurfaceQuadrature")
         .def(py::init<>())
         .def("fill_gauss_legendre", &fill_gauss_legendre<2>,
@@ -105,15 +119,20 @@ void quadrature(py::module_& module)
         .def_property_readonly("num_elements",
                                &SurfaceQuadrature::num_elements)
         .def_property_readonly("num_points", &SurfaceQuadrature::num_points)
+        .def_property_readonly("weights", &SurfaceQuadrature::weights, copy)
         .def("positions", &positions<2>, py::arg("domain"));
 
     py::class_<VolumeQuadrature>(module, "VolumeQuadrature")
         .def(py::init<>())
         .def("fill_gauss_legendre", &fill_gauss_legendre<3>,
              py::arg("domain"), py::arg("cell_type"), py::arg("num_points"))
+        .def("fill_moment_fitting", &fill_moment_fitting, py::arg("domain"),
+             py::arg("cell_type"), py::arg("vertices"), py::arg("triangles"),
+             py::arg("order"))
         .def_property_readonly("num_elements",
                                &VolumeQuadrature::num_elements)
         .def_property_readonly("num_points", &VolumeQuadrature::num_points)
+        .def_property_readonly("weights", &VolumeQuadrature::weights, copy)
         .def("positions", &positions<3>, py::arg("domain"));
 }
 
