@@ -14,6 +14,9 @@
 namespace iguana
 {
 
+// Rules of C. F. Gauss, Comment. Soc. Reg. Sci. Gotting. Recent. 3 (1816)
+// 39-76, whose nodes are the roots of the Legendre polynomial P_n and whose
+// weights are 2 / ((1 - x^2) P_n'(x)^2), rounded once to double
 template<std::floating_point T, std::size_t d>
 std::array<std::vector<T>, 2>
 GaussLegendre<T, d>::tabulated_rule(int num_points)

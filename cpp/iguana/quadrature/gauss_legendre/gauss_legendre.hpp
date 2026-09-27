@@ -21,8 +21,9 @@ namespace iguana
 /**
  * @brief Gauss-Legendre rule
  *
- * The rule is the product of one univariate rule per direction, with the
- * first direction running fastest
+ * The rule is the product of one univariate rule of Gauss (Comment. Soc.
+ * Reg. Sci. Gotting. Recent. 3, 1816) per direction, with the first
+ * direction running fastest
  *
  * @tparam T Floating-point type
  * @tparam d Number of parametric directions
