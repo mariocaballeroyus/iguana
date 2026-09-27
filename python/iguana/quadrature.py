@@ -16,6 +16,7 @@ import numpy.typing as npt
 
 from iguana import cpp as _cpp
 from iguana.domain import CellType, TensorDomain
+from iguana.patch import VolumePatch
 
 
 class DomainQuadrature:
@@ -64,6 +65,12 @@ class DomainQuadrature:
         """Positions of the points in space, of shape ``(num_points, 3)``."""
         return self._cpp_object.positions(self._domain._cpp_object)
 
+    @property
+    def weights(self) -> npt.NDArray[np.float64]:
+        """Weights of the points in parameter space, of shape
+        ``(num_points,)``."""
+        return self._cpp_object.weights
+
     def fill_gauss_legendre(self, cell_type: CellType,
                             num_points: int | Sequence[int]) -> None:
         """Fill the cells of one type with a Gauss-Legendre rule.
@@ -88,6 +95,57 @@ class DomainQuadrature:
         self._cpp_object.fill_gauss_legendre(self._domain._cpp_object,
                                              cell_type, list(num_points))
 
+    def fill_moment_fitting(self, cell_type: CellType,
+                            vertices: npt.ArrayLike,
+                            triangles: npt.ArrayLike,
+                            order: int = 2) -> None:
+        """Fill the cells of one type with rules fitted to a solid.
+
+        The rule of each cell integrates the Legendre polynomials up to the
+        order in each direction over its part inside the solid, with
+        positive weights at points inside it. The patch must map its
+        parameter box onto an axis-aligned block, as create_box builds it,
+        through which the vertices map back to parameters.
+
+        Args:
+            cell_type: The type of the cells to fill, usually the cut cells.
+            vertices: Vertices of a closed triangle mesh of the solid in
+                space, of shape ``(num_vertices, 3)``.
+            triangles: Vertices of each triangle, counterclockwise seen from
+                outside, of shape ``(num_triangles, 3)``.
+            order: Highest polynomial degree of each direction.
+
+        Raises:
+            TypeError: If the domain is not a volume domain.
+            ValueError: If the mesh is malformed, if the order lies outside
+                [0, 4], or if the cells of this type are already filled.
+        """
+        if self._dimension != 3:
+            raise TypeError('moment fitting needs a volume domain')
+
+        parameters = _to_parameters(self._domain.patch, vertices)
+
+        self._cpp_object.fill_moment_fitting(
+            self._domain._cpp_object, cell_type, parameters,
+            np.asarray(triangles, dtype=np.int32), order)
+
     def __repr__(self) -> str:
         return (f'DomainQuadrature(num_elements={self.num_elements}, '
                 f'num_points={self.num_points})')
+
+
+def _to_parameters(patch: VolumePatch,
+                   points: npt.ArrayLike) -> npt.NDArray[np.float64]:
+    """Parameters of points in space under the map of an axis-aligned block.
+
+    The corners of such a block are its extreme control points, so each
+    coordinate scales back onto the knot range of its direction.
+    """
+    points = np.asarray(points, dtype=float)
+    net = patch.control_points
+    low, high = net.min(axis=0), net.max(axis=0)
+
+    first = np.array([knots[0] for knots in patch.knots])
+    last = np.array([knots[-1] for knots in patch.knots])
+
+    return first + (points - low) / (high - low) * (last - first)
