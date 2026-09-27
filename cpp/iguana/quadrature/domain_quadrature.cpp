@@ -11,6 +11,7 @@
 
 #include "iguana/domain/tensor_domain_iterator.hpp"
 #include "iguana/quadrature/gauss_legendre.hpp"
+#include "iguana/quadrature/moment_fitting.hpp"
 #include "iguana/quadrature/quadrature_rule.hpp"
 
 namespace iguana
@@ -159,5 +160,10 @@ template void DomainQuadrature<double, 2>::fill(
     const TensorDomain<double, 2>&, CellType, const GaussLegendre<double, 2>&);
 template void DomainQuadrature<double, 3>::fill(
     const TensorDomain<double, 3>&, CellType, const GaussLegendre<double, 3>&);
+
+template void DomainQuadrature<double, 2>::fill(
+    const TensorDomain<double, 2>&, CellType, const MomentFitting<double, 2>&);
+template void DomainQuadrature<double, 3>::fill(
+    const TensorDomain<double, 3>&, CellType, const MomentFitting<double, 3>&);
 
 } // namespace iguana
