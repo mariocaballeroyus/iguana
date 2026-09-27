@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstddef>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -155,6 +156,45 @@ TEST_CASE("A thin part keeps the better of its fits", "[quadrature]")
     // Its measure on the reference cell, three thousandths of 2^3
     REQUIRE(weights.size() > 0);
     REQUIRE_THAT(weights.sum(), WithinRel(8. * 0.003, 1e-4));
+}
+
+TEST_CASE("Moment fitting fills the cut cells of a domain", "[quadrature]")
+{
+    // Three unit cells along x, inside, cut and outside the box x <= 1.5
+    iguana::TensorBSpline<double, 3> basis(
+        {iguana::BSpline<double>(1, {0., 0., 1., 2., 3., 3.}),
+         iguana::BSpline<double>(1, {0., 0., 1., 1.}),
+         iguana::BSpline<double>(1, {0., 0., 1., 1.})});
+
+    const int num_functions = basis.num_functions();
+
+    const iguana::TensorDomain<double, 3> domain(
+        iguana::Patch<double, 3>(
+            std::move(basis),
+            iguana::PointMatrix<double>::Zero(num_functions, 3)),
+        {iguana::CellType::inside, iguana::CellType::cut,
+         iguana::CellType::outside});
+
+    const Box solid({-1., -1., -1.}, {1.5, 2., 2.});
+
+    iguana::DomainQuadrature<double, 3> quadrature;
+    quadrature.fill(domain, iguana::CellType::inside,
+                    iguana::GaussLegendre<double, 3>(2));
+    quadrature.fill(domain, iguana::CellType::cut,
+                    iguana::MomentFitting<double, 3>(solid.vertices,
+                                                     solid.facets, 2));
+
+    // Both cells integrate the part of the patch inside the box
+    REQUIRE(quadrature.num_elements() == 2);
+    REQUIRE_THAT(quadrature.weights().sum(), WithinRel(1.5, 1e-9));
+
+    // The points of the cut cell lie in its part inside, 1 <= x <= 1.5
+    const int first = quadrature.offsets()(1);
+    const Eigen::VectorXd cut =
+        quadrature.points().col(0).tail(quadrature.num_points() - first);
+
+    REQUIRE(cut.minCoeff() >= 1.);
+    REQUIRE(cut.maxCoeff() <= 1.5);
 }
 
 TEST_CASE("Moment fitting rejects malformed facets and orders",
