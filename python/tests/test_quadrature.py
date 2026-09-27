@@ -32,6 +32,20 @@ def centre(element):
     return ORIGIN + [element % 4 + .5, element // 4 + .5, .5]
 
 
+def solid():
+    """Triangle mesh of a box ending halfway along the second element in x,
+    counterclockwise seen from outside."""
+    lower, upper = ORIGIN - 1, ORIGIN + [1.5, 3., 2.]
+
+    # Corner c takes the upper bound in the directions of the bits of c
+    bits = np.arange(8)[:, None] >> np.arange(3) & 1
+    triangles = [[0, 2, 3], [0, 3, 1], [4, 5, 7], [4, 7, 6], [0, 1, 5],
+                 [0, 5, 4], [2, 6, 7], [2, 7, 3], [0, 4, 6], [0, 6, 2],
+                 [1, 3, 7], [1, 7, 5]]
+
+    return np.where(bits, upper, lower), triangles
+
+
 def test_gauss_legendre_positions():
     """The points of each inside cell are its Gauss points in space."""
     quadrature = DomainQuadrature(mixed())
@@ -60,6 +74,23 @@ def test_fill_order():
                                 for element in (1, 6, 0, 2, 4, 5, 7)])
 
 
+def test_moment_fitting():
+    """Gauss-Legendre on the inside cells and moment fitting on the cut ones
+    integrate the part of the block inside the solid."""
+    cell_types = [CellType.outside] * 8
+    cell_types[0] = cell_types[4] = CellType.inside
+    cell_types[1] = cell_types[5] = CellType.cut
+
+    quadrature = DomainQuadrature(TensorDomain(box(), cell_types))
+    quadrature.fill_gauss_legendre(CellType.inside, 2)
+    quadrature.fill_moment_fitting(CellType.cut, *solid())
+
+    # The part inside, 1.5 by 2 by 1, out of the block, 4 by 2 by 1, whose
+    # parameters span the unit cube
+    np.testing.assert_allclose(quadrature.weights.sum(), 1.5 * 2 / 8)
+    assert (quadrature.positions[:, 0] <= ORIGIN[0] + 1.5).all()
+
+
 def test_surface():
     """A surface domain takes one number of points per surface direction."""
     # The first isosurface is the face of the block at x = 1
@@ -86,3 +117,9 @@ def test_invalid_arguments():
         quadrature.fill_gauss_legendre(CellType.inside, 2)
 
     assert quadrature.num_points == 5
+
+    # Moment fitting needs a volume domain
+    surface = DomainQuadrature(TensorDomain(box().isosurfaces()[0]))
+
+    with pytest.raises(TypeError):
+        surface.fill_moment_fitting(CellType.inside, *solid())
