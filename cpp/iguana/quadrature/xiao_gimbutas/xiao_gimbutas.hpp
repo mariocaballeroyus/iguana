@@ -19,8 +19,8 @@ namespace iguana
  * @brief Xiao-Gimbutas rule on the triangle s, t >= 0, s + t <= 1
  *
  * The fully symmetric rules of Xiao and Gimbutas (Comput. Math. Appl. 59,
- * 2010), as Basix tabulates them, integrate polynomials up to their total
- * degree exactly, with positive weights at points inside the triangle
+ * 2010) integrate polynomials up to their total degree exactly, with
+ * positive weights at points inside the triangle
  *
  * @tparam T Floating-point type
  */
@@ -58,7 +58,7 @@ private:
      * @brief Tabulated rule of a degree
      *
      * @return Coordinates (s, t) of the points, one pair after another, and
-     *         their weights
+     *         their weights, the doubles nearest to their tabulated values
      *
      * @throws std::invalid_argument If @p degree lies outside
      *         [1, max_degree]
