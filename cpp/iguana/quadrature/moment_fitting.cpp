@@ -179,14 +179,24 @@ void MomentFitting<T, d>::reference_rule(const std::array<T, d>& start,
     if (moments(0) < min_measure_ratio * static_cast<T>(1 << d))
         return;
 
+    // The best fit over the levels, refining only while it misses the target
     Eigen::MatrixX<T> candidates;
     Eigen::VectorX<T> fitted;
     T residual{1};
 
     for (int level = 1; level <= max_level && residual > target_residual;
          ++level) {
-        candidates = candidate_points<T, d>(facets, candidate_rule_, level);
-        residual = fit<T, d>(order_, candidates, moments, fitted);
+        Eigen::MatrixX<T> level_candidates =
+            candidate_points<T, d>(facets, candidate_rule_, level);
+        Eigen::VectorX<T> level_fitted;
+        const T level_residual =
+            fit<T, d>(order_, level_candidates, moments, level_fitted);
+
+        if (level_residual < residual) {
+            candidates = std::move(level_candidates);
+            fitted = std::move(level_fitted);
+            residual = level_residual;
+        }
     }
 
     if (residual > max_residual)
