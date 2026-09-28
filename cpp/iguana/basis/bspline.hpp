@@ -125,6 +125,25 @@ private:
 };
 
 /**
+ * @brief Basis with knots inserted, which refines its elements
+ *
+ * Each knot splits the element it falls in, or raises the multiplicity of
+ * the knot it matches. The degree and the parametric domain stay the same,
+ * so every function of the basis is a combination of the new ones, as
+ * refinement_matrix() gives them
+ *
+ * @param basis Basis to refine
+ * @param knots Knots to insert, in any order and possibly repeated
+ * @return Basis of the same degree with the knots of both
+ *
+ * @throws std::invalid_argument If a knot lies outside the interior of the
+ *         parametric domain
+ */
+template<std::floating_point T>
+BSpline<T> insert_knots(const BSpline<T>& basis,
+                        const std::vector<T>& knots);
+
+/**
  * @brief Coefficients of the functions of a basis in a finer one
  *
  * The fine basis holds every knot of the coarse one, so each coarse

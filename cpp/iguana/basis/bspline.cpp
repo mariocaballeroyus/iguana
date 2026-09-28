@@ -97,6 +97,40 @@ void BSpline<T>::eval_on_element(int first_active, std::span<const T> points,
     }
 }
 
+namespace
+{
+
+/// @brief Whether knots lie inside the parametric domain of a basis, off
+///        its ends, where inserting them refines its elements
+template<std::floating_point T>
+bool inside_domain(const BSpline<T>& basis, const std::vector<T>& knots)
+{
+    const T start = basis.element_start(0);
+    const T end = basis.element_end(basis.num_elements() - 1);
+
+    return std::ranges::all_of(knots, [start, end](T knot) {
+        return start < knot && knot < end;
+    });
+}
+
+} // namespace
+
+template<std::floating_point T>
+BSpline<T> insert_knots(const BSpline<T>& basis,
+                        const std::vector<T>& knots)
+{
+    if (!inside_domain(basis, knots))
+        throw std::invalid_argument("insert_knots: "
+                                    "the knots must lie inside the "
+                                    "parametric domain");
+
+    std::vector<T> merged = basis.knots();
+    merged.insert(merged.end(), knots.begin(), knots.end());
+    std::ranges::sort(merged);
+
+    return BSpline<T>(basis.degree(), std::move(merged));
+}
+
 template<std::floating_point T>
 Eigen::MatrixX<T> refinement_matrix(const BSpline<T>& coarse,
                                     const BSpline<T>& fine)
@@ -118,12 +152,7 @@ Eigen::MatrixX<T> refinement_matrix(const BSpline<T>& coarse,
     std::ranges::set_difference(fine.knots(), coarse.knots(),
                                 std::back_inserter(added));
 
-    const T start = coarse.element_start(0);
-    const T end = coarse.element_end(coarse.num_elements() - 1);
-
-    if (std::ranges::any_of(added, [start, end](T knot) {
-            return knot <= start || knot >= end;
-        }))
+    if (!inside_domain(coarse, added))
         throw std::invalid_argument("refinement_matrix: "
                                     "the added knots must lie inside the "
                                     "parametric domain");
@@ -172,6 +201,8 @@ Eigen::MatrixX<T> refinement_matrix(const BSpline<T>& coarse,
 
 template class BSpline<double>;
 
+template BSpline<double> insert_knots(const BSpline<double>&,
+                                      const std::vector<double>&);
 template Eigen::MatrixXd refinement_matrix(const BSpline<double>&,
                                            const BSpline<double>&);
 
