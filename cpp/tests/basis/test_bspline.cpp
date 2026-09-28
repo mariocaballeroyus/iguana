@@ -64,7 +64,8 @@ Eigen::MatrixXd all_values(const BSpline<double>& basis, int element,
 void check_refinement(const BSpline<double>& coarse,
                       const BSpline<double>& fine)
 {
-    const Eigen::MatrixXd refinement = iguana::refinement_matrix(coarse, fine);
+    const Eigen::MatrixXd refinement =
+        iguana::refinement_matrix(coarse.knots(), fine.knots());
 
     for (int element = 0; element < fine.knots().num_elements(); ++element) {
         const std::array points = points_on(fine, element);
@@ -183,16 +184,20 @@ TEST_CASE("Refinement rejects bases that do not nest", "[bspline]")
 
     // A fine basis of another degree, missing a knot of the coarse one, or
     // adding a knot at an end of the parametric domain
+    using iguana::KnotVector;
+
     REQUIRE_THROWS_AS(
-        iguana::refinement_matrix(basis,
-                                  BSpline<double>(1, {0., 0., 1., 2., 2.})),
+        iguana::refinement_matrix(basis.knots(),
+                                  KnotVector<double>(1, {0., 0., 1., 2., 2.})),
         std::invalid_argument);
     REQUIRE_THROWS_AS(
         iguana::refinement_matrix(
-            basis, BSpline<double>(2, {0., 0., 0., 1.5, 2., 2., 2.})),
+            basis.knots(),
+            KnotVector<double>(2, {0., 0., 0., 1.5, 2., 2., 2.})),
         std::invalid_argument);
     REQUIRE_THROWS_AS(
         iguana::refinement_matrix(
-            basis, BSpline<double>(2, {0., 0., 0., 1., 2., 2., 2., 2.})),
+            basis.knots(),
+            KnotVector<double>(2, {0., 0., 0., 1., 2., 2., 2., 2.})),
         std::invalid_argument);
 }

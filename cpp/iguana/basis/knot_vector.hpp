@@ -10,6 +10,8 @@
 #include <cstddef>
 #include <vector>
 
+#include <Eigen/Core>
+
 namespace iguana
 {
 
@@ -118,6 +120,29 @@ private:
 template<std::floating_point T>
 KnotVector<T> insert_knots(const KnotVector<T>& knot_vector,
                            const std::vector<T>& knots);
+
+/**
+ * @brief Coefficients of the functions of a spline space in a finer one
+ *
+ * The fine knot vector holds every knot of the coarse one, so each coarse
+ * B-spline is a combination \f$ N_i = \sum_j R_{ji} M_j \f$ of the fine
+ * ones. The coefficients follow from inserting the added knots one at a
+ * time with Boehm's algorithm, as for the control points of a curve
+ *
+ * @param coarse Knot vector of the coarse space
+ * @param fine Knot vector of the fine space, holding the knots of the
+ *        coarse one and others
+ * @return Matrix R with one row per fine function and one column per
+ *         coarse function, whose column i holds the coefficients of coarse
+ *         function i
+ *
+ * @throws std::invalid_argument If the degrees differ, if the fine knots
+ *         do not contain the coarse ones, or if an added knot lies outside
+ *         the interior of the parametric domain
+ */
+template<std::floating_point T>
+Eigen::MatrixX<T> refinement_matrix(const KnotVector<T>& coarse,
+                                    const KnotVector<T>& fine);
 
 } // namespace iguana
 
