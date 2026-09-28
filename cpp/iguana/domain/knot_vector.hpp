@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef IGUANA_BASIS_KNOT_VECTOR_HPP
-#define IGUANA_BASIS_KNOT_VECTOR_HPP
+#ifndef IGUANA_DOMAIN_KNOT_VECTOR_HPP
+#define IGUANA_DOMAIN_KNOT_VECTOR_HPP
 
 #include <concepts>
 #include <cstddef>
@@ -146,4 +146,4 @@ Eigen::MatrixX<T> refinement_matrix(const KnotVector<T>& coarse,
 
 } // namespace iguana
 
-#endif // IGUANA_BASIS_KNOT_VECTOR_HPP
+#endif // IGUANA_DOMAIN_KNOT_VECTOR_HPP

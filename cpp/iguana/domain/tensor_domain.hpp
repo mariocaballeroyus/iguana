@@ -10,7 +10,7 @@
 #include <concepts>
 #include <cstddef>
 
-#include "iguana/basis/knot_vector.hpp"
+#include "iguana/domain/knot_vector.hpp"
 
 namespace iguana
 {
