@@ -147,11 +147,16 @@ TEST_CASE("Cell types are filled one after another, once each",
     REQUIRE(quadrature.elements() == integers({0, 2, 4, 1, 5}));
     REQUIRE(quadrature.offsets() == integers({0, 8, 16, 24, 25, 26}));
 
-    // A cell type already held is rejected, and nothing changes
+    // A cell type already held, or an embedding without one cell type per
+    // element, is rejected, and nothing changes
     const Quadrature before = quadrature;
 
     REQUIRE_THROWS_AS(
         quadrature.fill(basis, embedding, CellType::inside, Gauss(1)),
+        std::invalid_argument);
+    REQUIRE_THROWS_AS(
+        quadrature.fill(basis, Embedding<double, 3>({CellType::outside}),
+                        CellType::outside, Gauss(1)),
         std::invalid_argument);
     REQUIRE(quadrature.offsets() == before.offsets());
     REQUIRE(quadrature.points() == before.points());
