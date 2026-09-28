@@ -7,7 +7,9 @@
 
 #include <array>
 #include <cstddef>
+#include <stdexcept>
 #include <variant>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -17,7 +19,9 @@ namespace
 
 using Catch::Matchers::WithinAbs;
 using iguana::BSpline;
+using iguana::KnotVector;
 using iguana::TensorBSpline;
+using iguana::TensorDomain;
 
 BSpline<double> quadratic()
 {
@@ -187,4 +191,39 @@ TEST_CASE("Tensor basis reproduces coordinates through active indices",
             REQUIRE_THAT(mixed, WithinAbs(expected_mixed, 1e-13));
         }
     }
+}
+
+TEST_CASE("A basis is built on the knot vectors of its domain",
+          "[tensor_bspline]")
+{
+    const TensorDomain<double, 3> domain(
+        {quadratic().knots(), cubic().knots(), repeated().knots()});
+    const TensorBSpline<double, 3> basis(domain);
+
+    // One univariate basis per knot vector, over the two elements of each
+    for (std::size_t direction = 0; direction < 3; ++direction)
+        REQUIRE(basis.axis(direction).knots().values()
+                == domain.knots(direction).values());
+
+    REQUIRE(basis.domain().num_elements() == 2 * 2 * 2);
+
+    // Built from the univariate bases, it has the same domain
+    const TensorBSpline<double, 3> from_axes(
+        {quadratic(), cubic(), repeated()});
+
+    for (std::size_t direction = 0; direction < 3; ++direction)
+        REQUIRE(from_axes.domain().knots(direction).values()
+                == domain.knots(direction).values());
+
+    // A degree beyond the univariate bases is rejected, on a valid knot
+    // vector clamped on [0, 1]
+    const int degree = BSpline<double>::max_degree + 1;
+    std::vector<double> knots(degree + 1, 0.);
+    knots.resize(2 * (degree + 1), 1.);
+
+    using Univariate = TensorBSpline<double, 1>;
+    const TensorDomain<double, 1> beyond(
+        std::array{KnotVector<double>(degree, knots)});
+
+    REQUIRE_THROWS_AS(Univariate(beyond), std::invalid_argument);
 }
