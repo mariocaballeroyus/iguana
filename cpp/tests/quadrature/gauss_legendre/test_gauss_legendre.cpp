@@ -32,10 +32,11 @@ double monomial_integral(int degree, double start, double end)
 double integrate_monomial(int num_points, int degree, double start,
                           double end)
 {
-    Eigen::MatrixXd points;
-    Eigen::VectorXd weights;
+    const Gauss<1> rule(num_points);
+    Eigen::MatrixXd points = rule.points();
+    Eigen::VectorXd weights = rule.weights();
 
-    Gauss<1>(num_points).map_to({start}, {end}, points, weights);
+    Gauss<1>::map_to_parameter_space({start}, {end}, points, weights);
 
     double sum = 0.;
 
@@ -67,10 +68,10 @@ TEST_CASE("The points lie inside the element box and the weights sum to "
     const std::array<double, 3> start{1., 0., -1.};
     const std::array<double, 3> end{2., 1.5, .5};
 
-    Eigen::MatrixXd points;
-    Eigen::VectorXd weights;
+    Eigen::MatrixXd points = rule.points();
+    Eigen::VectorXd weights = rule.weights();
 
-    rule.map_to(start, end, points, weights);
+    Gauss<3>::map_to_parameter_space(start, end, points, weights);
 
     REQUIRE(rule.num_points() == 4 * 2 * 3);
     REQUIRE(points.rows() == rule.num_points());
@@ -105,10 +106,10 @@ TEST_CASE("A count of n integrates degree 2n - 1 exactly", "[quadrature]")
     const std::array<double, 3> start{1., 0., -1.};
     const std::array<double, 3> end{2., 1.5, .5};
 
-    Eigen::MatrixXd points;
-    Eigen::VectorXd weights;
+    Eigen::MatrixXd points = rule.points();
+    Eigen::VectorXd weights = rule.weights();
 
-    rule.map_to(start, end, points, weights);
+    Gauss<3>::map_to_parameter_space(start, end, points, weights);
 
     double sum = 0.;
 

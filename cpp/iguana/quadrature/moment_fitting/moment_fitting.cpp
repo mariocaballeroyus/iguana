@@ -62,17 +62,15 @@ candidate_points(const std::vector<Eigen::Matrix<T, d, d>>& facets,
     const int num_nodes = num_intervals * rule.num_points();
     const T size = T{2} / num_intervals;
 
-    // The nodes of one direction, the rule on each interval
+    // The nodes of one direction, those of the rule moved from [-1, 1] to
+    // each interval
     Eigen::VectorX<T> nodes(num_nodes);
-    Eigen::MatrixX<T> points;
-    Eigen::VectorX<T> weights;
 
     for (int interval = 0; interval < num_intervals; ++interval) {
         const T lower = -1 + interval * size;
 
-        rule.map_to({lower}, {lower + size}, points, weights);
         nodes.segment(interval * rule.num_points(), rule.num_points()) =
-            points.col(0);
+            lower + size / 2 * (rule.points().col(0).array() + 1);
     }
 
     // The grid line by line along x_1, through the nodes of the others

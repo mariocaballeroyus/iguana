@@ -80,18 +80,6 @@ void GaussLegendre<T, d>::fill_to_reference_space(
     weights = weights_;
 }
 
-template<std::floating_point T, std::size_t d>
-void GaussLegendre<T, d>::map_to(const std::array<T, d>& start,
-                                 const std::array<T, d>& end,
-                                 Eigen::MatrixX<T>& points,
-                                 Eigen::VectorX<T>& weights) const
-{
-    points = points_;
-    weights = weights_;
-
-    BoxRule<T, d>::map_to_parameter_space(start, end, points, weights);
-}
-
 template class GaussLegendre<double, 1>;
 template class GaussLegendre<double, 2>;
 template class GaussLegendre<double, 3>;

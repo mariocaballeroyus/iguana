@@ -77,22 +77,6 @@ public:
                                  Eigen::MatrixX<T>& points,
                                  Eigen::VectorX<T>& weights) const override;
 
-    /**
-     * @brief Maps the rule onto a box, as BoxRule::map_to_parameter_space()
-     *        places it
-     *
-     * @param start Parameters at which the box starts
-     * @param end Parameters at which the box ends
-     * @param points Output matrix with size (num_points, d). It is resized
-     *        when necessary
-     * @param weights Output vector with size num_points. It is resized
-     *        when necessary
-     *
-     * @pre @p start lies below @p end in every direction
-     */
-    void map_to(const std::array<T, d>& start, const std::array<T, d>& end,
-                Eigen::MatrixX<T>& points, Eigen::VectorX<T>& weights) const;
-
 private:
     /**
      * @brief Tabulated rule on [-1, 1] with a number of points

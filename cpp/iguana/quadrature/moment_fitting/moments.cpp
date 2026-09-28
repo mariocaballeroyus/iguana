@@ -151,8 +151,10 @@ reference_moments(const std::vector<Eigen::Matrix<T, d, d>>& facets,
     Eigen::VectorX<T> rule_weights;
 
     if constexpr (d == 2) {
-        GaussLegendre<T, 1>(order + 1).map_to({0}, {1}, rule_points,
-                                              rule_weights);
+        // Gauss-Legendre moved from [-1, 1] to the segment parameter [0, 1]
+        const GaussLegendre<T, 1> rule(order + 1);
+        rule_points = (rule.points().array() + 1) / 2;
+        rule_weights = rule.weights() / 2;
     }
     else if constexpr (d == 3) {
         const XiaoGimbutas<T> rule(3 * order + 1);
