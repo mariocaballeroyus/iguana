@@ -58,6 +58,13 @@ HierarchicalDomain<T, d>::HierarchicalDomain(TensorDomain<T, d> coarse)
 }
 
 template<std::floating_point T, std::size_t d>
+HierarchicalDomainIterator<T, d>
+HierarchicalDomain<T, d>::begin() const noexcept
+{
+    return HierarchicalDomainIterator<T, d>(*this);
+}
+
+template<std::floating_point T, std::size_t d>
 HierarchicalDomain<T, d> refine(const HierarchicalDomain<T, d>& domain,
                                 std::span<const int> elements)
 {

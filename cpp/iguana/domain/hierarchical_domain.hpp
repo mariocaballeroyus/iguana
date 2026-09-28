@@ -8,9 +8,11 @@
 
 #include <concepts>
 #include <cstddef>
+#include <iterator>
 #include <span>
 #include <vector>
 
+#include "iguana/domain/hierarchical_domain_iterator.hpp"
 #include "iguana/domain/tensor_domain.hpp"
 
 namespace iguana
@@ -72,6 +74,13 @@ public:
     /// @brief Number of active elements over all levels
     constexpr int num_elements() const noexcept
     { return offsets_.back(); }
+
+    /// @brief Iterator at the first active element
+    HierarchicalDomainIterator<T, d> begin() const noexcept;
+
+    /// @brief Sentinel past the last active element
+    constexpr std::default_sentinel_t end() const noexcept
+    { return std::default_sentinel; }
 
 private:
     template<std::floating_point U, std::size_t e>
