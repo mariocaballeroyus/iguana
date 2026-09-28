@@ -50,7 +50,7 @@ std::array<int, d> element_of(const TensorBSpline<double, d>& basis,
     std::array<int, d> indices{};
 
     for (std::size_t direction = 0; direction < d; ++direction) {
-        const int count = basis.axis(direction).num_elements();
+        const int count = basis.axis(direction).knots().num_elements();
         indices[direction] = element % count;
         element /= count;
     }
@@ -85,9 +85,9 @@ TEST_CASE("The walk reaches every element once, in order", "[domain]")
             REQUIRE(element.first_active()[direction]
                     == axis.first_active(indices[direction]));
             REQUIRE(element.start()[direction]
-                    == axis.element_start(indices[direction]));
+                    == axis.knots().element_start(indices[direction]));
             REQUIRE(element.end()[direction]
-                    == axis.element_end(indices[direction]));
+                    == axis.knots().element_end(indices[direction]));
 
             cell *= element.end()[direction] - element.start()[direction];
         }
@@ -103,8 +103,8 @@ TEST_CASE("The walk reaches every element once, in order", "[domain]")
     for (std::size_t direction = 0; direction < 3; ++direction) {
         const BSpline<double>& axis = basis.axis(direction);
 
-        box *= axis.element_end(axis.num_elements() - 1)
-               - axis.element_start(0);
+        box *= axis.knots().element_end(axis.knots().num_elements() - 1)
+               - axis.knots().element_start(0);
     }
 
     REQUIRE_THAT(volume, WithinAbs(box, 1e-12));

@@ -32,8 +32,8 @@ std::vector<BSpline<double>> test_bases()
 
 std::array<double, 5> points_on(const BSpline<double>& basis, int element)
 {
-    const double start = basis.element_start(element);
-    const double end = basis.element_end(element);
+    const double start = basis.knots().element_start(element);
+    const double end = basis.knots().element_end(element);
 
     return {start,
             .75 * start + .25 * end,
@@ -44,19 +44,14 @@ std::array<double, 5> points_on(const BSpline<double>& basis, int element)
 
 } // namespace
 
-TEST_CASE("A basis rejects invalid definitions", "[bspline]")
+TEST_CASE("A basis rejects degrees beyond its algorithms", "[bspline]")
 {
-    const std::vector<double> knots{0., 0., 0., 1., 1., 1.};
+    // A valid knot vector, clamped on [0, 1], of one degree too many
+    const int degree = BSpline<double>::max_degree + 1;
+    std::vector<double> knots(degree + 1, 0.);
+    knots.resize(2 * (degree + 1), 1.);
 
-    REQUIRE_THROWS_AS(BSpline<double>(-1, knots), std::invalid_argument);
-    REQUIRE_THROWS_AS(BSpline<double>(BSpline<double>::max_degree + 1, knots),
-                      std::invalid_argument);
-    REQUIRE_THROWS_AS(BSpline<double>(1, {0., 2., 1., 3.}),
-                      std::invalid_argument);
-    REQUIRE_THROWS_AS(BSpline<double>(2, {0., 0., 0., 1., 1.}),
-                      std::invalid_argument);
-    REQUIRE_THROWS_AS(BSpline<double>(1, {0., 0., 0., 0.}),
-                      std::invalid_argument);
+    REQUIRE_THROWS_AS(BSpline<double>(degree, knots), std::invalid_argument);
 }
 
 TEST_CASE("The basis is a partition of unity", "[bspline]")
@@ -64,7 +59,9 @@ TEST_CASE("The basis is a partition of unity", "[bspline]")
     Eigen::MatrixXd values;
 
     for (const BSpline<double>& basis : test_bases()) {
-        for (int element = 0; element < basis.num_elements(); ++element) {
+        const int num_elements = basis.knots().num_elements();
+
+        for (int element = 0; element < num_elements; ++element) {
             const std::array points = points_on(basis, element);
 
             basis.eval_on_element(basis.first_active(element), points, values);

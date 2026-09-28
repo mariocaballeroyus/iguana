@@ -13,14 +13,17 @@
 
 #include <Eigen/Core>
 
+#include "knot_vector.hpp"
+
 namespace iguana
 {
 
 /**
  * @brief Univariate B-spline basis.
  *
- * The basis is defined by its polynomial degree and knot vector. Its elements
- * are the non-empty knot spans in the parametric domain.
+ * The basis is defined by its knot vector, which holds its degree. Its
+ * elements are those of the knot vector, the non-empty knot spans in the
+ * parametric domain
  *
  * @tparam T Floating-point type.
  */
@@ -30,6 +33,15 @@ class BSpline
 public:
     /// @brief Largest degree supported by the basis algorithms.
     static constexpr int max_degree = 10;
+
+    /**
+     * @brief Constructs a univariate B-spline basis from its knot vector
+     *
+     * @param knots Knot vector, with the degree of the basis
+     *
+     * @throws std::invalid_argument If the degree is above #max_degree
+     */
+    explicit BSpline(KnotVector<T> knots);
 
     /**
      * @brief Constructs a univariate B-spline basis.
@@ -46,23 +58,19 @@ public:
 
     /// @brief Polynomial degree of the basis.
     constexpr int degree() const noexcept
-    { return degree_; }
+    { return knots_.degree(); }
 
-    /// @brief Non-decreasing knot vector.
-    constexpr const std::vector<T>& knots() const noexcept
+    /// @brief Knot vector, with the elements of the basis
+    constexpr const KnotVector<T>& knots() const noexcept
     { return knots_; }
 
     /// @brief Number of basis functions.
     constexpr int num_functions() const noexcept
-    { return static_cast<int>(knots_.size()) - degree_ - 1; }
+    { return static_cast<int>(knots_.values().size()) - degree() - 1; }
 
     /// @brief Number of functions active on each element.
     constexpr int num_active() const noexcept
-    { return degree_ + 1; }
-
-    /// @brief Number of non-empty knot spans in the parametric domain.
-    constexpr int num_elements() const noexcept
-    { return static_cast<int>(element_spans_.size()); }
+    { return degree() + 1; }
 
     /**
      * @brief Index of the first function active on an element.
@@ -70,32 +78,10 @@ public:
      * @param element Element index.
      * @return Index of the first active basis function.
      *
-     * @pre @p element lies in [0, num_elements()).
+     * @pre @p element lies in [0, knots().num_elements())
      */
     constexpr int first_active(int element) const noexcept
-    { return element_spans_[static_cast<std::size_t>(element)] - degree_; }
-
-    /**
-     * @brief Parameter at which an element starts.
-     *
-     * @param element Element index.
-     * @return Left endpoint of the element.
-     *
-     * @pre @p element lies in [0, num_elements()).
-     */
-    constexpr T element_start(int element) const noexcept
-    { return knots_[element_spans_[element]]; }
-
-    /**
-     * @brief Parameter at which an element ends.
-     *
-     * @param element Element index.
-     * @return Right endpoint of the element.
-     *
-     * @pre @p element lies in [0, num_elements()).
-     */
-    constexpr T element_end(int element) const noexcept
-    { return knots_[element_spans_[element] + 1]; }
+    { return knots_.element_span(element) - degree(); }
 
     /**
      * @brief Evaluates the non-zero functions on an element using the Cox-de
@@ -114,14 +100,8 @@ public:
                          Eigen::MatrixX<T>& values) const;
 
 private:
-    /// @brief Polynomial degree of the basis.
-    int degree_;
-
-    /// @brief Non-decreasing knot vector.
-    std::vector<T> knots_;
-
-    /// @brief Knot-span index of each element.
-    std::vector<int> element_spans_;
+    /// @brief Knot vector, with the degree and the elements of the basis
+    KnotVector<T> knots_;
 };
 
 } // namespace iguana

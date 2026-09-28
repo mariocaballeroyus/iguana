@@ -74,10 +74,10 @@ Patch<double, d - 1> isopatch(const Patch<double, d>& patch,
     const BSpline<double>& pinned = basis.axis(direction);
 
     // The last line closes an element, every other one starts it
-    const bool last = line == pinned.num_elements();
+    const bool last = line == pinned.knots().num_elements();
     const int element = last ? line - 1 : line;
-    const double parameter = last ? pinned.element_end(element)
-                                  : pinned.element_start(element);
+    const double parameter = last ? pinned.knots().element_end(element)
+                                  : pinned.knots().element_start(element);
     const int first = pinned.first_active(element);
 
     Eigen::MatrixXd weights;
@@ -144,7 +144,7 @@ std::vector<Patch<double, d - 1>> isopatches(const Patch<double, d>& patch)
 
     for (std::size_t direction = 0; direction < d; ++direction) {
         // n elements are bounded by the knot lines 0 to n
-        const int last = patch.basis().axis(direction).num_elements();
+        const int last = patch.basis().axis(direction).knots().num_elements();
 
         for (int line = 0; line <= last; ++line)
             result.push_back(isopatch(patch, direction, line));
