@@ -124,6 +124,28 @@ private:
     std::vector<int> element_spans_;
 };
 
+/**
+ * @brief Coefficients of the functions of a basis in a finer one
+ *
+ * The fine basis holds every knot of the coarse one, so each coarse
+ * function is a combination \f$ N_i = \sum_j R_{ji} M_j \f$ of the fine
+ * ones. The coefficients follow from inserting the added knots one at a
+ * time with Boehm's algorithm, as for the control points of a curve
+ *
+ * @param coarse Coarse basis
+ * @param fine Fine basis, holding the knots of the coarse one and others
+ * @return Matrix R with size (fine.num_functions(),
+ *         coarse.num_functions()), whose column i holds the coefficients
+ *         of coarse function i
+ *
+ * @throws std::invalid_argument If the degrees differ, if the fine knots
+ *         do not contain the coarse ones, or if an added knot lies outside
+ *         the interior of the parametric domain
+ */
+template<std::floating_point T>
+Eigen::MatrixX<T> refinement_matrix(const BSpline<T>& coarse,
+                                    const BSpline<T>& fine);
+
 } // namespace iguana
 
 #endif // IGUANA_BASIS_BSPLINE_HPP

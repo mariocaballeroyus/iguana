@@ -7,8 +7,10 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <iterator>
 #include <stdexcept>
 #include <utility>
+#include <vector>
 
 namespace iguana
 {
@@ -95,6 +97,82 @@ void BSpline<T>::eval_on_element(int first_active, std::span<const T> points,
     }
 }
 
+template<std::floating_point T>
+Eigen::MatrixX<T> refinement_matrix(const BSpline<T>& coarse,
+                                    const BSpline<T>& fine)
+{
+    const int degree = coarse.degree();
+
+    if (fine.degree() != degree)
+        throw std::invalid_argument("refinement_matrix: "
+                                    "the bases must share their degree");
+
+    if (!std::ranges::includes(fine.knots(), coarse.knots()))
+        throw std::invalid_argument("refinement_matrix: "
+                                    "the fine knots must contain the coarse "
+                                    "ones");
+
+    // Knots of the fine basis beyond those of the coarse one, repeats
+    // included
+    std::vector<T> added;
+    std::ranges::set_difference(fine.knots(), coarse.knots(),
+                                std::back_inserter(added));
+
+    const T start = coarse.element_start(0);
+    const T end = coarse.element_end(coarse.num_elements() - 1);
+
+    if (std::ranges::any_of(added, [start, end](T knot) {
+            return knot <= start || knot >= end;
+        }))
+        throw std::invalid_argument("refinement_matrix: "
+                                    "the added knots must lie inside the "
+                                    "parametric domain");
+
+    // Each column holds the coefficients of one coarse function, at first
+    // in the coarse basis itself
+    const int num_coarse = coarse.num_functions();
+    Eigen::MatrixX<T> result = Eigen::MatrixX<T>::Identity(num_coarse,
+                                                           num_coarse);
+    std::vector<T> knots = coarse.knots();
+
+    for (const T knot : added) {
+        // Span holding the knot, knots[span] <= knot < knots[span + 1]
+        const int span =
+            static_cast<int>(std::ranges::upper_bound(knots, knot)
+                             - knots.begin())
+            - 1;
+
+        // The knot adds one function, and the rows follow as the control
+        // points of a curve do. They are replaced from the last down, so
+        // that each reads rows not yet replaced
+        result.conservativeResize(result.rows() + 1, Eigen::NoChange);
+
+        for (int function = static_cast<int>(result.rows()) - 1;
+             function > span - degree; --function) {
+            if (function > span) {
+                // Past the knot, the functions shift by one
+                result.row(function) = result.row(function - 1);
+            }
+            else {
+                // Around the knot, each blends two
+                const T alpha = (knot - knots[function])
+                                / (knots[function + degree] - knots[function]);
+
+                result.row(function) = alpha * result.row(function)
+                                       + (T{1} - alpha)
+                                             * result.row(function - 1);
+            }
+        }
+
+        knots.insert(knots.begin() + span + 1, knot);
+    }
+
+    return result;
+}
+
 template class BSpline<double>;
+
+template Eigen::MatrixXd refinement_matrix(const BSpline<double>&,
+                                           const BSpline<double>&);
 
 } // namespace iguana
