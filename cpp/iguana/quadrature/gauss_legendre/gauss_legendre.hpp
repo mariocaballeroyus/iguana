@@ -78,7 +78,8 @@ public:
                                  Eigen::VectorX<T>& weights) const override;
 
     /**
-     * @brief Maps the rule onto a box, as map_to_box() places it
+     * @brief Maps the rule onto a box, as BoxRule::map_to_parameter_space()
+     *        places it
      *
      * @param start Parameters at which the box starts
      * @param end Parameters at which the box ends

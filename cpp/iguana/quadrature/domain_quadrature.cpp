@@ -116,8 +116,9 @@ void DomainQuadrature<T, d>::fill(const TensorDomain<T, d>& domain,
 
         rule.fill_to_reference_space(element.start(), element.end(),
                                      reference_points, reference_weights);
-        map_to_box(element.start(), element.end(), reference_points,
-                   reference_weights, cell_points[cell], cell_weights[cell]);
+        BoxRule<T, d>::map_to_parameter_space(
+            element.start(), element.end(), reference_points,
+            reference_weights, cell_points[cell], cell_weights[cell]);
 
         const int position = num_held + cell;
 

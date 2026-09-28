@@ -67,9 +67,9 @@ public:
      * @brief Fills the cells of one type of a domain with a rule
      *
      * The rule fills the quadrature of every cell of the type on the
-     * reference cell, which map_to_box() places on the cell and which is
-     * appended in increasing element index after the elements already held.
-     * If it throws, the quadrature is left unchanged
+     * reference cell, which BoxRule::map_to_parameter_space() places on the
+     * cell and which is appended in increasing element index after the
+     * elements already held. If it throws, the quadrature is left unchanged
      *
      * @tparam Rule Rule with fill_to_reference_space(start, end, points,
      *         weights), as BoxRule states it. The number of points may
