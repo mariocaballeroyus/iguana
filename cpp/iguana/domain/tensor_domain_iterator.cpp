@@ -17,7 +17,8 @@ TensorDomainIterator<T, d>::TensorDomainIterator(
       num_elements_(basis.num_elements())
 {
     for (std::size_t direction = 0; direction < d; ++direction)
-        element_counts_[direction] = basis.axis(direction).num_elements();
+        element_counts_[direction] =
+            basis.axis(direction).knots().num_elements();
 
     update();
 }
@@ -42,8 +43,8 @@ void TensorDomainIterator<T, d>::update() noexcept
         const int element = axis_elements_[direction];
 
         first_active_[direction] = axis.first_active(element);
-        start_[direction] = axis.element_start(element);
-        end_[direction] = axis.element_end(element);
+        start_[direction] = axis.knots().element_start(element);
+        end_[direction] = axis.knots().element_end(element);
     }
 }
 

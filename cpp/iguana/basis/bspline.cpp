@@ -16,48 +16,27 @@ namespace iguana
 {
 
 template<std::floating_point T>
-BSpline<T>::BSpline(int degree, std::vector<T> knots)
-    : degree_(degree), knots_(std::move(knots))
+BSpline<T>::BSpline(KnotVector<T> knots)
+    : knots_(std::move(knots))
 {
-    if (degree_ < 0)
-        throw std::invalid_argument("BSpline: "
-                                    "the degree must be non-negative");
-
-    if (degree_ > max_degree)
+    if (degree() > max_degree)
         throw std::invalid_argument("BSpline: "
                                     "the degree exceeds max_degree");
+}
 
-    if (!std::ranges::is_sorted(knots_))
-        throw std::invalid_argument("BSpline: "
-                                    "the knots must be non-decreasing");
-
-    const std::size_t min_knots =
-        2 * (static_cast<std::size_t>(degree_) + 1);
-
-    if (knots_.size() < min_knots)
-        throw std::invalid_argument("BSpline: "
-                                    "too few knots for the given degree");
-
-    const int num_functions =
-        static_cast<int>(knots_.size()) - degree_ - 1;
-
-    for (int span = degree_; span < num_functions; ++span) {
-        if (knots_[span] < knots_[span + 1])
-            element_spans_.push_back(span);
-    }
-
-    if (element_spans_.empty())
-        throw std::invalid_argument("BSpline: "
-                                    "the parametric domain must be non-empty");
+template<std::floating_point T>
+BSpline<T>::BSpline(int degree, std::vector<T> knots)
+    : BSpline(KnotVector<T>(degree, std::move(knots)))
+{
 }
 
 template<std::floating_point T>
 void BSpline<T>::eval_on_element(int first_active, std::span<const T> points,
                                  Eigen::MatrixX<T>& values) const
 {
-    const int deg = degree_;
+    const int deg = degree();
     const Eigen::Index num_pts = static_cast<Eigen::Index>(points.size());
-    const T* const knots = knots_.data();
+    const T* const knots = knots_.values().data();
 
     // Knot span shared by all evaluation points
     const int span = first_active + deg;
@@ -105,8 +84,8 @@ namespace
 template<std::floating_point T>
 bool inside_domain(const BSpline<T>& basis, const std::vector<T>& knots)
 {
-    const T start = basis.element_start(0);
-    const T end = basis.element_end(basis.num_elements() - 1);
+    const T start = basis.knots().domain_start();
+    const T end = basis.knots().domain_end();
 
     return std::ranges::all_of(knots, [start, end](T knot) {
         return start < knot && knot < end;
@@ -124,7 +103,7 @@ BSpline<T> insert_knots(const BSpline<T>& basis,
                                     "the knots must lie inside the "
                                     "parametric domain");
 
-    std::vector<T> merged = basis.knots();
+    std::vector<T> merged = basis.knots().values();
     merged.insert(merged.end(), knots.begin(), knots.end());
     std::ranges::sort(merged);
 
@@ -141,7 +120,8 @@ Eigen::MatrixX<T> refinement_matrix(const BSpline<T>& coarse,
         throw std::invalid_argument("refinement_matrix: "
                                     "the bases must share their degree");
 
-    if (!std::ranges::includes(fine.knots(), coarse.knots()))
+    if (!std::ranges::includes(fine.knots().values(),
+                               coarse.knots().values()))
         throw std::invalid_argument("refinement_matrix: "
                                     "the fine knots must contain the coarse "
                                     "ones");
@@ -149,7 +129,8 @@ Eigen::MatrixX<T> refinement_matrix(const BSpline<T>& coarse,
     // Knots of the fine basis beyond those of the coarse one, repeats
     // included
     std::vector<T> added;
-    std::ranges::set_difference(fine.knots(), coarse.knots(),
+    std::ranges::set_difference(fine.knots().values(),
+                                coarse.knots().values(),
                                 std::back_inserter(added));
 
     if (!inside_domain(coarse, added))
@@ -162,7 +143,7 @@ Eigen::MatrixX<T> refinement_matrix(const BSpline<T>& coarse,
     const int num_coarse = coarse.num_functions();
     Eigen::MatrixX<T> result = Eigen::MatrixX<T>::Identity(num_coarse,
                                                            num_coarse);
-    std::vector<T> knots = coarse.knots();
+    std::vector<T> knots = coarse.knots().values();
 
     for (const T knot : added) {
         // Span holding the knot, knots[span] <= knot < knots[span + 1]

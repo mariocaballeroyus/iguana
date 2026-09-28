@@ -22,7 +22,9 @@ void basis(py::module_& module)
         .def(py::init<int, std::vector<double>>(),
              py::arg("degree"), py::arg("knots"))
         .def_property_readonly("degree", &BSpline<double>::degree)
-        .def_property_readonly("knots", &BSpline<double>::knots);
+        .def_property_readonly("knots", [](const BSpline<double>& basis) {
+            return basis.knots().values();
+        });
 
     py::class_<TensorBSpline<double, 1>>(module, "UnivariateBSpline")
         .def("axis", &TensorBSpline<double, 1>::axis);

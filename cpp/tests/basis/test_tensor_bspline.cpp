@@ -41,7 +41,7 @@ std::array<int, d> element_of(const TensorBSpline<double, d>& basis,
     std::array<int, d> indices{};
 
     for (std::size_t direction = 0; direction < d; ++direction) {
-        const int count = basis.axis(direction).num_elements();
+        const int count = basis.axis(direction).knots().num_elements();
         indices[direction] = element % count;
         element /= count;
     }
@@ -71,9 +71,9 @@ Eigen::MatrixXd points_on(const TensorBSpline<double, d>& basis, int element)
     Eigen::MatrixXd points(fractions.size(), d);
 
     for (std::size_t direction = 0; direction < d; ++direction) {
-        const BSpline<double>& axis = basis.axis(direction);
-        const double start = axis.element_start(indices[direction]);
-        const double width = axis.element_end(indices[direction]) - start;
+        const iguana::KnotVector<double>& knots = basis.axis(direction).knots();
+        const double start = knots.element_start(indices[direction]);
+        const double width = knots.element_end(indices[direction]) - start;
 
         for (std::size_t point = 0; point < fractions.size(); ++point)
             points(point, direction) =
@@ -89,7 +89,7 @@ double greville(const BSpline<double>& axis, int function)
     double sum = 0.;
 
     for (int knot = 1; knot <= axis.degree(); ++knot)
-        sum += axis.knots()[function + knot];
+        sum += axis.knots().values()[function + knot];
 
     return sum / axis.degree();
 }

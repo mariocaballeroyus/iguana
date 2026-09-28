@@ -22,7 +22,7 @@ TensorBSpline<T, d>::TensorBSpline(std::array<BSpline<T>, d> axes)
 {
     for (const BSpline<T>& axis : axes_) {
         num_functions_ *= axis.num_functions();
-        num_elements_ *= axis.num_elements();
+        num_elements_ *= axis.knots().num_elements();
         num_active_ *= axis.num_active();
     }
 }
@@ -38,12 +38,12 @@ void TensorBSpline<T, d>::active_on_element(
 
     for (std::size_t direction = 0; direction < d; ++direction) {
         const BSpline<T>& axis = axes_[direction];
-        const int axis_element = element % axis.num_elements();
+        const int axis_element = element % axis.knots().num_elements();
 
         first_active[direction] = axis.first_active(axis_element);
         active_counts[direction] = axis.num_active();
         function_counts[direction] = axis.num_functions();
-        element /= axis.num_elements();
+        element /= axis.knots().num_elements();
     }
 
     actives.resize(num_active_);

@@ -45,7 +45,7 @@ double greville(const BSpline<double>& axis, int function)
     double sum = 0.;
 
     for (int knot = 1; knot <= axis.degree(); ++knot)
-        sum += axis.knots()[function + knot];
+        sum += axis.knots().values()[function + knot];
 
     return sum / axis.degree();
 }
@@ -142,12 +142,13 @@ TEST_CASE("Patch reproduces affine maps exactly", "[patch]")
 
                 for (std::size_t dir = 0; dir < d; ++dir) {
                     const BSpline<double>& axis = basis.axis(dir);
-                    const int index = rest % axis.num_elements();
-                    const double start = axis.element_start(index);
-                    const double width = axis.element_end(index) - start;
+                    const iguana::KnotVector<double>& knots = axis.knots();
+                    const int index = rest % knots.num_elements();
+                    const double start = knots.element_start(index);
+                    const double width = knots.element_end(index) - start;
                     const double shear = .1 * static_cast<double>(dir);
 
-                    rest /= axis.num_elements();
+                    rest /= knots.num_elements();
                     first[dir] = axis.first_active(index);
 
                     // Shear the fractions so that swapping a point index

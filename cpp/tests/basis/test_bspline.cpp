@@ -33,8 +33,8 @@ std::vector<BSpline<double>> test_bases()
 
 std::array<double, 5> points_on(const BSpline<double>& basis, int element)
 {
-    const double start = basis.element_start(element);
-    const double end = basis.element_end(element);
+    const double start = basis.knots().element_start(element);
+    const double end = basis.knots().element_end(element);
 
     return {start,
             .75 * start + .25 * end,
@@ -66,13 +66,14 @@ void check_refinement(const BSpline<double>& coarse,
 {
     const Eigen::MatrixXd refinement = iguana::refinement_matrix(coarse, fine);
 
-    for (int element = 0; element < fine.num_elements(); ++element) {
+    for (int element = 0; element < fine.knots().num_elements(); ++element) {
         const std::array points = points_on(fine, element);
 
         // The coarse element holding the fine one
         int parent = 0;
 
-        while (coarse.element_end(parent) < fine.element_end(element))
+        while (coarse.knots().element_end(parent)
+               < fine.knots().element_end(element))
             ++parent;
 
         const Eigen::MatrixXd residual =
@@ -105,7 +106,9 @@ TEST_CASE("The basis is a partition of unity", "[bspline]")
     Eigen::MatrixXd values;
 
     for (const BSpline<double>& basis : test_bases()) {
-        for (int element = 0; element < basis.num_elements(); ++element) {
+        const int num_elements = basis.knots().num_elements();
+
+        for (int element = 0; element < num_elements; ++element) {
             const std::array points = points_on(basis, element);
 
             basis.eval_on_element(basis.first_active(element), points, values);
@@ -145,17 +148,19 @@ TEST_CASE("Refinement writes the coarse functions in the fine ones",
           "[bspline]")
 {
     for (const BSpline<double>& basis : test_bases()) {
+        const iguana::KnotVector<double>& knots = basis.knots();
+
         // Dyadic refinement, halving every element
         std::vector<double> midpoints;
 
-        for (int element = 0; element < basis.num_elements(); ++element)
+        for (int element = 0; element < knots.num_elements(); ++element)
             midpoints.push_back(
-                (basis.element_start(element) + basis.element_end(element))
+                (knots.element_start(element) + knots.element_end(element))
                 / 2.);
 
         const BSpline<double> fine = iguana::insert_knots(basis, midpoints);
 
-        REQUIRE(fine.num_elements() == 2 * basis.num_elements());
+        REQUIRE(fine.knots().num_elements() == 2 * knots.num_elements());
         check_refinement(basis, fine);
     }
 
