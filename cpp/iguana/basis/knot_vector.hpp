@@ -100,6 +100,25 @@ private:
     std::vector<int> element_spans_;
 };
 
+/**
+ * @brief Knot vector with knots inserted, which refines its elements
+ *
+ * Each knot splits the element it falls in, or raises the multiplicity of
+ * the knot it matches. The degree and the parametric domain stay the same,
+ * so every function of a basis on the knot vector is a combination of the
+ * functions of a basis on the new one, as refinement_matrix() gives them
+ *
+ * @param knot_vector Knot vector to refine
+ * @param knots Knots to insert, in any order and possibly repeated
+ * @return Knot vector of the same degree with the knots of both
+ *
+ * @throws std::invalid_argument If a knot lies outside the interior of the
+ *         parametric domain
+ */
+template<std::floating_point T>
+KnotVector<T> insert_knots(const KnotVector<T>& knot_vector,
+                           const std::vector<T>& knots);
+
 } // namespace iguana
 
 #endif // IGUANA_BASIS_KNOT_VECTOR_HPP

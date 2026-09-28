@@ -158,7 +158,7 @@ TEST_CASE("Refinement writes the coarse functions in the fine ones",
                 (knots.element_start(element) + knots.element_end(element))
                 / 2.);
 
-        const BSpline<double> fine = iguana::insert_knots(basis, midpoints);
+        const BSpline<double> fine(iguana::insert_knots(knots, midpoints));
 
         REQUIRE(fine.knots().num_elements() == 2 * knots.num_elements());
         check_refinement(basis, fine);
@@ -167,8 +167,10 @@ TEST_CASE("Refinement writes the coarse functions in the fine ones",
     // Knots off the midpoints, in no order, one repeating a knot of the
     // basis and one inserted twice
     const BSpline<double> basis(2, {0., 0., 0., 1., 2., 3., 4., 4., 4.});
+    const BSpline<double> fine(
+        iguana::insert_knots(basis.knots(), {2., .3, 3.7, 3.7}));
 
-    check_refinement(basis, iguana::insert_knots(basis, {2., .3, 3.7, 3.7}));
+    check_refinement(basis, fine);
 }
 
 TEST_CASE("Refinement rejects bases that do not nest", "[bspline]")
@@ -176,7 +178,7 @@ TEST_CASE("Refinement rejects bases that do not nest", "[bspline]")
     const BSpline<double> basis(2, {0., 0., 0., 1., 2., 2., 2.});
 
     // A knot inserted at an end of the parametric domain
-    REQUIRE_THROWS_AS(iguana::insert_knots(basis, {2.}),
+    REQUIRE_THROWS_AS(iguana::insert_knots(basis.knots(), {2.}),
                       std::invalid_argument);
 
     // A fine basis of another degree, missing a knot of the coarse one, or
