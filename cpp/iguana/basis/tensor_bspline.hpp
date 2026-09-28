@@ -13,6 +13,7 @@
 #include <Eigen/Core>
 
 #include "bspline.hpp"
+#include "iguana/domain/tensor_domain.hpp"
 
 namespace iguana
 {
@@ -37,11 +38,25 @@ public:
     static constexpr std::size_t dimension = d;
 
     /**
+     * @brief Constructs the basis on a domain, with one univariate basis on
+     *        the knot vector of each direction
+     *
+     * @param domain Domain holding the knot vector of each direction
+     *
+     * @throws std::invalid_argument If a degree exceeds BSpline::max_degree
+     */
+    explicit TensorBSpline(TensorDomain<T, d> domain);
+
+    /**
      * @brief Constructs a tensor-product B-spline basis.
      *
      * @param axes Univariate basis of each parametric direction.
      */
     explicit TensorBSpline(std::array<BSpline<T>, d> axes);
+
+    /// @brief Domain, whose elements the basis is defined on
+    constexpr const TensorDomain<T, d>& domain() const noexcept
+    { return domain_; }
 
     /**
      * @brief Univariate basis of a parametric direction.
@@ -58,10 +73,6 @@ public:
     constexpr int num_functions() const noexcept
     { return num_functions_; }
 
-    /// @brief Number of tensor-product elements.
-    constexpr int num_elements() const noexcept
-    { return num_elements_; }
-
     /// @brief Number of functions active on each element.
     constexpr int num_active() const noexcept
     { return num_active_; }
@@ -76,7 +87,7 @@ public:
      * @param actives Output vector of num_active() function indices. It is
      *        resized when necessary.
      *
-     * @pre @p element lies in [0, num_elements()).
+     * @pre @p element lies in [0, domain().num_elements())
      */
     void active_on_element(int element, Eigen::VectorXi& actives) const;
 
@@ -100,14 +111,14 @@ public:
                          Eigen::MatrixX<T>& values) const;
 
 private:
+    /// @brief Domain, with the knot vector of each direction
+    TensorDomain<T, d> domain_;
+
     /// @brief Univariate bases, one per parametric direction.
     std::array<BSpline<T>, d> axes_;
 
     /// @brief Product of the univariate function counts.
     int num_functions_;
-
-    /// @brief Product of the univariate element counts.
-    int num_elements_;
 
     /// @brief Product of the univariate active-function counts.
     int num_active_;

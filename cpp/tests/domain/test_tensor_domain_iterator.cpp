@@ -84,7 +84,7 @@ TEST_CASE("The walk reaches every element once, in order", "[domain]")
         volume += cell;
     }
 
-    REQUIRE(visited == basis.num_elements());
+    REQUIRE(visited == basis.domain().num_elements());
 
     // The element boxes fill the parameter box
     double box = 1.;
@@ -105,5 +105,5 @@ TEST_CASE("The walk reaches every element once, in order", "[domain]")
          element != std::default_sentinel; ++element)
         REQUIRE(element.index() == again++);
 
-    REQUIRE(again == basis.num_elements());
+    REQUIRE(again == basis.domain().num_elements());
 }

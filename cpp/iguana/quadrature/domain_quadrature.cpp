@@ -66,16 +66,16 @@ void DomainQuadrature<T, d>::fill(const TensorBSpline<T, d>& basis,
                                   const Embedding<T, d>& embedding,
                                   CellType cell_type, const Rule& rule)
 {
-    if (embedding.num_elements() != basis.num_elements())
+    if (embedding.num_elements() != basis.domain().num_elements())
         throw std::invalid_argument("DomainQuadrature: "
                                     "the embedding must have one cell type "
                                     "per element");
 
     // Elements already held, which the new cells must not repeat
-    std::vector<bool> held(basis.num_elements(), false);
+    std::vector<bool> held(basis.domain().num_elements(), false);
 
     for (const int element : elements_) {
-        if (element < 0 || element >= basis.num_elements())
+        if (element < 0 || element >= basis.domain().num_elements())
             throw std::invalid_argument("DomainQuadrature: "
                                         "the elements already held must lie "
                                         "in the basis");
@@ -85,7 +85,7 @@ void DomainQuadrature<T, d>::fill(const TensorBSpline<T, d>& basis,
 
     int num_cells = 0;
 
-    for (int element = 0; element < basis.num_elements(); ++element) {
+    for (int element = 0; element < basis.domain().num_elements(); ++element) {
         if (embedding.cell_type(element) != cell_type)
             continue;
 

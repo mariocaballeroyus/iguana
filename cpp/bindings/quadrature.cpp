@@ -67,12 +67,12 @@ PointMatrix<double> positions(const DomainQuadrature<double, d>& quadrature,
     const Eigen::VectorXi& offsets = quadrature.offsets();
 
     // Position of each element among the held ones, or -1 if not held
-    std::vector<int> held(basis.num_elements(), -1);
+    std::vector<int> held(basis.domain().num_elements(), -1);
 
     for (int position = 0; position < quadrature.num_elements(); ++position) {
         const int element = quadrature.elements()(position);
 
-        if (element < 0 || element >= basis.num_elements())
+        if (element < 0 || element >= basis.domain().num_elements())
             throw std::invalid_argument("DomainQuadrature: "
                                         "the elements must lie in the "
                                         "basis");

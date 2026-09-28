@@ -14,7 +14,7 @@ template<std::floating_point T, std::size_t d>
 TensorDomainIterator<T, d>::TensorDomainIterator(
     const TensorBSpline<T, d>& basis) noexcept
     : basis_(&basis),
-      num_elements_(basis.num_elements())
+      num_elements_(basis.domain().num_elements())
 {
     for (std::size_t direction = 0; direction < d; ++direction)
         element_counts_[direction] =

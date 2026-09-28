@@ -113,8 +113,9 @@ TEST_CASE("Tensor basis is non-negative and partitions unity on every element",
     for (const Basis& entry : bases) {
         std::visit([&values](const auto& basis) {
             INFO("dimension " << basis.dimension);
+            const int num_elements = basis.domain().num_elements();
 
-            for (int element = 0; element < basis.num_elements(); ++element) {
+            for (int element = 0; element < num_elements; ++element) {
                 INFO("element " << element);
                 const Eigen::MatrixXd points = points_on(basis, element);
 
@@ -141,7 +142,7 @@ TEST_CASE("Tensor basis reproduces coordinates through active indices",
     Eigen::MatrixXd values;
     Eigen::VectorXi actives;
 
-    for (int element = 0; element < basis.num_elements(); ++element) {
+    for (int element = 0; element < basis.domain().num_elements(); ++element) {
         INFO("element " << element);
         const Eigen::MatrixXd points = points_on(basis, element);
 
