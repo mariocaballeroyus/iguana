@@ -13,18 +13,45 @@
 namespace iguana
 {
 
+namespace
+{
+
+/// @brief Univariate bases on the knot vectors of a domain
+template<std::floating_point T, std::size_t d, std::size_t... direction>
+std::array<BSpline<T>, d> axes_on(const TensorDomain<T, d>& domain,
+                                  std::index_sequence<direction...>)
+{
+    return {BSpline<T>(domain.knots(direction))...};
+}
+
+/// @brief Domain on the knot vectors of univariate bases
+template<std::floating_point T, std::size_t d, std::size_t... direction>
+TensorDomain<T, d> domain_of(const std::array<BSpline<T>, d>& axes,
+                             std::index_sequence<direction...>)
+{
+    return TensorDomain<T, d>(
+        std::array<KnotVector<T>, d>{axes[direction].knots()...});
+}
+
+} // namespace
+
 template<std::floating_point T, std::size_t d>
-TensorBSpline<T, d>::TensorBSpline(std::array<BSpline<T>, d> axes)
-    : axes_(std::move(axes)),
+TensorBSpline<T, d>::TensorBSpline(TensorDomain<T, d> domain)
+    : domain_(std::move(domain)),
+      axes_(axes_on(domain_, std::make_index_sequence<d>{})),
       num_functions_(1),
-      num_elements_(1),
       num_active_(1)
 {
     for (const BSpline<T>& axis : axes_) {
         num_functions_ *= axis.num_functions();
-        num_elements_ *= axis.knots().num_elements();
         num_active_ *= axis.num_active();
     }
+}
+
+template<std::floating_point T, std::size_t d>
+TensorBSpline<T, d>::TensorBSpline(std::array<BSpline<T>, d> axes)
+    : TensorBSpline(domain_of(axes, std::make_index_sequence<d>{}))
+{
 }
 
 template<std::floating_point T, std::size_t d>

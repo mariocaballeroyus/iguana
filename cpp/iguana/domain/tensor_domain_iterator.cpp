@@ -5,6 +5,8 @@
 
 #include "tensor_domain_iterator.hpp"
 
+#include "iguana/domain/knot_vector.hpp"
+#include "iguana/domain/tensor_domain.hpp"
 #include "iguana/utils/multi_index.hpp"
 
 namespace iguana
@@ -12,13 +14,12 @@ namespace iguana
 
 template<std::floating_point T, std::size_t d>
 TensorDomainIterator<T, d>::TensorDomainIterator(
-    const TensorBSpline<T, d>& basis) noexcept
-    : basis_(&basis),
-      num_elements_(basis.num_elements())
+    const TensorDomain<T, d>& domain) noexcept
+    : domain_(&domain),
+      num_elements_(domain.num_elements())
 {
     for (std::size_t direction = 0; direction < d; ++direction)
-        element_counts_[direction] =
-            basis.axis(direction).knots().num_elements();
+        element_counts_[direction] = domain.knots(direction).num_elements();
 
     update();
 }
@@ -39,12 +40,14 @@ template<std::floating_point T, std::size_t d>
 void TensorDomainIterator<T, d>::update() noexcept
 {
     for (std::size_t direction = 0; direction < d; ++direction) {
-        const BSpline<T>& axis = basis_->axis(direction);
+        const KnotVector<T>& knots = domain_->knots(direction);
         const int element = axis_elements_[direction];
 
-        first_active_[direction] = axis.first_active(element);
-        start_[direction] = axis.knots().element_start(element);
-        end_[direction] = axis.knots().element_end(element);
+        // The functions active on a span start the degree before it
+        first_active_[direction] =
+            knots.element_span(element) - knots.degree();
+        start_[direction] = knots.element_start(element);
+        end_[direction] = knots.element_end(element);
     }
 }
 

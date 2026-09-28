@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Mario Caballero
 # SPDX-License-Identifier: MIT
 
-"""Quadratures, the points integrating over the cells of a domain
+"""Quadratures, the points integrating over the cells of a patch
 
 A quadrature is filled one cell type at a time, each with a rule of its
 own, such as Gauss-Legendre on the inside cells.
@@ -15,40 +15,61 @@ import numpy as np
 import numpy.typing as npt
 
 from iguana import cpp as _cpp
-from iguana.domain import CellType, TensorDomain
-from iguana.patch import VolumePatch
+from iguana.embedding import CellType
+from iguana.patch import SurfacePatch, VolumePatch
 
 
 class DomainQuadrature:
-    """The quadrature points over the cells of a domain."""
+    """The quadrature points over the cells of a patch."""
 
     _cpp_object: _cpp.SurfaceQuadrature | _cpp.VolumeQuadrature
 
-    def __init__(self, domain: TensorDomain) -> None:
-        """Initialize an empty quadrature over a domain.
+    def __init__(self, patch: SurfacePatch | VolumePatch,
+                 cell_types: Sequence[CellType] | None = None) -> None:
+        """Initialize an empty quadrature over the cells of a patch.
 
         Args:
-            domain: The domain whose cells the quadrature integrates.
+            patch: The background patch, a surface or volume patch, whose
+                elements are the cells.
+            cell_types: The type of each element, with the first direction
+                running fastest. Without them, every element lies inside.
 
         Raises:
-            TypeError: If the domain is not a tensor domain.
+            TypeError: If the patch is neither a surface nor a volume patch.
+            ValueError: If there is not one cell type per element.
         """
-        if not isinstance(domain, TensorDomain):
-            raise TypeError('the domain must be a tensor domain')
-
-        if isinstance(domain._cpp_object, _cpp.VolumeDomain):
+        if isinstance(patch, VolumePatch):
             self._cpp_object = _cpp.VolumeQuadrature()
+            embedding = _cpp.VolumeEmbedding
             self._dimension = 3
-        else:
+        elif isinstance(patch, SurfacePatch):
             self._cpp_object = _cpp.SurfaceQuadrature()
+            embedding = _cpp.SurfaceEmbedding
             self._dimension = 2
+        else:
+            raise TypeError('the patch must be a surface or volume patch')
 
-        self._domain = domain
+        num_elements = patch._cpp_object.basis.num_elements
+
+        if cell_types is None:
+            cell_types = [CellType.inside] * num_elements
+
+        if len(cell_types) != num_elements:
+            raise ValueError('there must be one cell type per element')
+
+        self._patch = patch
+        self._cell_types = list(cell_types)
+        self._embedding = embedding(self._cell_types)
 
     @property
-    def domain(self) -> TensorDomain:
-        """The domain whose cells the quadrature integrates."""
-        return self._domain
+    def patch(self) -> SurfacePatch | VolumePatch:
+        """The background patch, whose elements are the cells."""
+        return self._patch
+
+    @property
+    def cell_types(self) -> list[CellType]:
+        """Type of each element, with the first direction running fastest."""
+        return list(self._cell_types)
 
     @property
     def num_elements(self) -> int:
@@ -63,7 +84,7 @@ class DomainQuadrature:
     @property
     def positions(self) -> npt.NDArray[np.float64]:
         """Positions of the points in space, of shape ``(num_points, 3)``."""
-        return self._cpp_object.positions(self._domain._cpp_object)
+        return self._cpp_object.positions(self._patch._cpp_object)
 
     @property
     def weights(self) -> npt.NDArray[np.float64]:
@@ -92,8 +113,9 @@ class DomainQuadrature:
             raise ValueError('there must be one number of points per '
                              'direction')
 
-        self._cpp_object.fill_gauss_legendre(self._domain._cpp_object,
-                                             cell_type, list(num_points))
+        self._cpp_object.fill_gauss_legendre(
+            self._patch._cpp_object.basis, self._embedding, cell_type,
+            list(num_points))
 
     def fill_moment_fitting(self, cell_type: CellType,
                             vertices: npt.ArrayLike,
@@ -116,18 +138,18 @@ class DomainQuadrature:
             order: Highest polynomial degree of each direction.
 
         Raises:
-            TypeError: If the domain is not a volume domain.
+            TypeError: If the patch is not a volume patch.
             ValueError: If the mesh is malformed, if the order lies outside
                 [0, 4], or if the cells of this type are already filled.
         """
         if self._dimension != 3:
-            raise TypeError('moment fitting needs a volume domain')
+            raise TypeError('moment fitting needs a volume patch')
 
-        parameters = _to_parameters(self._domain.patch, vertices)
+        parameters = _to_parameters(self._patch, vertices)
 
         self._cpp_object.fill_moment_fitting(
-            self._domain._cpp_object, cell_type, parameters,
-            np.asarray(triangles, dtype=np.int32), order)
+            self._patch._cpp_object.basis, self._embedding, cell_type,
+            parameters, np.asarray(triangles, dtype=np.int32), order)
 
     def __repr__(self) -> str:
         return (f'DomainQuadrature(num_elements={self.num_elements}, '

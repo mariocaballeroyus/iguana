@@ -13,7 +13,7 @@
 
 #include <Eigen/Core>
 
-#include "knot_vector.hpp"
+#include "iguana/domain/knot_vector.hpp"
 
 namespace iguana
 {

@@ -10,7 +10,6 @@
 #include <cmath>
 #include <cstddef>
 #include <stdexcept>
-#include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -161,26 +160,20 @@ TEST_CASE("A thin part keeps the better of its fits", "[quadrature]")
 TEST_CASE("Moment fitting fills the cut cells of a domain", "[quadrature]")
 {
     // Three unit cells along x, inside, cut and outside the box x <= 1.5
-    iguana::TensorBSpline<double, 3> basis(
-        {iguana::BSpline<double>(1, {0., 0., 1., 2., 3., 3.}),
-         iguana::BSpline<double>(1, {0., 0., 1., 1.}),
-         iguana::BSpline<double>(1, {0., 0., 1., 1.})});
-
-    const int num_functions = basis.num_functions();
-
     const iguana::TensorDomain<double, 3> domain(
-        iguana::Patch<double, 3>(
-            std::move(basis),
-            iguana::PointMatrix<double>::Zero(num_functions, 3)),
+        {iguana::KnotVector<double>(1, {0., 0., 1., 2., 3., 3.}),
+         iguana::KnotVector<double>(1, {0., 0., 1., 1.}),
+         iguana::KnotVector<double>(1, {0., 0., 1., 1.})});
+    const iguana::Embedding<double, 3> embedding(
         {iguana::CellType::inside, iguana::CellType::cut,
          iguana::CellType::outside});
 
     const Box solid({-1., -1., -1.}, {1.5, 2., 2.});
 
     iguana::DomainQuadrature<double, 3> quadrature;
-    quadrature.fill(domain, iguana::CellType::inside,
+    quadrature.fill(domain, embedding, iguana::CellType::inside,
                     iguana::GaussLegendre<double, 3>(2));
-    quadrature.fill(domain, iguana::CellType::cut,
+    quadrature.fill(domain, embedding, iguana::CellType::cut,
                     iguana::MomentFitting<double, 3>(solid.vertices,
                                                      solid.facets, 2));
 

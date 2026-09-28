@@ -6,46 +6,22 @@
 #ifndef IGUANA_DOMAIN_TENSOR_DOMAIN_HPP
 #define IGUANA_DOMAIN_TENSOR_DOMAIN_HPP
 
+#include <array>
 #include <concepts>
 #include <cstddef>
-#include <cstdint>
 #include <iterator>
-#include <vector>
 
-#include "iguana/basis/tensor_bspline.hpp"
+#include "iguana/domain/knot_vector.hpp"
 #include "iguana/domain/tensor_domain_iterator.hpp"
-#include "iguana/geometry/patch.hpp"
 
 namespace iguana
 {
 
 /**
- * @brief Type of a cell, an element of the background patch, with respect
- *        to the physical domain
+ * @brief Elements of a tensor-product basis, the products of the elements
+ *        of one knot vector per direction
  *
- * The type is geometric only. How each type of cell is integrated is up to
- * the method built on the domain
- */
-enum class CellType : std::uint8_t
-{
-    /// @brief Entirely outside the physical domain
-    outside,
-
-    /// @brief Entirely inside the physical domain
-    inside,
-
-    /// @brief Crossed by the boundary of the physical domain
-    cut
-};
-
-/**
- * @brief Domain over the elements of a tensor-product patch
- *
- * The domain is the physical domain discretized over the elements of a
- * background patch, each of which lies outside it, inside it or across
- * its boundary. The cell types are given rather than computed, and the
- * domain holds no geometry of the solid: classifying the elements, and methods
- * that need the solid, take it alongside the domain
+ * The elements are numbered with the first direction running fastest
  *
  * @tparam T Floating-point type
  * @tparam d Number of parametric directions
@@ -58,45 +34,25 @@ public:
     static constexpr std::size_t dimension = d;
 
     /**
-     * @brief Constructs the domain covering the whole patch
+     * @brief Constructs the domain from the knot vector of each direction
      *
-     * @param patch Background patch, whose basis gives the elements
+     * @param knots Knot vector of each parametric direction
      */
-    explicit TensorDomain(Patch<T, d> patch);
+    explicit TensorDomain(std::array<KnotVector<T>, d> knots);
 
     /**
-     * @brief Constructs the domain with the cell type of each element
+     * @brief Knot vector of a parametric direction
      *
-     * @param patch Background patch, whose basis gives the elements
-     * @param cell_types Cell type of each element, in the numbering of the
-     *        basis
+     * @param direction Direction index
      *
-     * @throws std::invalid_argument If there is not one cell type per
-     *         element
+     * @pre @p direction lies in [0, dimension)
      */
-    TensorDomain(Patch<T, d> patch, std::vector<CellType> cell_types);
+    constexpr const KnotVector<T>& knots(std::size_t direction) const noexcept
+    { return knots_[direction]; }
 
-    /// @brief Background patch
-    constexpr const Patch<T, d>& patch() const noexcept
-    { return patch_; }
-
-    /// @brief Basis of the background patch, whose elements the domain has
-    constexpr const TensorBSpline<T, d>& basis() const noexcept
-    { return patch_.basis(); }
-
-    /// @brief Number of elements
+    /// @brief Number of elements, the product of those of each direction
     constexpr int num_elements() const noexcept
-    { return patch_.basis().num_elements(); }
-
-    /**
-     * @brief Cell type of an element
-     *
-     * @param element Element index, in the numbering of the basis
-     *
-     * @pre @p element lies in [0, num_elements())
-     */
-    constexpr CellType cell_type(int element) const noexcept
-    { return cell_types_[static_cast<std::size_t>(element)]; }
+    { return num_elements_; }
 
     /// @brief Iterator at the first element
     TensorDomainIterator<T, d> begin() const noexcept;
@@ -106,11 +62,11 @@ public:
     { return std::default_sentinel; }
 
 private:
-    /// @brief Background patch
-    Patch<T, d> patch_;
+    /// @brief Knot vector of each parametric direction
+    std::array<KnotVector<T>, d> knots_;
 
-    /// @brief Cell type of each element, in the numbering of the basis
-    std::vector<CellType> cell_types_;
+    /// @brief Product of the element counts of each direction
+    int num_elements_;
 };
 
 } // namespace iguana

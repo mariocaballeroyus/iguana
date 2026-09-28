@@ -62,9 +62,14 @@ DomainQuadrature<T, d>::DomainQuadrature(Eigen::VectorXi elements,
 template<std::floating_point T, std::size_t d>
 template<typename Rule>
 void DomainQuadrature<T, d>::fill(const TensorDomain<T, d>& domain,
-                                  CellType cell_type,
-                                  const Rule& rule)
+                                  const Embedding<T, d>& embedding,
+                                  CellType cell_type, const Rule& rule)
 {
+    if (embedding.num_elements() != domain.num_elements())
+        throw std::invalid_argument("DomainQuadrature: "
+                                    "the embedding must have one cell type "
+                                    "per element");
+
     // Elements already held, which the new cells must not repeat
     std::vector<bool> held(domain.num_elements(), false);
 
@@ -80,7 +85,7 @@ void DomainQuadrature<T, d>::fill(const TensorDomain<T, d>& domain,
     int num_cells = 0;
 
     for (int element = 0; element < domain.num_elements(); ++element) {
-        if (domain.cell_type(element) != cell_type)
+        if (embedding.cell_type(element) != cell_type)
             continue;
 
         if (held[element])
@@ -107,7 +112,7 @@ void DomainQuadrature<T, d>::fill(const TensorDomain<T, d>& domain,
     int cell = 0;
 
     for (const TensorDomainIterator<T, d>& element : domain) {
-        if (domain.cell_type(element.index()) != cell_type)
+        if (embedding.cell_type(element.index()) != cell_type)
             continue;
 
         // Filled on the reference cell, then mapped onto the cell in place
@@ -153,15 +158,20 @@ template class DomainQuadrature<double, 2>;
 template class DomainQuadrature<double, 3>;
 
 template void DomainQuadrature<double, 1>::fill(
-    const TensorDomain<double, 1>&, CellType, const GaussLegendre<double, 1>&);
+    const TensorDomain<double, 1>&, const Embedding<double, 1>&,
+    CellType, const GaussLegendre<double, 1>&);
 template void DomainQuadrature<double, 2>::fill(
-    const TensorDomain<double, 2>&, CellType, const GaussLegendre<double, 2>&);
+    const TensorDomain<double, 2>&, const Embedding<double, 2>&,
+    CellType, const GaussLegendre<double, 2>&);
 template void DomainQuadrature<double, 3>::fill(
-    const TensorDomain<double, 3>&, CellType, const GaussLegendre<double, 3>&);
+    const TensorDomain<double, 3>&, const Embedding<double, 3>&,
+    CellType, const GaussLegendre<double, 3>&);
 
 template void DomainQuadrature<double, 2>::fill(
-    const TensorDomain<double, 2>&, CellType, const MomentFitting<double, 2>&);
+    const TensorDomain<double, 2>&, const Embedding<double, 2>&,
+    CellType, const MomentFitting<double, 2>&);
 template void DomainQuadrature<double, 3>::fill(
-    const TensorDomain<double, 3>&, CellType, const MomentFitting<double, 3>&);
+    const TensorDomain<double, 3>&, const Embedding<double, 3>&,
+    CellType, const MomentFitting<double, 3>&);
 
 } // namespace iguana

@@ -1,8 +1,8 @@
 add_executable(iguana_tests
     basis/test_bspline.cpp
-    basis/test_knot_vector.cpp
     basis/test_tensor_bspline.cpp
-    domain/test_tensor_domain.cpp
+    domain/test_knot_vector.cpp
+    domain/test_tensor_domain_iterator.cpp
     embedding/test_clipper.cpp
     embedding/test_inside.cpp
     embedding/test_slicer.cpp

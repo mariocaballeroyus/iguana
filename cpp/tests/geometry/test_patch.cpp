@@ -133,7 +133,7 @@ TEST_CASE("Patch reproduces affine maps exactly", "[patch]")
             Eigen::VectorXi actives;
             Points positions;
 
-            for (int element = 0; element < basis.num_elements();
+            for (int element = 0; element < basis.domain().num_elements();
                  ++element) {
                 INFO("element " << element);
                 std::array<int, d> first{};

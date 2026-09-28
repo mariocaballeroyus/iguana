@@ -1,13 +1,13 @@
 # Copyright (c) 2026 Mario Caballero
 # SPDX-License-Identifier: MIT
 
-"""Tests of the quadrature over the cells of a domain"""
+"""Tests of the quadrature over the cells of a patch"""
 
 import numpy as np
 import pytest
 
 import iguana
-from iguana import CellType, DomainQuadrature, TensorDomain
+from iguana import CellType, DomainQuadrature
 
 ORIGIN = np.array([1., 0., -1.])
 
@@ -19,12 +19,12 @@ def box():
 
 
 def mixed():
-    """Domain over the block with cut cells 1 and 6 and outside cell 3."""
+    """Cell types of the block with cut cells 1 and 6 and outside cell 3."""
     cell_types = [CellType.inside] * 8
     cell_types[1] = cell_types[6] = CellType.cut
     cell_types[3] = CellType.outside
 
-    return TensorDomain(box(), cell_types)
+    return cell_types
 
 
 def centre(element):
@@ -48,7 +48,7 @@ def solid():
 
 def test_gauss_legendre_positions():
     """The points of each inside cell are its Gauss points in space."""
-    quadrature = DomainQuadrature(mixed())
+    quadrature = DomainQuadrature(box(), mixed())
     quadrature.fill_gauss_legendre(CellType.inside, (2, 3, 1))
 
     # Gauss nodes about the centre of a unit cell, first direction fastest
@@ -63,7 +63,7 @@ def test_gauss_legendre_positions():
 
 def test_fill_order():
     """Each filled cell type follows the ones filled before."""
-    quadrature = DomainQuadrature(mixed())
+    quadrature = DomainQuadrature(box(), mixed())
     assert quadrature.positions.shape == (0, 3)
 
     quadrature.fill_gauss_legendre(CellType.cut, 1)
@@ -81,7 +81,7 @@ def test_moment_fitting():
     cell_types[0] = cell_types[4] = CellType.inside
     cell_types[1] = cell_types[5] = CellType.cut
 
-    quadrature = DomainQuadrature(TensorDomain(box(), cell_types))
+    quadrature = DomainQuadrature(box(), cell_types)
     quadrature.fill_gauss_legendre(CellType.inside, 2)
     quadrature.fill_moment_fitting(CellType.cut, *solid())
 
@@ -92,9 +92,10 @@ def test_moment_fitting():
 
 
 def test_surface():
-    """A surface domain takes one number of points per surface direction."""
-    # The first isosurface is the face of the block at x = 1
-    quadrature = DomainQuadrature(TensorDomain(box().isosurfaces()[0]))
+    """A surface patch takes one number of points per surface direction."""
+    # The first isosurface is the face of the block at x = 1, whose cells
+    # all lie inside without cell types
+    quadrature = DomainQuadrature(box().isosurfaces()[0])
     quadrature.fill_gauss_legendre(CellType.inside, (3, 2))
 
     assert quadrature.num_points == 2 * 3 * 2
@@ -103,10 +104,14 @@ def test_surface():
 
 def test_invalid_arguments():
     """Invalid arguments raise and leave the quadrature unchanged."""
+    # A curve patch, and one cell type too few
     with pytest.raises(TypeError):
-        DomainQuadrature(box())
+        DomainQuadrature(box().isosurfaces()[0].isocurves()[0])
 
-    quadrature = DomainQuadrature(mixed())
+    with pytest.raises(ValueError):
+        DomainQuadrature(box(), mixed()[:-1])
+
+    quadrature = DomainQuadrature(box(), mixed())
 
     with pytest.raises(ValueError):
         quadrature.fill_gauss_legendre(CellType.inside, (2, 2))
@@ -118,8 +123,8 @@ def test_invalid_arguments():
 
     assert quadrature.num_points == 5
 
-    # Moment fitting needs a volume domain
-    surface = DomainQuadrature(TensorDomain(box().isosurfaces()[0]))
+    # Moment fitting needs a volume patch
+    surface = DomainQuadrature(box().isosurfaces()[0])
 
     with pytest.raises(TypeError):
         surface.fill_moment_fitting(CellType.inside, *solid())

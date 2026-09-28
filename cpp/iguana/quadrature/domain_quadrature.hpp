@@ -12,6 +12,7 @@
 #include <Eigen/Core>
 
 #include "iguana/domain/tensor_domain.hpp"
+#include "iguana/embedding/embedding.hpp"
 
 namespace iguana
 {
@@ -64,7 +65,7 @@ public:
                      Eigen::MatrixX<T> points, Eigen::VectorX<T> weights);
 
     /**
-     * @brief Fills the cells of one type of a domain with a rule
+     * @brief Fills the cells of one type with a rule
      *
      * The rule fills the quadrature of every cell of the type on the
      * reference cell, which BoxRule::map_to_parameter_space() places on the
@@ -75,15 +76,19 @@ public:
      *         weights), as BoxRule states it. The number of points may
      *         differ from one cell to another
      *
-     * @param domain Domain whose cells are integrated
+     * @param domain Domain whose elements are the cells
+     * @param embedding Cell type of each element of the domain
      * @param cell_type Type of the cells to fill
      * @param rule Rule giving the points and weights of each cell
      *
-     * @throws std::invalid_argument If an element already held lies
-     *         outside the domain, or if a cell of this type is already held
+     * @throws std::invalid_argument If the embedding does not have one cell
+     *         type per element of the domain, if an element already held
+     *         lies outside the domain, or if a cell of this type is already
+     *         held
      */
     template<typename Rule>
-    void fill(const TensorDomain<T, d>& domain, CellType cell_type,
+    void fill(const TensorDomain<T, d>& domain,
+              const Embedding<T, d>& embedding, CellType cell_type,
               const Rule& rule);
 
     /// @brief Number of integrated elements
