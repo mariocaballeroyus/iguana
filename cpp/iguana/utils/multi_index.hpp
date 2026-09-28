@@ -61,6 +61,32 @@ int flatten(const std::array<int, d>& index,
     return flat;
 }
 
+/**
+ * @brief Splits a flat index into a multi-index with the first direction
+ *        running fastest, the inverse of flatten()
+ *
+ * @tparam d Number of directions
+ * @param flat Flat index to split
+ * @param bounds Exclusive upper bound in each direction
+ * @return Multi-index with every entry in [0, bounds)
+ *
+ * @pre @p flat lies in [0, product of @p bounds), and every bound is
+ *      positive
+ */
+template<std::size_t d>
+std::array<int, d> unflatten(int flat,
+                             const std::array<int, d>& bounds) noexcept
+{
+    std::array<int, d> index{};
+
+    for (std::size_t direction = 0; direction < d; ++direction) {
+        index[direction] = flat % bounds[direction];
+        flat /= bounds[direction];
+    }
+
+    return index;
+}
+
 } // namespace iguana
 
 #endif // IGUANA_UTILS_MULTI_INDEX_HPP

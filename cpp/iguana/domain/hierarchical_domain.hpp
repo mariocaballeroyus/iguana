@@ -8,6 +8,7 @@
 
 #include <concepts>
 #include <cstddef>
+#include <span>
 #include <vector>
 
 #include "iguana/domain/tensor_domain.hpp"
@@ -73,6 +74,10 @@ public:
     { return offsets_.back(); }
 
 private:
+    template<std::floating_point U, std::size_t e>
+    friend HierarchicalDomain<U, e> refine(const HierarchicalDomain<U, e>&,
+                                           std::span<const int>);
+
     /// @brief Tensor domain of each level
     std::vector<TensorDomain<T, d>> levels_;
 
@@ -83,6 +88,26 @@ private:
     ///        the number of active elements
     std::vector<int> offsets_;
 };
+
+/**
+ * @brief Hierarchical domain with elements replaced by their children
+ *
+ * Each marked element is replaced by its 2^d children on the next level,
+ * which is added if the element lies on the finest one. The other
+ * elements stay active, although the numbering changes
+ *
+ * @param domain Domain to refine
+ * @param elements Active elements to refine, in any order and possibly
+ *        repeated
+ * @return Domain with the children of the marked elements active instead
+ *
+ * @throws std::invalid_argument If an element lies outside
+ *         [0, domain.num_elements()), or if a new level would have more
+ *         elements than int can count
+ */
+template<std::floating_point T, std::size_t d>
+HierarchicalDomain<T, d> refine(const HierarchicalDomain<T, d>& domain,
+                                std::span<const int> elements);
 
 } // namespace iguana
 
