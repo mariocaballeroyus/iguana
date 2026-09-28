@@ -13,8 +13,8 @@
 
 #include <Eigen/Core>
 
+#include "iguana/quadrature/box_rule.hpp"
 #include "iguana/quadrature/gauss_legendre/gauss_legendre.hpp"
-#include "iguana/quadrature/quadrature_rule.hpp"
 
 namespace iguana
 {
@@ -31,7 +31,7 @@ namespace iguana
  * @tparam d Number of parametric directions, two or three
  */
 template<std::floating_point T, std::size_t d>
-class MomentFitting final : public QuadratureRule<T, d>
+class MomentFitting final : public BoxRule<T, d>
 {
     static_assert(d == 2 || d == 3, "MomentFitting: "
                                     "the domain must have two or three "
@@ -61,17 +61,17 @@ public:
                   const Eigen::MatrixXi& facets, int order);
 
     /**
-     * @brief Rule of a cell on the reference cell, fitted to the moments of
-     *        its part inside the domain
+     * @brief Fills the quadrature of a box on the reference cell, fitted to
+     *        the moments of its part inside the domain
      *
      * Non-negative least squares weights the Gauss points inside the domain
      * of 2, then 4, boxes per direction to reproduce reference_moments(),
-     * keeping at most (order + 1)^d of positive weight. A cell whose part
+     * keeping at most (order + 1)^d of positive weight. A box whose part
      * inside is below a thousandth of it, or whose fit misses by more than
      * a hundredth, gets no points
      *
-     * @param start Parameters at which the cell starts
-     * @param end Parameters at which the cell ends
+     * @param start Parameters at which the box starts
+     * @param end Parameters at which the box ends
      * @param points Output matrix of the points in [-1, 1]^d, with size
      *        (num_points, d). It is resized when necessary
      * @param weights Output vector of their weights, with size num_points.
@@ -79,10 +79,10 @@ public:
      *
      * @pre @p start lies below @p end in every direction
      */
-    void reference_rule(const std::array<T, d>& start,
-                        const std::array<T, d>& end,
-                        Eigen::MatrixX<T>& points,
-                        Eigen::VectorX<T>& weights) const override;
+    void fill_to_reference_space(const std::array<T, d>& start,
+                                 const std::array<T, d>& end,
+                                 Eigen::MatrixX<T>& points,
+                                 Eigen::VectorX<T>& weights) const override;
 
 private:
     /// @brief Vertices of each facet in parameter space, one per column

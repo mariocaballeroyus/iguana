@@ -155,10 +155,9 @@ MomentFitting<T, d>::MomentFitting(const Eigen::MatrixX<T>& vertices,
 }
 
 template<std::floating_point T, std::size_t d>
-void MomentFitting<T, d>::reference_rule(const std::array<T, d>& start,
-                                         const std::array<T, d>& end,
-                                         Eigen::MatrixX<T>& points,
-                                         Eigen::VectorX<T>& weights) const
+void MomentFitting<T, d>::fill_to_reference_space(
+    const std::array<T, d>& start, const std::array<T, d>& end,
+    Eigen::MatrixX<T>& points, Eigen::VectorX<T>& weights) const
 {
     points.resize(0, d);
     weights.resize(0);

@@ -13,7 +13,7 @@
 
 #include <Eigen/Core>
 
-#include "iguana/quadrature/quadrature_rule.hpp"
+#include "iguana/quadrature/box_rule.hpp"
 
 namespace iguana
 {
@@ -29,7 +29,7 @@ namespace iguana
  * @tparam d Number of parametric directions
  */
 template<std::floating_point T, std::size_t d>
-class GaussLegendre final : public QuadratureRule<T, d>
+class GaussLegendre final : public BoxRule<T, d>
 {
     static_assert(d > 0, "GaussLegendre: "
                          "the parametric dimension must be positive");
@@ -70,15 +70,15 @@ public:
     constexpr const Eigen::VectorX<T>& weights() const noexcept
     { return weights_; }
 
-    /// @brief Rule of any cell on the reference cell, its points() and
-    ///        weights()
-    void reference_rule(const std::array<T, d>& start,
-                        const std::array<T, d>& end,
-                        Eigen::MatrixX<T>& points,
-                        Eigen::VectorX<T>& weights) const override;
+    /// @brief Fills the quadrature of any box on the reference cell with
+    ///        points() and weights()
+    void fill_to_reference_space(const std::array<T, d>& start,
+                                 const std::array<T, d>& end,
+                                 Eigen::MatrixX<T>& points,
+                                 Eigen::VectorX<T>& weights) const override;
 
     /**
-     * @brief Maps the rule onto a box, as map_to_cell() places it
+     * @brief Maps the rule onto a box, as map_to_box() places it
      *
      * @param start Parameters at which the box starts
      * @param end Parameters at which the box ends

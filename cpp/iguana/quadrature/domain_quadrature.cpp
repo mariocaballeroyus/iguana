@@ -10,9 +10,9 @@
 #include <vector>
 
 #include "iguana/domain/tensor_domain_iterator.hpp"
+#include "iguana/quadrature/box_rule.hpp"
 #include "iguana/quadrature/gauss_legendre/gauss_legendre.hpp"
 #include "iguana/quadrature/moment_fitting/moment_fitting.hpp"
-#include "iguana/quadrature/quadrature_rule.hpp"
 
 namespace iguana
 {
@@ -114,10 +114,10 @@ void DomainQuadrature<T, d>::fill(const TensorDomain<T, d>& domain,
         if (domain.cell_type(element.index()) != cell_type)
             continue;
 
-        rule.reference_rule(element.start(), element.end(), reference_points,
-                            reference_weights);
-        map_to_cell(element.start(), element.end(), reference_points,
-                    reference_weights, cell_points[cell], cell_weights[cell]);
+        rule.fill_to_reference_space(element.start(), element.end(),
+                                     reference_points, reference_weights);
+        map_to_box(element.start(), element.end(), reference_points,
+                   reference_weights, cell_points[cell], cell_weights[cell]);
 
         const int position = num_held + cell;
 

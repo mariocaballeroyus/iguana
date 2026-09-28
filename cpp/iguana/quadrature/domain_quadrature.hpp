@@ -66,14 +66,14 @@ public:
     /**
      * @brief Fills the cells of one type of a domain with a rule
      *
-     * The rule gives the points and weights of every cell of the type on the
-     * reference cell, which map_to_cell() places on the cell and which are
+     * The rule fills the quadrature of every cell of the type on the
+     * reference cell, which map_to_box() places on the cell and which is
      * appended in increasing element index after the elements already held.
      * If it throws, the quadrature is left unchanged
      *
-     * @tparam Rule Rule with reference_rule(start, end, points, weights), as
-     *         QuadratureRule states it. The number of points may differ
-     *         from one cell to another
+     * @tparam Rule Rule with fill_to_reference_space(start, end, points,
+     *         weights), as BoxRule states it. The number of points may
+     *         differ from one cell to another
      *
      * @param domain Domain whose cells are integrated
      * @param cell_type Type of the cells to fill

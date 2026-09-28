@@ -72,10 +72,9 @@ GaussLegendre<T, d>::GaussLegendre(const std::array<int, d>& num_points)
 }
 
 template<std::floating_point T, std::size_t d>
-void GaussLegendre<T, d>::reference_rule(const std::array<T, d>&,
-                                         const std::array<T, d>&,
-                                         Eigen::MatrixX<T>& points,
-                                         Eigen::VectorX<T>& weights) const
+void GaussLegendre<T, d>::fill_to_reference_space(
+    const std::array<T, d>&, const std::array<T, d>&,
+    Eigen::MatrixX<T>& points, Eigen::VectorX<T>& weights) const
 {
     points = points_;
     weights = weights_;
@@ -87,7 +86,7 @@ void GaussLegendre<T, d>::map_to(const std::array<T, d>& start,
                                  Eigen::MatrixX<T>& points,
                                  Eigen::VectorX<T>& weights) const
 {
-    map_to_cell(start, end, points_, weights_, points, weights);
+    map_to_box(start, end, points_, weights_, points, weights);
 }
 
 template class GaussLegendre<double, 1>;
