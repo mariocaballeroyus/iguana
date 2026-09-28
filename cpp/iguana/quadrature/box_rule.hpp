@@ -49,7 +49,7 @@ public:
 
     /**
      * @brief Places a quadrature on the reference cell [-1, 1]^d on a box
-     *        in parameter space
+     *        in parameter space, in place
      *
      * Each direction k maps through the affine map
      *
@@ -60,24 +60,19 @@ public:
      *
      * @param start Parameters at which the box starts
      * @param end Parameters at which the box ends
-     * @param reference_points Points in [-1, 1]^d, with size
-     *        (num_points, d)
-     * @param reference_weights Their weights, with size num_points
-     * @param points Output matrix of the points in the box, with size
-     *        (num_points, d), as TensorBSpline::eval_on_element() takes it.
-     *        It is resized when necessary
-     * @param weights Output vector of their weights, with size num_points.
-     *        It is resized when necessary
+     * @param points Points in [-1, 1]^d, with size (num_points, d), which
+     *        become the points in the box, as
+     *        TensorBSpline::eval_on_element() takes them
+     * @param weights Their weights, with size num_points, which become the
+     *        weights in the box
      *
      * @pre @p start lies below @p end in every direction
+     * @pre @p points has d columns and one row per weight
      */
-    static void
-    map_to_parameter_space(const std::array<T, d>& start,
-                           const std::array<T, d>& end,
-                           const Eigen::MatrixX<T>& reference_points,
-                           const Eigen::VectorX<T>& reference_weights,
-                           Eigen::MatrixX<T>& points,
-                           Eigen::VectorX<T>& weights);
+    static void map_to_parameter_space(const std::array<T, d>& start,
+                                       const std::array<T, d>& end,
+                                       Eigen::MatrixX<T>& points,
+                                       Eigen::VectorX<T>& weights);
 };
 
 } // namespace iguana

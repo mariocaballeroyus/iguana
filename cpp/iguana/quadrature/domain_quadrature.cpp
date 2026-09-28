@@ -103,10 +103,6 @@ void DomainQuadrature<T, d>::fill(const TensorDomain<T, d>& domain,
     std::vector<Eigen::MatrixX<T>> cell_points(num_cells);
     std::vector<Eigen::VectorX<T>> cell_weights(num_cells);
 
-    // Rule of the current cell on the reference cell, reused over the cells
-    Eigen::MatrixX<T> reference_points;
-    Eigen::VectorX<T> reference_weights;
-
     // Position of the current cell among the new ones
     int cell = 0;
 
@@ -114,11 +110,12 @@ void DomainQuadrature<T, d>::fill(const TensorDomain<T, d>& domain,
         if (domain.cell_type(element.index()) != cell_type)
             continue;
 
+        // Filled on the reference cell, then mapped onto the cell in place
         rule.fill_to_reference_space(element.start(), element.end(),
-                                     reference_points, reference_weights);
-        BoxRule<T, d>::map_to_parameter_space(
-            element.start(), element.end(), reference_points,
-            reference_weights, cell_points[cell], cell_weights[cell]);
+                                     cell_points[cell], cell_weights[cell]);
+        BoxRule<T, d>::map_to_parameter_space(element.start(), element.end(),
+                                              cell_points[cell],
+                                              cell_weights[cell]);
 
         const int position = num_held + cell;
 

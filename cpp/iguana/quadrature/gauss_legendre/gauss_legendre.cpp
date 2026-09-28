@@ -86,8 +86,10 @@ void GaussLegendre<T, d>::map_to(const std::array<T, d>& start,
                                  Eigen::MatrixX<T>& points,
                                  Eigen::VectorX<T>& weights) const
 {
-    BoxRule<T, d>::map_to_parameter_space(start, end, points_, weights_,
-                                          points, weights);
+    points = points_;
+    weights = weights_;
+
+    BoxRule<T, d>::map_to_parameter_space(start, end, points, weights);
 }
 
 template class GaussLegendre<double, 1>;
