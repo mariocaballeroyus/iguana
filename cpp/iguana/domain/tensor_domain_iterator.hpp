@@ -11,13 +11,14 @@
 #include <cstddef>
 #include <iterator>
 
-#include "iguana/basis/tensor_bspline.hpp"
-
 namespace iguana
 {
 
+template<std::floating_point T, std::size_t d>
+class TensorDomain;
+
 /**
- * @brief Walks the elements of a tensor-product basis
+ * @brief Walks the elements of a tensor domain
  *
  * The iterator visits every element once, in increasing flat index with
  * the first direction running fastest, and serves as the handle of the
@@ -26,18 +27,18 @@ namespace iguana
  * @tparam T Floating-point type
  * @tparam d Number of parametric directions
  *
- * @warning The iterator reads its basis, which must outlive it
+ * @warning The iterator reads its domain, which must outlive it
  */
 template<std::floating_point T, std::size_t d>
 class TensorDomainIterator
 {
 public:
     /**
-     * @brief Starts at the first element of a basis
+     * @brief Starts at the first element of a domain
      *
-     * @param basis Basis whose elements are walked
+     * @param domain Domain whose elements are walked
      */
-    explicit TensorDomainIterator(const TensorBSpline<T, d>& basis) noexcept;
+    explicit TensorDomainIterator(const TensorDomain<T, d>& domain) noexcept;
 
     /// @brief Element handle, the iterator itself
     constexpr const TensorDomainIterator& operator*() const noexcept
@@ -70,10 +71,10 @@ private:
     /// @brief Refills the element data from the element of each direction
     void update() noexcept;
 
-    /// @brief Basis whose elements are walked
-    const TensorBSpline<T, d>* basis_ = nullptr;
+    /// @brief Domain whose elements are walked
+    const TensorDomain<T, d>* domain_ = nullptr;
 
-    /// @brief Number of elements of the basis
+    /// @brief Number of elements of the domain
     int num_elements_ = 0;
 
     /// @brief Number of elements of each direction

@@ -8,7 +8,6 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
-#include <iterator>
 #include <stdexcept>
 #include <vector>
 
@@ -19,21 +18,21 @@ namespace
 {
 
 using Catch::Matchers::WithinRel;
-using iguana::BSpline;
 using iguana::CellType;
 using iguana::Embedding;
-using iguana::TensorBSpline;
+using iguana::KnotVector;
+using iguana::TensorDomain;
 
 using Quadrature = iguana::DomainQuadrature<double, 3>;
 using Gauss = iguana::GaussLegendre<double, 3>;
 
-/// @brief Basis over uneven knot spans, with six elements
-TensorBSpline<double, 3> uneven()
+/// @brief Domain over uneven knot spans, with six elements
+TensorDomain<double, 3> uneven()
 {
-    return TensorBSpline<double, 3>(
-        {BSpline<double>(2, {0., 0., 0., 1., 3., 4., 4., 4.}),
-         BSpline<double>(1, {0., 0., .5, 2., 2.}),
-         BSpline<double>(1, {0., 0., 1., 1.})});
+    return TensorDomain<double, 3>(
+        {KnotVector<double>(2, {0., 0., 0., 1., 3., 4., 4., 4.}),
+         KnotVector<double>(1, {0., 0., .5, 2., 2.}),
+         KnotVector<double>(1, {0., 0., 1., 1.})});
 }
 
 /// @brief Inside cells 0, 2 and 4, cut cells 1 and 5 and outside cell 3
@@ -80,14 +79,14 @@ TEST_CASE("The flat arrays must describe one block of points per element",
 TEST_CASE("The filled cells integrate the polynomials of the rule exactly",
           "[quadrature]")
 {
-    const TensorBSpline<double, 3> basis = uneven();
+    const TensorDomain<double, 3> domain = uneven();
     const Embedding<double, 3> embedding = mixed();
 
     // Exact up to degree 2n - 1 in each direction
     const std::array<int, 3> counts{2, 3, 1};
 
     Quadrature quadrature;
-    quadrature.fill(basis, embedding, CellType::inside, Gauss(counts));
+    quadrature.fill(domain, embedding, CellType::inside, Gauss(counts));
 
     REQUIRE(quadrature.elements() == integers({0, 2, 4}));
 
@@ -95,8 +94,7 @@ TEST_CASE("The filled cells integrate the polynomials of the rule exactly",
     const Eigen::VectorXd& weights = quadrature.weights();
     int held = 0;
 
-    for (iguana::TensorDomainIterator<double, 3> element(basis);
-         element != std::default_sentinel; ++element) {
+    for (const auto& element : domain) {
         if (embedding.cell_type(element.index()) != CellType::inside)
             continue;
 
@@ -137,12 +135,12 @@ TEST_CASE("The filled cells integrate the polynomials of the rule exactly",
 TEST_CASE("Cell types are filled one after another, once each",
           "[quadrature]")
 {
-    const TensorBSpline<double, 3> basis = uneven();
+    const TensorDomain<double, 3> domain = uneven();
     const Embedding<double, 3> embedding = mixed();
 
     Quadrature quadrature;
-    quadrature.fill(basis, embedding, CellType::inside, Gauss(2));
-    quadrature.fill(basis, embedding, CellType::cut, Gauss(1));
+    quadrature.fill(domain, embedding, CellType::inside, Gauss(2));
+    quadrature.fill(domain, embedding, CellType::cut, Gauss(1));
 
     REQUIRE(quadrature.elements() == integers({0, 2, 4, 1, 5}));
     REQUIRE(quadrature.offsets() == integers({0, 8, 16, 24, 25, 26}));
@@ -152,10 +150,10 @@ TEST_CASE("Cell types are filled one after another, once each",
     const Quadrature before = quadrature;
 
     REQUIRE_THROWS_AS(
-        quadrature.fill(basis, embedding, CellType::inside, Gauss(1)),
+        quadrature.fill(domain, embedding, CellType::inside, Gauss(1)),
         std::invalid_argument);
     REQUIRE_THROWS_AS(
-        quadrature.fill(basis, Embedding<double, 3>({CellType::outside}),
+        quadrature.fill(domain, Embedding<double, 3>({CellType::outside}),
                         CellType::outside, Gauss(1)),
         std::invalid_argument);
     REQUIRE(quadrature.offsets() == before.offsets());

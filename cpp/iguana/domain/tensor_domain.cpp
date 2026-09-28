@@ -19,6 +19,12 @@ TensorDomain<T, d>::TensorDomain(std::array<KnotVector<T>, d> knots)
         num_elements_ *= axis_knots.num_elements();
 }
 
+template<std::floating_point T, std::size_t d>
+TensorDomainIterator<T, d> TensorDomain<T, d>::begin() const noexcept
+{
+    return TensorDomainIterator<T, d>(*this);
+}
+
 template class TensorDomain<double, 1>;
 template class TensorDomain<double, 2>;
 template class TensorDomain<double, 3>;

@@ -5,7 +5,6 @@
 
 #include <array>
 #include <cstddef>
-#include <iterator>
 #include <stdexcept>
 #include <vector>
 
@@ -36,7 +35,7 @@ void fill_gauss_legendre(DomainQuadrature<double, d>& quadrature,
                          CellType cell_type,
                          const std::array<int, d>& num_points)
 {
-    quadrature.fill(basis, embedding, cell_type,
+    quadrature.fill(basis.domain(), embedding, cell_type,
                     GaussLegendre<double, d>(num_points));
 }
 
@@ -48,7 +47,7 @@ void fill_moment_fitting(VolumeQuadrature& quadrature,
                          CellType cell_type, const Eigen::MatrixXd& vertices,
                          const Eigen::MatrixXi& triangles, int order)
 {
-    quadrature.fill(basis, embedding, cell_type,
+    quadrature.fill(basis.domain(), embedding, cell_type,
                     MomentFitting<double, 3>(vertices, triangles, order));
 }
 
@@ -88,8 +87,7 @@ PointMatrix<double> positions(const DomainQuadrature<double, d>& quadrature,
     Eigen::VectorXi actives;
     PointMatrix<double> element_positions;
 
-    for (TensorDomainIterator<double, d> element(basis);
-         element != std::default_sentinel; ++element) {
+    for (const TensorDomainIterator<double, d>& element : basis.domain()) {
         const int position = held[element.index()];
 
         if (position < 0)

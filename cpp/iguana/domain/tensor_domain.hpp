@@ -9,8 +9,10 @@
 #include <array>
 #include <concepts>
 #include <cstddef>
+#include <iterator>
 
 #include "iguana/domain/knot_vector.hpp"
+#include "iguana/domain/tensor_domain_iterator.hpp"
 
 namespace iguana
 {
@@ -51,6 +53,13 @@ public:
     /// @brief Number of elements, the product of those of each direction
     constexpr int num_elements() const noexcept
     { return num_elements_; }
+
+    /// @brief Iterator at the first element
+    TensorDomainIterator<T, d> begin() const noexcept;
+
+    /// @brief Sentinel past the last element
+    constexpr std::default_sentinel_t end() const noexcept
+    { return std::default_sentinel; }
 
 private:
     /// @brief Knot vector of each parametric direction
