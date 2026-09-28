@@ -11,13 +11,14 @@
 
 #include <Eigen/Core>
 
-#include "iguana/domain/tensor_domain.hpp"
+#include "iguana/basis/tensor_bspline.hpp"
+#include "iguana/embedding/embedding.hpp"
 
 namespace iguana
 {
 
 /**
- * @brief Quadrature over the elements of a domain
+ * @brief Quadrature over the elements of a basis
  *
  * The points and weights are stored element after element, and an offset
  * marks where the points of each element start. Elements may hold different
@@ -28,7 +29,7 @@ namespace iguana
  * own, such as Gauss-Legendre on inside cells and moment fitting on cut
  * cells
  *
- * The points lie in the parameter space of the domain. The weights include
+ * The points lie in the parameter space of the basis. The weights include
  * the measure of their element in parameter space but not the Jacobian of
  * the geometry map, which the assembly applies
  *
@@ -49,7 +50,7 @@ public:
      * @brief Constructs the quadrature from its flat arrays
      *
      * @param elements Index of each integrated element, in the numbering of
-     *        the domain the quadrature is built on
+     *        the basis the quadrature is built on
      * @param offsets First point of each integrated element, followed by
      *        the number of points, with size num_elements + 1
      * @param points Points in parameter space, with size (num_points, d)
@@ -64,7 +65,7 @@ public:
                      Eigen::MatrixX<T> points, Eigen::VectorX<T> weights);
 
     /**
-     * @brief Fills the cells of one type of a domain with a rule
+     * @brief Fills the cells of one type with a rule
      *
      * The rule fills the quadrature of every cell of the type on the
      * reference cell, which BoxRule::map_to_parameter_space() places on the
@@ -75,15 +76,19 @@ public:
      *         weights), as BoxRule states it. The number of points may
      *         differ from one cell to another
      *
-     * @param domain Domain whose cells are integrated
+     * @param basis Basis whose elements are the cells
+     * @param embedding Cell type of each element of the basis
      * @param cell_type Type of the cells to fill
      * @param rule Rule giving the points and weights of each cell
      *
-     * @throws std::invalid_argument If an element already held lies
-     *         outside the domain, or if a cell of this type is already held
+     * @throws std::invalid_argument If the embedding does not have one cell
+     *         type per element of the basis, if an element already held
+     *         lies outside the basis, or if a cell of this type is already
+     *         held
      */
     template<typename Rule>
-    void fill(const TensorDomain<T, d>& domain, CellType cell_type,
+    void fill(const TensorBSpline<T, d>& basis,
+              const Embedding<T, d>& embedding, CellType cell_type,
               const Rule& rule);
 
     /// @brief Number of integrated elements
@@ -94,7 +99,7 @@ public:
     constexpr int num_points() const noexcept
     { return static_cast<int>(weights_.size()); }
 
-    /// @brief Index of each integrated element, in the domain numbering
+    /// @brief Index of each integrated element, in the basis numbering
     constexpr const Eigen::VectorXi& elements() const noexcept
     { return elements_; }
 
@@ -111,7 +116,7 @@ public:
     { return weights_; }
 
 private:
-    /// @brief Index of each integrated element, in the domain numbering
+    /// @brief Index of each integrated element, in the basis numbering
     Eigen::VectorXi elements_;
 
     /// @brief First point of each element, followed by the number of points

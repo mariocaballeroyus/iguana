@@ -30,11 +30,15 @@ void basis(py::module_& module)
         .def("axis", &TensorBSpline<double, 1>::axis);
 
     py::class_<TensorBSpline<double, 2>>(module, "BivariateBSpline")
-        .def("axis", &TensorBSpline<double, 2>::axis);
+        .def("axis", &TensorBSpline<double, 2>::axis)
+        .def_property_readonly("num_elements",
+                               &TensorBSpline<double, 2>::num_elements);
 
     py::class_<TensorBSpline<double, 3>>(module, "TrivariateBSpline")
         .def(py::init<std::array<BSpline<double>, 3>>(), py::arg("axes"))
-        .def("axis", &TensorBSpline<double, 3>::axis);
+        .def("axis", &TensorBSpline<double, 3>::axis)
+        .def_property_readonly("num_elements",
+                               &TensorBSpline<double, 3>::num_elements);
 }
 
 } // namespace iguana::bindings
