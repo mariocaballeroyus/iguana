@@ -11,24 +11,15 @@
 #include <utility>
 #include <vector>
 
-#include "iguana/utils/multi_index.hpp"
-
 namespace iguana
 {
 
-namespace
-{
-
-/**
- * @brief Tabulated rule on [-1, 1] with a number of points
- *
- * @return Nodes and weights, the doubles nearest to their exact values
- *
- * @throws std::invalid_argument If @p num_points lies outside
- *         [1, GaussLegendre::max_points]
- */
-template<std::floating_point T>
-std::array<std::vector<T>, 2> tabulated_rule(int num_points)
+// Rules of C. F. Gauss, Comment. Soc. Reg. Sci. Gotting. Recent. 3 (1816)
+// 39-76, whose nodes are the roots of the Legendre polynomial P_n and whose
+// weights are 2 / ((1 - x^2) P_n'(x)^2), rounded once to double
+template<std::floating_point T, std::size_t d>
+std::array<std::vector<T>, 2>
+GaussLegendre<T, d>::tabulated_rule(int num_points)
 {
     switch (num_points) {
     case 1: {
@@ -111,81 +102,11 @@ std::array<std::vector<T>, 2> tabulated_rule(int num_points)
     }
 }
 
-/// @brief Same count in every direction
-template<std::size_t d>
-std::array<int, d> uniform(int num_points)
-{
-    std::array<int, d> counts{};
-    counts.fill(num_points);
-
-    return counts;
-}
-
-} // namespace
-
-template<std::floating_point T, std::size_t d>
-GaussLegendre<T, d>::GaussLegendre(int num_points)
-    : GaussLegendre(uniform<d>(num_points))
-{
-}
-
-template<std::floating_point T, std::size_t d>
-GaussLegendre<T, d>::GaussLegendre(const std::array<int, d>& num_points)
-{
-    // Nodes and weights of each direction, which checks its count
-    std::array<std::array<std::vector<T>, 2>, d> rules;
-    int total = 1;
-
-    for (std::size_t direction = 0; direction < d; ++direction) {
-        rules[direction] = tabulated_rule<T>(num_points[direction]);
-        total *= num_points[direction];
-    }
-
-    points_.resize(total, d);
-    weights_.resize(total);
-
-    // Product of the univariate rules, first direction running fastest
-    std::array<int, d> index{};
-    Eigen::Index point = 0;
-
-    do {
-        T weight{1};
-
-        for (std::size_t direction = 0; direction < d; ++direction) {
-            const int node = index[direction];
-
-            const auto& [nodes, weights] = rules[direction];
-
-            points_(point, direction) = nodes[node];
-            weight *= weights[node];
-        }
-
-        weights_[point] = weight;
-        ++point;
-    } while (next_lexicographic(index, num_points));
-}
-
-template<std::floating_point T, std::size_t d>
-void GaussLegendre<T, d>::reference_rule(const std::array<T, d>&,
-                                         const std::array<T, d>&,
-                                         Eigen::MatrixX<T>& points,
-                                         Eigen::VectorX<T>& weights) const
-{
-    points = points_;
-    weights = weights_;
-}
-
-template<std::floating_point T, std::size_t d>
-void GaussLegendre<T, d>::map_to(const std::array<T, d>& start,
-                                 const std::array<T, d>& end,
-                                 Eigen::MatrixX<T>& points,
-                                 Eigen::VectorX<T>& weights) const
-{
-    map_to_cell(start, end, points_, weights_, points, weights);
-}
-
-template class GaussLegendre<double, 1>;
-template class GaussLegendre<double, 2>;
-template class GaussLegendre<double, 3>;
+template std::array<std::vector<double>, 2>
+GaussLegendre<double, 1>::tabulated_rule(int);
+template std::array<std::vector<double>, 2>
+GaussLegendre<double, 2>::tabulated_rule(int);
+template std::array<std::vector<double>, 2>
+GaussLegendre<double, 3>::tabulated_rule(int);
 
 } // namespace iguana

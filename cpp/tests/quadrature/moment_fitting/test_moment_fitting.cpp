@@ -81,7 +81,7 @@ void check_rule(const Solid& solid, int order)
 
     Eigen::MatrixXd points;
     Eigen::VectorXd weights;
-    rule.reference_rule(start, end, points, weights);
+    rule.fill_to_reference_space(start, end, points, weights);
 
     // The facets on the reference cell, xi = 2 x - 2 in every direction
     std::vector<Eigen::Matrix<double, d, d>> facets(solid.facets.rows());
@@ -128,7 +128,7 @@ TEST_CASE("A cell outside or barely inside the domain gets no points",
     Eigen::MatrixXd points;
     Eigen::VectorXd weights;
 
-    rule.reference_rule({5., 5., 5.}, {6., 6., 6.}, points, weights);
+    rule.fill_to_reference_space({5., 5., 5.}, {6., 6., 6.}, points, weights);
     REQUIRE(weights.size() == 0);
 
     // A slab of half a thousandth of the cell, on the plane x = 0.25 where
@@ -137,7 +137,7 @@ TEST_CASE("A cell outside or barely inside the domain gets no points",
     const iguana::MomentFitting<double, 3> thin(slab.vertices, slab.facets,
                                                 2);
 
-    thin.reference_rule({0., 0., 0.}, {1., 1., 1.}, points, weights);
+    thin.fill_to_reference_space({0., 0., 0.}, {1., 1., 1.}, points, weights);
     REQUIRE(weights.size() == 0);
 }
 
@@ -151,7 +151,7 @@ TEST_CASE("A thin part keeps the better of its fits", "[quadrature]")
 
     Eigen::MatrixXd points;
     Eigen::VectorXd weights;
-    rule.reference_rule({0., 0., 0.}, {1., 1., 1.}, points, weights);
+    rule.fill_to_reference_space({0., 0., 0.}, {1., 1., 1.}, points, weights);
 
     // Its measure on the reference cell, three thousandths of 2^3
     REQUIRE(weights.size() > 0);

@@ -15,7 +15,7 @@
 #include <unsupported/Eigen/NNLS>
 
 #include "iguana/embedding/inside.hpp"
-#include "iguana/quadrature/moments.hpp"
+#include "iguana/quadrature/moment_fitting/moments.hpp"
 #include "iguana/utils/legendre.hpp"
 #include "iguana/utils/multi_index.hpp"
 
@@ -62,17 +62,15 @@ candidate_points(const std::vector<Eigen::Matrix<T, d, d>>& facets,
     const int num_nodes = num_intervals * rule.num_points();
     const T size = T{2} / num_intervals;
 
-    // The nodes of one direction, the rule on each interval
+    // The nodes of one direction, those of the rule moved from [-1, 1] to
+    // each interval
     Eigen::VectorX<T> nodes(num_nodes);
-    Eigen::MatrixX<T> points;
-    Eigen::VectorX<T> weights;
 
     for (int interval = 0; interval < num_intervals; ++interval) {
         const T lower = -1 + interval * size;
 
-        rule.map_to({lower}, {lower + size}, points, weights);
         nodes.segment(interval * rule.num_points(), rule.num_points()) =
-            points.col(0);
+            lower + size / 2 * (rule.points().col(0).array() + 1);
     }
 
     // The grid line by line along x_1, through the nodes of the others
@@ -155,10 +153,9 @@ MomentFitting<T, d>::MomentFitting(const Eigen::MatrixX<T>& vertices,
 }
 
 template<std::floating_point T, std::size_t d>
-void MomentFitting<T, d>::reference_rule(const std::array<T, d>& start,
-                                         const std::array<T, d>& end,
-                                         Eigen::MatrixX<T>& points,
-                                         Eigen::VectorX<T>& weights) const
+void MomentFitting<T, d>::fill_to_reference_space(
+    const std::array<T, d>& start, const std::array<T, d>& end,
+    Eigen::MatrixX<T>& points, Eigen::VectorX<T>& weights) const
 {
     points.resize(0, d);
     weights.resize(0);

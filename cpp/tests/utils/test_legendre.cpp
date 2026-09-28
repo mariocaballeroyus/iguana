@@ -69,7 +69,10 @@ TEST_CASE("The antiderivatives integrate between any two points", "[utils]")
             degree, std::vector<double>{start, end}, antiderivatives);
 
         // The integrals of the polynomials over the interval
-        rule.map_to({start}, {end}, points, weights);
+        points = rule.points();
+        weights = rule.weights();
+        GaussLegendre<double, 1>::map_to_parameter_space({start}, {end},
+                                                         points, weights);
         iguana::legendre_polynomials(
             degree, std::span<const double>(points.data(), points.rows()),
             values);

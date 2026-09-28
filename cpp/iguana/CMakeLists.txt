@@ -4,11 +4,14 @@ add_library(iguana
     domain/tensor_domain.cpp
     domain/tensor_domain_iterator.cpp
     geometry/patch.cpp
+    quadrature/box_rule.cpp
     quadrature/domain_quadrature.cpp
-    quadrature/gauss_legendre.cpp
-    quadrature/moment_fitting.cpp
-    quadrature/moments.cpp
-    quadrature/xiao_gimbutas.cpp)
+    quadrature/gauss_legendre/gauss_legendre.cpp
+    quadrature/gauss_legendre/gauss_legendre_tables.cpp
+    quadrature/moment_fitting/moment_fitting.cpp
+    quadrature/moment_fitting/moments.cpp
+    quadrature/xiao_gimbutas/xiao_gimbutas.cpp
+    quadrature/xiao_gimbutas/xiao_gimbutas_tables.cpp)
 
 add_library(IGUANA::iguana ALIAS iguana)
 

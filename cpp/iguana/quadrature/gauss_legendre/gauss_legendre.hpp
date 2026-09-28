@@ -3,16 +3,17 @@
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef IGUANA_QUADRATURE_GAUSS_LEGENDRE_HPP
-#define IGUANA_QUADRATURE_GAUSS_LEGENDRE_HPP
+#ifndef IGUANA_QUADRATURE_GAUSS_LEGENDRE_GAUSS_LEGENDRE_HPP
+#define IGUANA_QUADRATURE_GAUSS_LEGENDRE_GAUSS_LEGENDRE_HPP
 
 #include <array>
 #include <concepts>
 #include <cstddef>
+#include <vector>
 
 #include <Eigen/Core>
 
-#include "iguana/quadrature/quadrature_rule.hpp"
+#include "iguana/quadrature/box_rule.hpp"
 
 namespace iguana
 {
@@ -20,14 +21,15 @@ namespace iguana
 /**
  * @brief Gauss-Legendre rule
  *
- * The rule is the product of one univariate rule per direction, with the
- * first direction running fastest
+ * The rule is the product of one univariate rule of Gauss (Comment. Soc.
+ * Reg. Sci. Gotting. Recent. 3, 1816) per direction, with the first
+ * direction running fastest
  *
  * @tparam T Floating-point type
  * @tparam d Number of parametric directions
  */
 template<std::floating_point T, std::size_t d>
-class GaussLegendre final : public QuadratureRule<T, d>
+class GaussLegendre final : public BoxRule<T, d>
 {
     static_assert(d > 0, "GaussLegendre: "
                          "the parametric dimension must be positive");
@@ -68,29 +70,24 @@ public:
     constexpr const Eigen::VectorX<T>& weights() const noexcept
     { return weights_; }
 
-    /// @brief Rule of any cell on the reference cell, its points() and
-    ///        weights()
-    void reference_rule(const std::array<T, d>& start,
-                        const std::array<T, d>& end,
-                        Eigen::MatrixX<T>& points,
-                        Eigen::VectorX<T>& weights) const override;
-
-    /**
-     * @brief Maps the rule onto a box, as map_to_cell() places it
-     *
-     * @param start Parameters at which the box starts
-     * @param end Parameters at which the box ends
-     * @param points Output matrix with size (num_points, d). It is resized
-     *        when necessary
-     * @param weights Output vector with size num_points. It is resized
-     *        when necessary
-     *
-     * @pre @p start lies below @p end in every direction
-     */
-    void map_to(const std::array<T, d>& start, const std::array<T, d>& end,
-                Eigen::MatrixX<T>& points, Eigen::VectorX<T>& weights) const;
+    /// @brief Fills the quadrature of any box on the reference cell with
+    ///        points() and weights()
+    void fill_to_reference_space(const std::array<T, d>& start,
+                                 const std::array<T, d>& end,
+                                 Eigen::MatrixX<T>& points,
+                                 Eigen::VectorX<T>& weights) const override;
 
 private:
+    /**
+     * @brief Tabulated rule on [-1, 1] with a number of points
+     *
+     * @return Nodes and weights, the doubles nearest to their exact values
+     *
+     * @throws std::invalid_argument If @p num_points lies outside
+     *         [1, max_points]
+     */
+    static std::array<std::vector<T>, 2> tabulated_rule(int num_points);
+
     /// @brief Reference points on [-1, 1]^d, with size (num_points, d)
     Eigen::MatrixX<T> points_;
 
@@ -100,4 +97,4 @@ private:
 
 } // namespace iguana
 
-#endif // IGUANA_QUADRATURE_GAUSS_LEGENDRE_HPP
+#endif // IGUANA_QUADRATURE_GAUSS_LEGENDRE_GAUSS_LEGENDRE_HPP

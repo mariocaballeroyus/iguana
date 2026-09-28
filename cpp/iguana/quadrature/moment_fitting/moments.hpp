@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef IGUANA_QUADRATURE_MOMENTS_HPP
-#define IGUANA_QUADRATURE_MOMENTS_HPP
+#ifndef IGUANA_QUADRATURE_MOMENT_FITTING_MOMENTS_HPP
+#define IGUANA_QUADRATURE_MOMENT_FITTING_MOMENTS_HPP
 
 #include <concepts>
 #include <cstddef>
@@ -40,4 +40,4 @@ reference_moments(const std::vector<Eigen::Matrix<T, d, d>>& facets,
 
 } // namespace iguana
 
-#endif // IGUANA_QUADRATURE_MOMENTS_HPP
+#endif // IGUANA_QUADRATURE_MOMENT_FITTING_MOMENTS_HPP

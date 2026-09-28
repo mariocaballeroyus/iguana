@@ -3,10 +3,12 @@
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef IGUANA_QUADRATURE_XIAO_GIMBUTAS_HPP
-#define IGUANA_QUADRATURE_XIAO_GIMBUTAS_HPP
+#ifndef IGUANA_QUADRATURE_XIAO_GIMBUTAS_XIAO_GIMBUTAS_HPP
+#define IGUANA_QUADRATURE_XIAO_GIMBUTAS_XIAO_GIMBUTAS_HPP
 
+#include <array>
 #include <concepts>
+#include <vector>
 
 #include <Eigen/Core>
 
@@ -17,8 +19,8 @@ namespace iguana
  * @brief Xiao-Gimbutas rule on the triangle s, t >= 0, s + t <= 1
  *
  * The fully symmetric rules of Xiao and Gimbutas (Comput. Math. Appl. 59,
- * 2010), as Basix tabulates them, integrate polynomials up to their total
- * degree exactly, with positive weights at points inside the triangle
+ * 2010) integrate polynomials up to their total degree exactly, with
+ * positive weights at points inside the triangle
  *
  * @tparam T Floating-point type
  */
@@ -52,6 +54,17 @@ public:
     { return weights_; }
 
 private:
+    /**
+     * @brief Tabulated rule of a degree
+     *
+     * @return Coordinates (s, t) of the points, one pair after another, and
+     *         their weights, the doubles nearest to their tabulated values
+     *
+     * @throws std::invalid_argument If @p degree lies outside
+     *         [1, max_degree]
+     */
+    static std::array<std::vector<T>, 2> tabulated_rule(int degree);
+
     /// @brief Points (s, t) of the triangle, with size (num_points, 2)
     Eigen::MatrixX<T> points_;
 
@@ -61,4 +74,4 @@ private:
 
 } // namespace iguana
 
-#endif // IGUANA_QUADRATURE_XIAO_GIMBUTAS_HPP
+#endif // IGUANA_QUADRATURE_XIAO_GIMBUTAS_XIAO_GIMBUTAS_HPP

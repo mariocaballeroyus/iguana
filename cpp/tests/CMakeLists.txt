@@ -7,10 +7,10 @@ add_executable(iguana_tests
     embedding/test_slicer.cpp
     geometry/test_patch.cpp
     quadrature/test_domain_quadrature.cpp
-    quadrature/test_gauss_legendre.cpp
-    quadrature/test_moment_fitting.cpp
-    quadrature/test_moments.cpp
-    quadrature/test_xiao_gimbutas.cpp
+    quadrature/gauss_legendre/test_gauss_legendre.cpp
+    quadrature/moment_fitting/test_moment_fitting.cpp
+    quadrature/moment_fitting/test_moments.cpp
+    quadrature/xiao_gimbutas/test_xiao_gimbutas.cpp
     utils/test_legendre.cpp)
 
 target_compile_features(iguana_tests PRIVATE cxx_std_20)
