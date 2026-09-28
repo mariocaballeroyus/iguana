@@ -15,7 +15,7 @@ namespace iguana
 {
 
 /**
- * @brief Type of a cell, an element of the background basis, with respect
+ * @brief Type of a cell, an element of the background domain, with respect
  *        to the physical domain
  *
  * The type is geometric only. How each type of cell is integrated is up to
@@ -35,7 +35,7 @@ enum class CellType : std::uint8_t
 
 /**
  * @brief Embedding of a physical domain in the elements of a background
- *        basis
+ *        domain
  *
  * The embedding tells how the physical domain lies on the elements, with
  * the cell type of each one. The cell types are given rather than
@@ -55,7 +55,7 @@ public:
      * @brief Constructs the embedding from the cell type of each element
      *
      * @param cell_types Cell type of each element, in the numbering of the
-     *        basis
+     *        domain
      */
     explicit Embedding(std::vector<CellType> cell_types);
 
@@ -66,7 +66,7 @@ public:
     /**
      * @brief Cell type of an element
      *
-     * @param element Element index, in the numbering of the basis
+     * @param element Element index, in the numbering of the domain
      *
      * @pre @p element lies in [0, num_elements())
      */
@@ -74,7 +74,7 @@ public:
     { return cell_types_[static_cast<std::size_t>(element)]; }
 
 private:
-    /// @brief Cell type of each element, in the numbering of the basis
+    /// @brief Cell type of each element, in the numbering of the domain
     std::vector<CellType> cell_types_;
 };
 
