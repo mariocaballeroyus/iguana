@@ -30,51 +30,89 @@ using VolumeQuadrature = DomainQuadrature<double, 3>;
 ///        Python never handles itself
 template<std::size_t d>
 void fill_gauss_legendre(DomainQuadrature<double, d>& quadrature,
-                         const TensorBSpline<double, d>& basis,
+                         const HierarchicalDomain<double, d>& domain,
                          const Embedding<double, d>& embedding,
                          CellType cell_type,
                          const std::array<int, d>& num_points)
 {
-    quadrature.fill(basis.domain(), embedding, cell_type,
+    quadrature.fill(domain, embedding, cell_type,
                     GaussLegendre<double, d>(num_points));
 }
 
 /// @brief Fills the cells of one type with rules fitted to a solid, given
 ///        as a closed triangle mesh in parameter space
 void fill_moment_fitting(VolumeQuadrature& quadrature,
-                         const TensorBSpline<double, 3>& basis,
+                         const HierarchicalDomain<double, 3>& domain,
                          const Embedding<double, 3>& embedding,
                          CellType cell_type, const Eigen::MatrixXd& vertices,
                          const Eigen::MatrixXi& triangles, int order)
 {
-    quadrature.fill(basis.domain(), embedding, cell_type,
+    quadrature.fill(domain, embedding, cell_type,
                     MomentFitting<double, 3>(vertices, triangles, order));
+}
+
+/// @brief Element of a knot vector holding a parameter, the last one that
+///        starts at or before it
+///
+/// @pre @p parameter lies in the parametric domain of @p knots
+int element_holding(const KnotVector<double>& knots, double parameter)
+{
+    int first = 0;
+    int last = knots.num_elements() - 1;
+
+    while (first < last) {
+        const int middle = (first + last + 1) / 2;
+
+        if (knots.element_start(middle) <= parameter)
+            first = middle;
+        else
+            last = middle - 1;
+    }
+
+    return first;
 }
 
 /**
  * @brief Positions of the points in physical space, the only form Python
  *        needs, as it draws them
  *
- * @throws std::invalid_argument If an element of the quadrature lies
- *         outside the basis of the patch
+ * Every element of the domain lies inside an element of the patch, the one
+ * holding the parameters at which it starts, whose functions map its points
+ *
+ * @throws std::invalid_argument If the coarse level of the domain does not
+ *         have the knots of the patch, or if an element of the quadrature
+ *         lies outside the domain
  */
 template<std::size_t d>
 PointMatrix<double> positions(const DomainQuadrature<double, d>& quadrature,
-                              const Patch<double, d>& patch)
+                              const Patch<double, d>& patch,
+                              const HierarchicalDomain<double, d>& domain)
 {
     const TensorBSpline<double, d>& basis = patch.basis();
+
+    for (std::size_t direction = 0; direction < d; ++direction) {
+        const KnotVector<double>& coarse = domain.level(0).knots(direction);
+        const KnotVector<double>& knots = basis.domain().knots(direction);
+
+        if (coarse.degree() != knots.degree() ||
+            coarse.values() != knots.values())
+            throw std::invalid_argument("DomainQuadrature: "
+                                        "the domain must lie on the knots of "
+                                        "the patch");
+    }
+
     const Eigen::VectorXi& offsets = quadrature.offsets();
 
     // Position of each element among the held ones, or -1 if not held
-    std::vector<int> held(basis.domain().num_elements(), -1);
+    std::vector<int> held(domain.num_elements(), -1);
 
     for (int position = 0; position < quadrature.num_elements(); ++position) {
         const int element = quadrature.elements()(position);
 
-        if (element < 0 || element >= basis.domain().num_elements())
+        if (element < 0 || element >= domain.num_elements())
             throw std::invalid_argument("DomainQuadrature: "
                                         "the elements must lie in the "
-                                        "basis");
+                                        "domain");
 
         held[element] = position;
     }
@@ -87,18 +125,35 @@ PointMatrix<double> positions(const DomainQuadrature<double, d>& quadrature,
     Eigen::VectorXi actives;
     PointMatrix<double> element_positions;
 
-    for (const TensorDomainIterator<double, d>& element : basis.domain()) {
+    for (const HierarchicalDomainIterator<double, d>& element : domain) {
         const int position = held[element.index()];
 
         if (position < 0)
             continue;
 
+        // The element of the patch holding it, with the first direction
+        // running fastest
+        std::array<int, d> first_active{};
+        int coarse_element = 0;
+        int stride = 1;
+
+        for (std::size_t direction = 0; direction < d; ++direction) {
+            const KnotVector<double>& knots = basis.domain().knots(direction);
+            const int axis_element =
+                element_holding(knots, element.start()[direction]);
+
+            first_active[direction] =
+                knots.element_span(axis_element) - knots.degree();
+            coarse_element += axis_element * stride;
+            stride *= knots.num_elements();
+        }
+
         const int first = offsets(position);
         const int count = offsets(position + 1) - first;
 
         parameters = quadrature.points().middleRows(first, count);
-        basis.eval_on_element(element.first_active(), parameters, values);
-        basis.active_on_element(element.index(), actives);
+        basis.eval_on_element(first_active, parameters, values);
+        basis.active_on_element(coarse_element, actives);
         patch.position_on_element(actives, values, element_positions);
 
         result.middleRows(first, count) = element_positions;
@@ -117,27 +172,29 @@ void quadrature(py::module_& module)
     py::class_<SurfaceQuadrature>(module, "SurfaceQuadrature")
         .def(py::init<>())
         .def("fill_gauss_legendre", &fill_gauss_legendre<2>,
-             py::arg("basis"), py::arg("embedding"), py::arg("cell_type"),
+             py::arg("domain"), py::arg("embedding"), py::arg("cell_type"),
              py::arg("num_points"))
         .def_property_readonly("num_elements",
                                &SurfaceQuadrature::num_elements)
         .def_property_readonly("num_points", &SurfaceQuadrature::num_points)
         .def_property_readonly("weights", &SurfaceQuadrature::weights, copy)
-        .def("positions", &positions<2>, py::arg("patch"));
+        .def("positions", &positions<2>, py::arg("patch"),
+             py::arg("domain"));
 
     py::class_<VolumeQuadrature>(module, "VolumeQuadrature")
         .def(py::init<>())
         .def("fill_gauss_legendre", &fill_gauss_legendre<3>,
-             py::arg("basis"), py::arg("embedding"), py::arg("cell_type"),
+             py::arg("domain"), py::arg("embedding"), py::arg("cell_type"),
              py::arg("num_points"))
-        .def("fill_moment_fitting", &fill_moment_fitting, py::arg("basis"),
+        .def("fill_moment_fitting", &fill_moment_fitting, py::arg("domain"),
              py::arg("embedding"), py::arg("cell_type"), py::arg("vertices"),
              py::arg("triangles"), py::arg("order"))
         .def_property_readonly("num_elements",
                                &VolumeQuadrature::num_elements)
         .def_property_readonly("num_points", &VolumeQuadrature::num_points)
         .def_property_readonly("weights", &VolumeQuadrature::weights, copy)
-        .def("positions", &positions<3>, py::arg("patch"));
+        .def("positions", &positions<3>, py::arg("patch"),
+             py::arg("domain"));
 }
 
 } // namespace iguana::bindings

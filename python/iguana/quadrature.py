@@ -15,6 +15,7 @@ import numpy as np
 import numpy.typing as npt
 
 from iguana import cpp as _cpp
+from iguana.domain import HierarchicalDomain
 from iguana.embedding import CellType
 from iguana.patch import SurfacePatch, VolumePatch
 
@@ -49,7 +50,9 @@ class DomainQuadrature:
         else:
             raise TypeError('the patch must be a surface or volume patch')
 
-        num_elements = patch._cpp_object.basis.num_elements
+        # The elements of the patch, as a domain that is not refined
+        domain = HierarchicalDomain(patch.degrees, patch.knots)
+        num_elements = domain.num_elements
 
         if cell_types is None:
             cell_types = [CellType.inside] * num_elements
@@ -58,6 +61,7 @@ class DomainQuadrature:
             raise ValueError('there must be one cell type per element')
 
         self._patch = patch
+        self._domain = domain
         self._cell_types = list(cell_types)
         self._embedding = embedding(self._cell_types)
 
@@ -84,7 +88,8 @@ class DomainQuadrature:
     @property
     def positions(self) -> npt.NDArray[np.float64]:
         """Positions of the points in space, of shape ``(num_points, 3)``."""
-        return self._cpp_object.positions(self._patch._cpp_object)
+        return self._cpp_object.positions(self._patch._cpp_object,
+                                          self._domain._cpp_object)
 
     @property
     def weights(self) -> npt.NDArray[np.float64]:
@@ -114,7 +119,7 @@ class DomainQuadrature:
                              'direction')
 
         self._cpp_object.fill_gauss_legendre(
-            self._patch._cpp_object.basis, self._embedding, cell_type,
+            self._domain._cpp_object, self._embedding, cell_type,
             list(num_points))
 
     def fill_moment_fitting(self, cell_type: CellType,
@@ -148,7 +153,7 @@ class DomainQuadrature:
         parameters = _to_parameters(self._patch, vertices)
 
         self._cpp_object.fill_moment_fitting(
-            self._patch._cpp_object.basis, self._embedding, cell_type,
+            self._domain._cpp_object, self._embedding, cell_type,
             parameters, np.asarray(triangles, dtype=np.int32), order)
 
     def __repr__(self) -> str:
