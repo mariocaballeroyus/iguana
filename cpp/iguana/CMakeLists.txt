@@ -4,6 +4,7 @@ add_library(iguana
     basis/tensor_bspline.cpp
     domain/tensor_domain.cpp
     domain/tensor_domain_iterator.cpp
+    embedding/embedding.cpp
     geometry/patch.cpp
     quadrature/box_rule.cpp
     quadrature/domain_quadrature.cpp

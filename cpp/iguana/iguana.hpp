@@ -11,6 +11,7 @@
 #include "basis/tensor_bspline.hpp"
 #include "domain/tensor_domain.hpp"
 #include "domain/tensor_domain_iterator.hpp"
+#include "embedding/embedding.hpp"
 #include "geometry/patch.hpp"
 #include "quadrature/box_rule.hpp"
 #include "quadrature/domain_quadrature.hpp"

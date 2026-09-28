@@ -8,35 +8,16 @@
 
 #include <concepts>
 #include <cstddef>
-#include <cstdint>
 #include <iterator>
 #include <vector>
 
 #include "iguana/basis/tensor_bspline.hpp"
 #include "iguana/domain/tensor_domain_iterator.hpp"
+#include "iguana/embedding/embedding.hpp"
 #include "iguana/geometry/patch.hpp"
 
 namespace iguana
 {
-
-/**
- * @brief Type of a cell, an element of the background patch, with respect
- *        to the physical domain
- *
- * The type is geometric only. How each type of cell is integrated is up to
- * the method built on the domain
- */
-enum class CellType : std::uint8_t
-{
-    /// @brief Entirely outside the physical domain
-    outside,
-
-    /// @brief Entirely inside the physical domain
-    inside,
-
-    /// @brief Crossed by the boundary of the physical domain
-    cut
-};
 
 /**
  * @brief Domain over the elements of a tensor-product patch
