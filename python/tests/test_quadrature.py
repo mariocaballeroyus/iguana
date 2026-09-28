@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 import iguana
-from iguana import CellType, DomainQuadrature
+from iguana import CellType, DomainQuadrature, HierarchicalDomain
 
 ORIGIN = np.array([1., 0., -1.])
 
@@ -74,6 +74,35 @@ def test_fill_order():
                                 for element in (1, 6, 0, 2, 4, 5, 7)])
 
 
+def test_hierarchical_domain():
+    """The cells of a refined domain integrate the patch exactly, each
+    through the patch element holding it."""
+    block = box()
+    net = block.control_points.copy()
+
+    # A bend along x, so that the map differs from element to element
+    net[:, 2] += .1 * np.sin(net[:, 0])
+    patch = iguana.VolumePatch(
+        iguana.cpp.VolumePatch(block._cpp_object.basis, net))
+
+    domain = HierarchicalDomain(patch.degrees, patch.knots)
+    domain = domain.refine([5, 1]).refine([7])
+
+    # Exact for the map, of degree 2 along x and 1 along y and z
+    quadrature = DomainQuadrature(patch, domain=domain)
+    quadrature.fill_gauss_legendre(CellType.inside, (2, 1, 1))
+
+    # A B-spline integrates to (t[i + p + 1] - t[i]) / (p + 1), and the
+    # control points run with the first direction fastest
+    integrals = [(knots[degree + 1:] - knots[:-degree - 1]) / (degree + 1)
+                 for degree, knots in zip(patch.degrees, patch.knots)]
+    exact = np.kron(integrals[2], np.kron(integrals[1], integrals[0])) @ net
+
+    assert quadrature.num_elements == 29
+    np.testing.assert_allclose(quadrature.weights @ quadrature.positions,
+                               exact, rtol=1e-12)
+
+
 def test_moment_fitting():
     """Gauss-Legendre on the inside cells and moment fitting on the cut ones
     integrate the part of the block inside the solid."""
@@ -110,6 +139,15 @@ def test_invalid_arguments():
 
     with pytest.raises(ValueError):
         DomainQuadrature(box(), mixed()[:-1])
+
+    # A domain must lie on the knots of the patch
+    with pytest.raises(TypeError):
+        DomainQuadrature(box(), domain=box())
+
+    with pytest.raises(ValueError):
+        DomainQuadrature(box(), domain=HierarchicalDomain(
+            (2, 1, 1), [[0., 0., 0., 1., 1., 1.], [0., 0., 1., 1.],
+                        [0., 0., 1., 1.]]))
 
     quadrature = DomainQuadrature(box(), mixed())
 
