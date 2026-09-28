@@ -20,6 +20,7 @@ namespace
 using Catch::Matchers::WithinRel;
 using iguana::CellType;
 using iguana::Embedding;
+using iguana::HierarchicalDomain;
 using iguana::KnotVector;
 using iguana::TensorDomain;
 
@@ -158,4 +159,47 @@ TEST_CASE("Cell types are filled one after another, once each",
         std::invalid_argument);
     REQUIRE(quadrature.offsets() == before.offsets());
     REQUIRE(quadrature.points() == before.points());
+}
+
+TEST_CASE("A hierarchical domain is filled over its whole parametric domain",
+          "[quadrature]")
+{
+    // Six elements over [0, 4] x [0, 2], refined twice, the second time
+    // inside the first refinement
+    const HierarchicalDomain<double, 2> coarse(TensorDomain<double, 2>(
+        {KnotVector<double>(2, {0., 0., 0., 1., 3., 4., 4., 4.}),
+         KnotVector<double>(1, {0., 0., .5, 2., 2.})}));
+    const HierarchicalDomain<double, 2> domain =
+        refine(refine(coarse, std::vector<int>{0, 4}),
+               std::vector<int>{0, 11});
+
+    const Embedding<double, 2> embedding(
+        std::vector<CellType>(domain.num_elements(), CellType::inside));
+
+    // Exact up to degree 2n - 1 in each direction
+    const std::array<int, 2> counts{3, 2};
+
+    iguana::DomainQuadrature<double, 2> quadrature;
+    quadrature.fill(domain, embedding, CellType::inside,
+                    iguana::GaussLegendre<double, 2>(counts));
+
+    REQUIRE(quadrature.num_elements() == domain.num_elements());
+
+    // The cells tile the domain, so together they integrate its
+    // polynomials exactly
+    const Eigen::MatrixXd& points = quadrature.points();
+    const Eigen::VectorXd& weights = quadrature.weights();
+
+    for (int a = 0; a < 2 * counts[0]; ++a) {
+        for (int b = 0; b < 2 * counts[1]; ++b) {
+            const double sum =
+                (weights.array() * points.col(0).array().pow(a)
+                 * points.col(1).array().pow(b))
+                    .sum();
+            const double exact = std::pow(4., a + 1) / (a + 1)
+                                 * std::pow(2., b + 1) / (b + 1);
+
+            REQUIRE_THAT(sum, WithinRel(exact, 1e-12));
+        }
+    }
 }
