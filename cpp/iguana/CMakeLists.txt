@@ -2,7 +2,6 @@ add_library(iguana
     basis/bspline.cpp
     basis/knot_vector.cpp
     basis/tensor_bspline.cpp
-    domain/tensor_domain.cpp
     domain/tensor_domain_iterator.cpp
     embedding/embedding.cpp
     geometry/patch.cpp

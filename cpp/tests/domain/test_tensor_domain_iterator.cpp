@@ -7,7 +7,7 @@
 
 #include <array>
 #include <cstddef>
-#include <utility>
+#include <iterator>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -18,7 +18,7 @@ namespace
 using Catch::Matchers::WithinAbs;
 using iguana::BSpline;
 using iguana::TensorBSpline;
-using iguana::TensorDomain;
+using iguana::TensorDomainIterator;
 
 /// @brief Basis mixing degrees, a repeated interior knot and an unclamped
 ///        direction
@@ -28,17 +28,6 @@ TensorBSpline<double, 3> mixed()
         {BSpline<double>(2, {0., 0., 0., 1., 2., 3., 3., 3.}),
          BSpline<double>(2, {0., 0., 0., 1., 1., 2., 2., 2.}),
          BSpline<double>(2, {0., .5, 1., 1.5, 2., 2.5, 3., 3.5})});
-}
-
-/// @brief Domain over a basis, whose control points do not matter here
-template<std::size_t d>
-TensorDomain<double, d> domain_of(TensorBSpline<double, d> basis)
-{
-    const int num_functions = basis.num_functions();
-
-    return TensorDomain<double, d>(iguana::Patch<double, d>(
-        std::move(basis),
-        iguana::PointMatrix<double>::Zero(num_functions, 3)));
 }
 
 /// @brief Element of each direction, split from the flat index: the
@@ -62,13 +51,13 @@ std::array<int, d> element_of(const TensorBSpline<double, d>& basis,
 
 TEST_CASE("The walk reaches every element once, in order", "[domain]")
 {
-    const TensorDomain<double, 3> domain = domain_of(mixed());
-    const TensorBSpline<double, 3>& basis = domain.basis();
+    const TensorBSpline<double, 3> basis = mixed();
 
     int visited = 0;
     double volume = 0.;
 
-    for (const auto& element : domain) {
+    for (TensorDomainIterator<double, 3> element(basis);
+         element != std::default_sentinel; ++element) {
         REQUIRE(element.index() == visited);
         ++visited;
 
@@ -95,7 +84,7 @@ TEST_CASE("The walk reaches every element once, in order", "[domain]")
         volume += cell;
     }
 
-    REQUIRE(visited == domain.num_elements());
+    REQUIRE(visited == basis.num_elements());
 
     // The element boxes fill the parameter box
     double box = 1.;
@@ -112,8 +101,9 @@ TEST_CASE("The walk reaches every element once, in order", "[domain]")
     // A second walk starts over
     int again = 0;
 
-    for (const auto& element : domain)
+    for (TensorDomainIterator<double, 3> element(basis);
+         element != std::default_sentinel; ++element)
         REQUIRE(element.index() == again++);
 
-    REQUIRE(again == domain.num_elements());
+    REQUIRE(again == basis.num_elements());
 }

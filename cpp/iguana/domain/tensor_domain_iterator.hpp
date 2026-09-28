@@ -17,7 +17,7 @@ namespace iguana
 {
 
 /**
- * @brief Walks the elements of a tensor domain
+ * @brief Walks the elements of a tensor-product basis
  *
  * The iterator visits every element once, in increasing flat index with
  * the first direction running fastest, and serves as the handle of the
@@ -26,8 +26,7 @@ namespace iguana
  * @tparam T Floating-point type
  * @tparam d Number of parametric directions
  *
- * @warning The iterator reads the basis of its domain, which must outlive
- *          it
+ * @warning The iterator reads its basis, which must outlive it
  */
 template<std::floating_point T, std::size_t d>
 class TensorDomainIterator

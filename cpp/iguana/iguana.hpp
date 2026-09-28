@@ -9,7 +9,6 @@
 #include "basis/bspline.hpp"
 #include "basis/knot_vector.hpp"
 #include "basis/tensor_bspline.hpp"
-#include "domain/tensor_domain.hpp"
 #include "domain/tensor_domain_iterator.hpp"
 #include "embedding/embedding.hpp"
 #include "geometry/patch.hpp"
