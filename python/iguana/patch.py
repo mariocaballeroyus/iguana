@@ -211,3 +211,39 @@ def create_box(
               for degree, knot in zip(degrees, knots)])
 
     return VolumePatch(_cpp.VolumePatch(basis=basis, coefficients=points))
+
+
+def create_surface(
+    degrees: Sequence[int],
+    knots: Sequence[npt.ArrayLike],
+    control_points: npt.ArrayLike,
+) -> SurfacePatch:
+    """Create the patch of a B-spline surface from its control net.
+
+    Args:
+        degrees: Polynomial degree of each parametric direction.
+        knots: Full, non-decreasing knot vector of each direction.
+        control_points: Control points, of shape
+            ``(num_control_points, 3)``, numbered with the first direction
+            running fastest.
+
+    Returns:
+        The patch of the surface.
+
+    Raises:
+        ValueError: If there are not two degrees and two knot vectors, if
+            a knot vector is invalid for its degree, or if there is not
+            one control point per basis function.
+    """
+    if len(degrees) != 2 or len(knots) != 2:
+        raise ValueError('there must be two degrees and two knot vectors, '
+                         'one per direction')
+
+    basis = _cpp.BivariateBSpline(
+        axes=[_cpp.BSpline(degree=degree,
+                           knots=np.asarray(knot, float).tolist())
+              for degree, knot in zip(degrees, knots)])
+
+    points = np.asarray(control_points, float).reshape(-1, 3)
+
+    return SurfacePatch(_cpp.SurfacePatch(basis=basis, coefficients=points))

@@ -11,10 +11,10 @@ from iguana import cpp
 from iguana.domain import HierarchicalDomain
 from iguana.embedding import CellType
 from iguana.patch import (CurvePatch, SurfacePatch, VolumePatch,
-                          create_box)
+                          create_box, create_surface)
 from iguana.quadrature import DomainQuadrature
 
 __version__ = cpp.__version__
 
 __all__ = ['CellType', 'CurvePatch', 'DomainQuadrature', 'HierarchicalDomain',
-           'SurfacePatch', 'VolumePatch', 'create_box']
+           'SurfacePatch', 'VolumePatch', 'create_box', 'create_surface']

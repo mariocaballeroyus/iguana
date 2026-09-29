@@ -132,3 +132,85 @@ def test_surface_isocurves():
             assert np.allclose(curve.knots, patch.knots[running])
             assert np.isclose(points[:, running].min(), 0.)
             assert np.isclose(points[:, running].max(), LENGTHS[running])
+
+
+# A curved net over non-uniform knots, so that neither an affine map nor
+# evenly spaced knot lines can hide a misnumbered control point
+SURFACE_DEGREES = (2, 3)
+SURFACE_KNOTS = ([0., 0., 0., .3, 1., 1., 1.],
+                 [-1., -1., -1., -1., .5, 2., 2., 2., 2.])
+
+
+def surface_net():
+    """Control points of a curved surface, the first direction fastest."""
+    counts = [len(knot) - degree - 1
+              for degree, knot in zip(SURFACE_DEGREES, SURFACE_KNOTS)]
+    first, second = np.meshgrid(np.arange(counts[0]), np.arange(counts[1]),
+                                indexing='xy')
+
+    return np.column_stack([first.ravel(), second.ravel(),
+                            np.sin(first.ravel() + 2. * second.ravel())])
+
+
+def test_surface_invalid_arguments():
+    """The factory rejects directions, knots and nets that do not fit."""
+    with pytest.raises(ValueError):
+        iguana.create_surface(degrees=(2, 3, 1), knots=SURFACE_KNOTS,
+                              control_points=surface_net())
+
+    with pytest.raises(ValueError):
+        iguana.create_surface(degrees=SURFACE_DEGREES, knots=SURFACE_KNOTS,
+                              control_points=surface_net()[:-1])
+
+    with pytest.raises(ValueError):
+        iguana.create_surface(degrees=SURFACE_DEGREES,
+                              knots=(SURFACE_KNOTS[0][::-1],
+                                     SURFACE_KNOTS[1]),
+                              control_points=surface_net())
+
+
+def test_surface_control_net():
+    """The patch of a surface keeps its basis and its net, whose outer
+    rows and columns are its boundary isocurves."""
+    net = surface_net()
+    patch = iguana.create_surface(degrees=SURFACE_DEGREES,
+                                  knots=SURFACE_KNOTS, control_points=net)
+
+    assert patch.degrees == SURFACE_DEGREES
+
+    for knots, given in zip(patch.knots, SURFACE_KNOTS):
+        assert np.array_equal(knots, given)
+
+    assert np.array_equal(patch.control_points, net)
+
+    # The net numbers the first direction fastest, so it reshapes to
+    # (second, first) counts
+    counts = [len(knot) - degree - 1
+              for degree, knot in zip(SURFACE_DEGREES, SURFACE_KNOTS)]
+    grid = net.reshape(counts[1], counts[0], 3)
+    curves = patch.isocurves()
+
+    # Two elements in the first direction, two in the second
+    boundary = {0: grid[:, 0], 2: grid[:, -1], 3: grid[0], 5: grid[-1]}
+
+    assert len(curves) == 6
+
+    for index, points in boundary.items():
+        assert np.array_equal(curves[index].control_points, points)
+
+
+def test_surface_from_isosurface():
+    """An isosurface of a block, rebuilt from its basis and net, has the
+    same isocurves."""
+    block = iguana.create_box(lengths=LENGTHS, elements=ELEMENTS,
+                              degrees=DEGREES)
+
+    for surface in block.isosurfaces():
+        rebuilt = iguana.create_surface(degrees=surface.degrees,
+                                        knots=surface.knots,
+                                        control_points=surface.control_points)
+
+        for curve, copy in zip(surface.isocurves(), rebuilt.isocurves()):
+            assert copy.degree == curve.degree
+            assert np.array_equal(copy.knots, curve.knots)
+            assert np.allclose(copy.control_points, curve.control_points)
