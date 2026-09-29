@@ -1,6 +1,8 @@
 add_library(iguana
     basis/bspline.cpp
     basis/tensor_bspline.cpp
+    domain/hierarchical_domain.cpp
+    domain/hierarchical_domain_iterator.cpp
     domain/knot_vector.cpp
     domain/tensor_domain.cpp
     domain/tensor_domain_iterator.cpp

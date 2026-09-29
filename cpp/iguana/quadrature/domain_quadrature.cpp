@@ -9,7 +9,8 @@
 #include <utility>
 #include <vector>
 
-#include "iguana/domain/tensor_domain_iterator.hpp"
+#include "iguana/domain/hierarchical_domain.hpp"
+#include "iguana/domain/tensor_domain.hpp"
 #include "iguana/quadrature/box_rule.hpp"
 #include "iguana/quadrature/gauss_legendre/gauss_legendre.hpp"
 #include "iguana/quadrature/moment_fitting/moment_fitting.hpp"
@@ -60,8 +61,8 @@ DomainQuadrature<T, d>::DomainQuadrature(Eigen::VectorXi elements,
 }
 
 template<std::floating_point T, std::size_t d>
-template<typename Rule>
-void DomainQuadrature<T, d>::fill(const TensorDomain<T, d>& domain,
+template<typename Domain, typename Rule>
+void DomainQuadrature<T, d>::fill(const Domain& domain,
                                   const Embedding<T, d>& embedding,
                                   CellType cell_type, const Rule& rule)
 {
@@ -111,7 +112,7 @@ void DomainQuadrature<T, d>::fill(const TensorDomain<T, d>& domain,
     // Position of the current cell among the new ones
     int cell = 0;
 
-    for (const TensorDomainIterator<T, d>& element : domain) {
+    for (const auto& element : domain) {
         if (embedding.cell_type(element.index()) != cell_type)
             continue;
 
@@ -172,6 +173,23 @@ template void DomainQuadrature<double, 2>::fill(
     CellType, const MomentFitting<double, 2>&);
 template void DomainQuadrature<double, 3>::fill(
     const TensorDomain<double, 3>&, const Embedding<double, 3>&,
+    CellType, const MomentFitting<double, 3>&);
+
+template void DomainQuadrature<double, 1>::fill(
+    const HierarchicalDomain<double, 1>&, const Embedding<double, 1>&,
+    CellType, const GaussLegendre<double, 1>&);
+template void DomainQuadrature<double, 2>::fill(
+    const HierarchicalDomain<double, 2>&, const Embedding<double, 2>&,
+    CellType, const GaussLegendre<double, 2>&);
+template void DomainQuadrature<double, 3>::fill(
+    const HierarchicalDomain<double, 3>&, const Embedding<double, 3>&,
+    CellType, const GaussLegendre<double, 3>&);
+
+template void DomainQuadrature<double, 2>::fill(
+    const HierarchicalDomain<double, 2>&, const Embedding<double, 2>&,
+    CellType, const MomentFitting<double, 2>&);
+template void DomainQuadrature<double, 3>::fill(
+    const HierarchicalDomain<double, 3>&, const Embedding<double, 3>&,
     CellType, const MomentFitting<double, 3>&);
 
 } // namespace iguana

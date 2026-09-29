@@ -11,7 +11,6 @@
 
 #include <Eigen/Core>
 
-#include "iguana/domain/tensor_domain.hpp"
 #include "iguana/embedding/embedding.hpp"
 
 namespace iguana
@@ -72,6 +71,9 @@ public:
      * cell and which is appended in increasing element index after the
      * elements already held. If it throws, the quadrature is left unchanged
      *
+     * @tparam Domain Domain with num_elements() whose walk gives each
+     *         element its index(), start() and end(), as TensorDomain and
+     *         HierarchicalDomain do
      * @tparam Rule Rule with fill_to_reference_space(start, end, points,
      *         weights), as BoxRule states it. The number of points may
      *         differ from one cell to another
@@ -86,10 +88,9 @@ public:
      *         lies outside the domain, or if a cell of this type is already
      *         held
      */
-    template<typename Rule>
-    void fill(const TensorDomain<T, d>& domain,
-              const Embedding<T, d>& embedding, CellType cell_type,
-              const Rule& rule);
+    template<typename Domain, typename Rule>
+    void fill(const Domain& domain, const Embedding<T, d>& embedding,
+              CellType cell_type, const Rule& rule);
 
     /// @brief Number of integrated elements
     constexpr int num_elements() const noexcept

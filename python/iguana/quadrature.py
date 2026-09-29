@@ -15,6 +15,7 @@ import numpy as np
 import numpy.typing as npt
 
 from iguana import cpp as _cpp
+from iguana.domain import HierarchicalDomain
 from iguana.embedding import CellType
 from iguana.patch import SurfacePatch, VolumePatch
 
@@ -25,18 +26,25 @@ class DomainQuadrature:
     _cpp_object: _cpp.SurfaceQuadrature | _cpp.VolumeQuadrature
 
     def __init__(self, patch: SurfacePatch | VolumePatch,
-                 cell_types: Sequence[CellType] | None = None) -> None:
+                 cell_types: Sequence[CellType] | None = None,
+                 domain: HierarchicalDomain | None = None) -> None:
         """Initialize an empty quadrature over the cells of a patch.
 
         Args:
-            patch: The background patch, a surface or volume patch, whose
-                elements are the cells.
-            cell_types: The type of each element, with the first direction
-                running fastest. Without them, every element lies inside.
+            patch: The background patch, a surface or volume patch, which
+                places the points in space.
+            cell_types: The type of each cell, in the numbering of the
+                domain. Without them, every cell lies inside.
+            domain: A hierarchical domain on the knots of the patch, whose
+                active elements are the cells. Without it, the cells are
+                the elements of the patch, with the first direction running
+                fastest.
 
         Raises:
-            TypeError: If the patch is neither a surface nor a volume patch.
-            ValueError: If there is not one cell type per element.
+            TypeError: If the patch is neither a surface nor a volume patch,
+                or if the domain is not a hierarchical domain.
+            ValueError: If the domain does not lie on the knots of the
+                patch, or if there is not one cell type per cell.
         """
         if isinstance(patch, VolumePatch):
             self._cpp_object = _cpp.VolumeQuadrature()
@@ -49,26 +57,46 @@ class DomainQuadrature:
         else:
             raise TypeError('the patch must be a surface or volume patch')
 
-        num_elements = patch._cpp_object.basis.num_elements
+        if domain is None:
+            # The elements of the patch, as a domain that is not refined
+            domain = HierarchicalDomain(patch.degrees, patch.knots)
+        elif not isinstance(domain, HierarchicalDomain):
+            raise TypeError('the domain must be a hierarchical domain')
+        elif domain._dimension != self._dimension:
+            raise ValueError('the domain must lie on the knots of the '
+                             'patch')
+        else:
+            # Positions of the empty quadrature only check that the domain
+            # lies on the knots of the patch
+            self._cpp_object.positions(patch._cpp_object,
+                                       domain._cpp_object)
+
+        num_elements = domain.num_elements
 
         if cell_types is None:
             cell_types = [CellType.inside] * num_elements
 
         if len(cell_types) != num_elements:
-            raise ValueError('there must be one cell type per element')
+            raise ValueError('there must be one cell type per cell')
 
         self._patch = patch
+        self._domain = domain
         self._cell_types = list(cell_types)
         self._embedding = embedding(self._cell_types)
 
     @property
     def patch(self) -> SurfacePatch | VolumePatch:
-        """The background patch, whose elements are the cells."""
+        """The background patch, which places the points in space."""
         return self._patch
 
     @property
+    def domain(self) -> HierarchicalDomain:
+        """The domain whose active elements are the cells."""
+        return self._domain
+
+    @property
     def cell_types(self) -> list[CellType]:
-        """Type of each element, with the first direction running fastest."""
+        """Type of each cell, in the numbering of the domain."""
         return list(self._cell_types)
 
     @property
@@ -84,7 +112,8 @@ class DomainQuadrature:
     @property
     def positions(self) -> npt.NDArray[np.float64]:
         """Positions of the points in space, of shape ``(num_points, 3)``."""
-        return self._cpp_object.positions(self._patch._cpp_object)
+        return self._cpp_object.positions(self._patch._cpp_object,
+                                          self._domain._cpp_object)
 
     @property
     def weights(self) -> npt.NDArray[np.float64]:
@@ -114,7 +143,7 @@ class DomainQuadrature:
                              'direction')
 
         self._cpp_object.fill_gauss_legendre(
-            self._patch._cpp_object.basis, self._embedding, cell_type,
+            self._domain._cpp_object, self._embedding, cell_type,
             list(num_points))
 
     def fill_moment_fitting(self, cell_type: CellType,
@@ -148,7 +177,7 @@ class DomainQuadrature:
         parameters = _to_parameters(self._patch, vertices)
 
         self._cpp_object.fill_moment_fitting(
-            self._patch._cpp_object.basis, self._embedding, cell_type,
+            self._domain._cpp_object, self._embedding, cell_type,
             parameters, np.asarray(triangles, dtype=np.int32), order)
 
     def __repr__(self) -> str:
