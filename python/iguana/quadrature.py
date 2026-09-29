@@ -148,37 +148,48 @@ class DomainQuadrature:
 
     def fill_moment_fitting(self, cell_type: CellType,
                             vertices: npt.ArrayLike,
-                            triangles: npt.ArrayLike,
+                            facets: npt.ArrayLike,
                             order: int = 2) -> None:
-        """Fill the cells of one type with rules fitted to a solid.
+        """Fill the cells of one type with rules fitted to a domain.
 
         The rule of each cell integrates the Legendre polynomials up to the
-        order in each direction over its part inside the solid, with
-        positive weights at points inside it. The patch must map its
-        parameter box onto an axis-aligned block, as create_box builds it,
-        through which the vertices map back to parameters.
+        order in each direction over its part inside the domain, with
+        positive weights at points inside it.
+
+        On a surface patch the domain is the region a closed polygon
+        trims, given in parameter space, where the trimming curves of a
+        trimmed surface lie. On a volume patch it is a solid given in
+        space, and the patch must map its parameter box onto an
+        axis-aligned block, as create_box builds it, through which the
+        vertices map back to parameters.
 
         Args:
             cell_type: The type of the cells to fill, usually the cut cells.
-            vertices: Vertices of a closed triangle mesh of the solid in
-                space, of shape ``(num_vertices, 3)``.
-            triangles: Vertices of each triangle, counterclockwise seen from
-                outside, of shape ``(num_triangles, 3)``.
+            vertices: On a surface patch, the vertices of the polygon in
+                parameter space, of shape ``(num_vertices, 2)``. On a
+                volume patch, the vertices of a closed triangle mesh of the
+                solid in space, of shape ``(num_vertices, 3)``.
+            facets: On a surface patch, the vertices of each segment of
+                the polygon, with the domain on their left, of shape
+                ``(num_segments, 2)``. On a volume patch, the vertices of
+                each triangle, counterclockwise seen from outside, of shape
+                ``(num_triangles, 3)``.
             order: Highest polynomial degree of each direction.
 
         Raises:
-            TypeError: If the patch is not a volume patch.
-            ValueError: If the mesh is malformed, if the order lies outside
-                [0, 4], or if the cells of this type are already filled.
+            ValueError: If the polygon or mesh is malformed, if the order
+                lies outside [0, 7] on a surface patch or [0, 4] on a
+                volume patch, or if the cells of this type are already
+                filled.
         """
-        if self._dimension != 3:
-            raise TypeError('moment fitting needs a volume patch')
-
-        parameters = _to_parameters(self._patch, vertices)
+        if self._dimension == 3:
+            parameters = _to_parameters(self._patch, vertices)
+        else:
+            parameters = np.asarray(vertices, dtype=float)
 
         self._cpp_object.fill_moment_fitting(
             self._domain._cpp_object, self._embedding, cell_type,
-            parameters, np.asarray(triangles, dtype=np.int32), order)
+            parameters, np.asarray(facets, dtype=np.int32), order)
 
     def __repr__(self) -> str:
         return (f'DomainQuadrature(num_elements={self.num_elements}, '
