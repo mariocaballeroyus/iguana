@@ -17,7 +17,7 @@ import numpy.typing as npt
 from iguana import cpp as _cpp
 from iguana.domain import HierarchicalDomain
 from iguana.embedding import CellType
-from iguana.patch import SurfacePatch, VolumePatch
+from iguana.patch import PlanarPatch, SurfacePatch, VolumePatch
 
 
 class DomainQuadrature:
@@ -25,14 +25,14 @@ class DomainQuadrature:
 
     _cpp_object: _cpp.SurfaceQuadrature | _cpp.VolumeQuadrature
 
-    def __init__(self, patch: SurfacePatch | VolumePatch,
+    def __init__(self, patch: PlanarPatch | SurfacePatch | VolumePatch,
                  cell_types: Sequence[CellType] | None = None,
                  domain: HierarchicalDomain | None = None) -> None:
         """Initialize an empty quadrature over the cells of a patch.
 
         Args:
-            patch: The background patch, a surface or volume patch, which
-                places the points in space.
+            patch: The background patch, a planar, surface or volume
+                patch, which places the points in physical space.
             cell_types: The type of each cell, in the numbering of the
                 domain. Without them, every cell lies inside.
             domain: A hierarchical domain on the knots of the patch, whose
@@ -41,8 +41,8 @@ class DomainQuadrature:
                 fastest.
 
         Raises:
-            TypeError: If the patch is neither a surface nor a volume patch,
-                or if the domain is not a hierarchical domain.
+            TypeError: If the patch is not a planar, surface or volume
+                patch, or if the domain is not a hierarchical domain.
             ValueError: If the domain does not lie on the knots of the
                 patch, or if there is not one cell type per cell.
         """
@@ -50,12 +50,13 @@ class DomainQuadrature:
             self._cpp_object = _cpp.VolumeQuadrature()
             embedding = _cpp.VolumeEmbedding
             self._dimension = 3
-        elif isinstance(patch, SurfacePatch):
+        elif isinstance(patch, (PlanarPatch, SurfacePatch)):
             self._cpp_object = _cpp.SurfaceQuadrature()
             embedding = _cpp.SurfaceEmbedding
             self._dimension = 2
         else:
-            raise TypeError('the patch must be a surface or volume patch')
+            raise TypeError('the patch must be a planar, surface or volume '
+                            'patch')
 
         if domain is None:
             # The elements of the patch, as a domain that is not refined
@@ -85,7 +86,7 @@ class DomainQuadrature:
         self._embedding = embedding(self._cell_types)
 
     @property
-    def patch(self) -> SurfacePatch | VolumePatch:
+    def patch(self) -> PlanarPatch | SurfacePatch | VolumePatch:
         """The background patch, which places the points in space."""
         return self._patch
 
@@ -111,7 +112,9 @@ class DomainQuadrature:
 
     @property
     def positions(self) -> npt.NDArray[np.float64]:
-        """Positions of the points in space, of shape ``(num_points, 3)``."""
+        """Positions of the points in physical space, of shape
+        ``(num_points, 2)`` on a planar patch and ``(num_points, 3)``
+        otherwise."""
         return self._cpp_object.positions(self._patch._cpp_object,
                                           self._domain._cpp_object)
 
