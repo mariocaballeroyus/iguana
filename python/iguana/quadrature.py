@@ -113,7 +113,7 @@ class DomainQuadrature:
     @property
     def positions(self) -> npt.NDArray[np.float64]:
         """Positions of the points in physical space, of shape
-        ``(num_points, 2)`` on a planar patch and ``(num_points, 3)``
+        `(num_points, 2)` on a planar patch and `(num_points, 3)`
         otherwise."""
         return self._cpp_object.positions(self._patch._cpp_object,
                                           self._domain._cpp_object)
@@ -121,7 +121,7 @@ class DomainQuadrature:
     @property
     def weights(self) -> npt.NDArray[np.float64]:
         """Weights of the points in parameter space, of shape
-        ``(num_points,)``."""
+        `(num_points,)`."""
         return self._cpp_object.weights
 
     def fill_gauss_legendre(self, cell_type: CellType,
@@ -161,34 +161,38 @@ class DomainQuadrature:
 
         On a surface patch the domain is the region a closed polygon
         trims, given in parameter space, where the trimming curves of a
-        trimmed surface lie. On a volume patch it is a solid given in
-        space, and the patch must map its parameter box onto an
-        axis-aligned block, as create_box builds it, through which the
-        vertices map back to parameters.
+        trimmed surface lie. On a planar patch it is a region a closed
+        polygon bounds in the plane, and on a volume patch a solid given
+        in space. The planar or volume patch must then map its parameter
+        box onto an axis-aligned rectangle or block, as create_rectangle
+        and create_box build them, through which the vertices map back to
+        parameters.
 
         Args:
             cell_type: The type of the cells to fill, usually the cut cells.
             vertices: On a surface patch, the vertices of the polygon in
-                parameter space, of shape ``(num_vertices, 2)``. On a
-                volume patch, the vertices of a closed triangle mesh of the
-                solid in space, of shape ``(num_vertices, 3)``.
-            facets: On a surface patch, the vertices of each segment of
-                the polygon, with the domain on their left, of shape
-                ``(num_segments, 2)``. On a volume patch, the vertices of
-                each triangle, counterclockwise seen from outside, of shape
-                ``(num_triangles, 3)``.
+                parameter space, and on a planar patch in the plane, of
+                shape `(num_vertices, 2)`. On a volume patch, the
+                vertices of a closed triangle mesh of the solid in space,
+                of shape `(num_vertices, 3)`.
+            facets: On a surface or planar patch, the vertices of each
+                segment of the polygon, with the domain on their left, of
+                shape `(num_segments, 2)`. On a volume patch, the
+                vertices of each triangle, counterclockwise seen from
+                outside, of shape `(num_triangles, 3)`.
             order: Highest polynomial degree of each direction.
 
         Raises:
             ValueError: If the polygon or mesh is malformed, if the order
-                lies outside [0, 7] on a surface patch or [0, 4] on a
-                volume patch, or if the cells of this type are already
+                lies outside [0, 7] on a surface or planar patch or [0, 4]
+                on a volume patch, or if the cells of this type are already
                 filled.
         """
-        if self._dimension == 3:
-            parameters = _to_parameters(self._patch, vertices)
-        else:
+        # Trimming curves lie in parameter space already
+        if isinstance(self._patch, SurfacePatch):
             parameters = np.asarray(vertices, dtype=float)
+        else:
+            parameters = _to_parameters(self._patch, vertices)
 
         self._cpp_object.fill_moment_fitting(
             self._domain._cpp_object, self._embedding, cell_type,
@@ -199,12 +203,14 @@ class DomainQuadrature:
                 f'num_points={self.num_points})')
 
 
-def _to_parameters(patch: VolumePatch,
+def _to_parameters(patch: PlanarPatch | VolumePatch,
                    points: npt.ArrayLike) -> npt.NDArray[np.float64]:
-    """Parameters of points in space under the map of an axis-aligned block.
+    """Parameters of points under the map of an axis-aligned rectangle or
+    block.
 
-    The corners of such a block are its extreme control points, so each
-    coordinate scales back onto the knot range of its direction.
+    The corners of such a rectangle or block are its extreme control
+    points, so each coordinate scales back onto the knot range of its
+    direction.
     """
     points = np.asarray(points, dtype=float)
     net = patch.control_points
