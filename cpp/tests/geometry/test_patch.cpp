@@ -48,8 +48,8 @@ double greville(const BSpline<double>& axis, int function)
 }
 
 /**
- * @brief Checks that a patch reproduces an affine map at points of every
- *        element
+ * @brief Checks that a patch reproduces an affine map and its tangents at
+ *        points of every element
  *
  * Sampling an affine map at the Greville abscissae gives control points
  * that reproduce it exactly
@@ -86,6 +86,8 @@ void check_affine(const TensorBSpline<double, d>& basis,
     Eigen::MatrixXd values;
     Eigen::VectorXi actives;
     iguana::PointMatrix<double, n> positions;
+    std::array<Eigen::MatrixXd, d> gradients;
+    std::array<iguana::PointMatrix<double, n>, d> tangents;
 
     for (int element = 0; element < basis.domain().num_elements();
          ++element) {
@@ -124,6 +126,20 @@ void check_affine(const TensorBSpline<double, d>& basis,
 
             for (Eigen::Index c = 0; c < static_cast<Eigen::Index>(n); ++c)
                 REQUIRE_THAT(positions(pt, c), WithinAbs(exact[c], 1e-13));
+        }
+
+        // The tangents of an affine map are the columns of its linear part
+        basis.eval_grads_on_element(first, points, values, gradients);
+        patch.tangents_on_element(actives, gradients, tangents);
+
+        for (std::size_t dir = 0; dir < d; ++dir) {
+            INFO("direction " << dir);
+            const Eigen::Index column = static_cast<Eigen::Index>(dir);
+
+            for (Eigen::Index pt = 0; pt < points.rows(); ++pt)
+                for (Eigen::Index c = 0; c < static_cast<Eigen::Index>(n); ++c)
+                    REQUIRE_THAT(tangents[dir](pt, c),
+                                 WithinAbs(map(c, column), 1e-12));
         }
     }
 }
