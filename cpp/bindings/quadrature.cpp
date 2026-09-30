@@ -39,16 +39,18 @@ void fill_gauss_legendre(DomainQuadrature<double, d>& quadrature,
                     GaussLegendre<double, d>(num_points));
 }
 
-/// @brief Fills the cells of one type with rules fitted to a solid, given
-///        as a closed triangle mesh in parameter space
-void fill_moment_fitting(VolumeQuadrature& quadrature,
-                         const HierarchicalDomain<double, 3>& domain,
-                         const Embedding<double, 3>& embedding,
+/// @brief Fills the cells of one type with rules fitted to a domain, closed
+///        by facets in parameter space: segments with the domain on their
+///        left, or triangles counterclockwise seen from outside
+template<std::size_t d>
+void fill_moment_fitting(DomainQuadrature<double, d>& quadrature,
+                         const HierarchicalDomain<double, d>& domain,
+                         const Embedding<double, d>& embedding,
                          CellType cell_type, const Eigen::MatrixXd& vertices,
-                         const Eigen::MatrixXi& triangles, int order)
+                         const Eigen::MatrixXi& facets, int order)
 {
     quadrature.fill(domain, embedding, cell_type,
-                    MomentFitting<double, 3>(vertices, triangles, order));
+                    MomentFitting<double, d>(vertices, facets, order));
 }
 
 /// @brief Element of a knot vector holding a parameter, the last one that
@@ -175,6 +177,9 @@ void quadrature(py::module_& module)
         .def("fill_gauss_legendre", &fill_gauss_legendre<2>,
              py::arg("domain"), py::arg("embedding"), py::arg("cell_type"),
              py::arg("num_points"))
+        .def("fill_moment_fitting", &fill_moment_fitting<2>,
+             py::arg("domain"), py::arg("embedding"), py::arg("cell_type"),
+             py::arg("vertices"), py::arg("facets"), py::arg("order"))
         .def_property_readonly("num_elements",
                                &SurfaceQuadrature::num_elements)
         .def_property_readonly("num_points", &SurfaceQuadrature::num_points)
@@ -189,9 +194,9 @@ void quadrature(py::module_& module)
         .def("fill_gauss_legendre", &fill_gauss_legendre<3>,
              py::arg("domain"), py::arg("embedding"), py::arg("cell_type"),
              py::arg("num_points"))
-        .def("fill_moment_fitting", &fill_moment_fitting, py::arg("domain"),
-             py::arg("embedding"), py::arg("cell_type"), py::arg("vertices"),
-             py::arg("triangles"), py::arg("order"))
+        .def("fill_moment_fitting", &fill_moment_fitting<3>,
+             py::arg("domain"), py::arg("embedding"), py::arg("cell_type"),
+             py::arg("vertices"), py::arg("facets"), py::arg("order"))
         .def_property_readonly("num_elements",
                                &VolumeQuadrature::num_elements)
         .def_property_readonly("num_points", &VolumeQuadrature::num_points)

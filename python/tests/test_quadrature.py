@@ -46,6 +46,34 @@ def solid():
     return np.where(bits, upper, lower), triangles
 
 
+def square():
+    """The unit square as a surface of two by two quadratic elements,
+    mapped onto itself so that its parameters are its coordinates."""
+    knots = [0., 0., 0., .5, 1., 1., 1.]
+    greville = [0., .25, .75, 1.]
+
+    # The first direction runs fastest
+    first, second = np.meshgrid(greville, greville, indexing='xy')
+
+    return iguana.create_surface(
+        degrees=(2, 2), knots=(knots, knots),
+        control_points=np.column_stack([first.ravel(), second.ravel(),
+                                        np.zeros(first.size)]))
+
+
+def triangle():
+    """The triangle trimming the square below its diagonal u + v = 1, as
+    segments with it on their left."""
+    return [[0., 0.], [1., 0.], [0., 1.]], [[0, 1], [1, 2], [2, 0]]
+
+
+def trimmed():
+    """Cell types of the square under the triangle: the corner element
+    inside, the two beside it cut, and the far one, which only touches
+    it, outside."""
+    return [CellType.inside, CellType.cut, CellType.cut, CellType.outside]
+
+
 def test_gauss_legendre_positions():
     """The points of each inside cell are its Gauss points in space."""
     quadrature = DomainQuadrature(box(), mixed())
@@ -147,6 +175,24 @@ def test_planar():
     np.testing.assert_allclose(quadrature.positions, centres)
 
 
+def test_trimmed_surface():
+    """Moment fitting on the cut cells of a trimmed surface integrates the
+    area and first moments of the trimmed region."""
+    quadrature = DomainQuadrature(square(), trimmed())
+    quadrature.fill_gauss_legendre(CellType.inside, 3)
+    quadrature.fill_moment_fitting(CellType.cut, *triangle())
+
+    weights = quadrature.weights
+    positions = quadrature.positions
+
+    # Area 1/2, and 1/6 for the integral of each coordinate
+    np.testing.assert_allclose(weights.sum(), .5)
+    np.testing.assert_allclose(weights @ positions[:, :2], [1 / 6, 1 / 6])
+
+    assert (weights > 0.).all()
+    assert (positions[:, :2].sum(axis=1) <= 1. + 1e-12).all()
+
+
 def test_invalid_arguments():
     """Invalid arguments raise and leave the quadrature unchanged."""
     # A curve patch, and one cell type too few
@@ -177,8 +223,17 @@ def test_invalid_arguments():
 
     assert quadrature.num_points == 5
 
-    # Moment fitting needs a volume patch
-    surface = DomainQuadrature(box().isosurfaces()[0])
+    # A surface polygon lies in parameter space and closes by segments
+    surface = DomainQuadrature(square(), trimmed())
+    vertices, segments = triangle()
 
-    with pytest.raises(TypeError):
-        surface.fill_moment_fitting(CellType.inside, *solid())
+    with pytest.raises(ValueError):
+        surface.fill_moment_fitting(CellType.cut, *solid())
+
+    with pytest.raises(ValueError):
+        surface.fill_moment_fitting(CellType.cut, vertices, [[0, 1], [1, 3]])
+
+    with pytest.raises(ValueError):
+        surface.fill_moment_fitting(CellType.cut, vertices, segments, order=8)
+
+    assert surface.num_points == 0

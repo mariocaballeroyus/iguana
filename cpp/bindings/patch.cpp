@@ -177,6 +177,8 @@ void patch(py::module_& module)
         .def_property_readonly("coefficients", &CurvePatch::coefficients);
 
     py::class_<SurfacePatch>(module, "SurfacePatch")
+        .def(py::init<TensorBSpline<double, 2>, PointMatrix<double, 3>>(),
+             py::arg("basis"), py::arg("coefficients"))
         .def_property_readonly("basis", &SurfacePatch::basis)
         .def_property_readonly("coefficients", &SurfacePatch::coefficients)
         .def("isocurves", &isopatches<2, 3>);
