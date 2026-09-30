@@ -131,6 +131,22 @@ def test_surface():
     np.testing.assert_allclose(quadrature.positions[:, 0], ORIGIN[0])
 
 
+def test_planar():
+    """A planar patch places the points in the plane, at the Gauss points
+    of its elements."""
+    rectangle = iguana.create_rectangle(lengths=(4., 2.), elements=(4, 2),
+                                        degrees=(2, 1), origin=ORIGIN[:2])
+    quadrature = DomainQuadrature(rectangle)
+    quadrature.fill_gauss_legendre(CellType.inside, 1)
+
+    # One point per unit element, at its centre
+    element = np.arange(8)
+    centres = ORIGIN[:2] + np.column_stack([element % 4 + .5,
+                                            element // 4 + .5])
+
+    np.testing.assert_allclose(quadrature.positions, centres)
+
+
 def test_invalid_arguments():
     """Invalid arguments raise and leave the quadrature unchanged."""
     # A curve patch, and one cell type too few

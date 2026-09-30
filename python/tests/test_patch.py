@@ -19,6 +19,9 @@ def test_invalid_arguments():
     with pytest.raises(ValueError):
         iguana.create_box(lengths=(1., 1., 1.), elements=(1, 1))
 
+    with pytest.raises(ValueError):
+        iguana.create_rectangle(lengths=(1., 1., 1.), elements=(1, 1))
+
 
 def test_control_net():
     """The patch of a block carries its basis and a net spanning it."""
@@ -132,3 +135,32 @@ def test_surface_isocurves():
             assert np.allclose(curve.knots, patch.knots[running])
             assert np.isclose(points[:, running].min(), 0.)
             assert np.isclose(points[:, running].max(), LENGTHS[running])
+
+
+def test_rectangle_isocurves():
+    """The patch of a rectangle keeps its net in the plane, and its
+    isocurves run in the plane along all of its knot lines."""
+    lengths, elements, degrees = LENGTHS[:2], ELEMENTS[:2], DEGREES[:2]
+    patch = iguana.create_rectangle(lengths=lengths, elements=elements,
+                                    degrees=degrees)
+    points = patch.control_points
+
+    assert isinstance(patch, iguana.PlanarPatch)
+    assert points.shape == ((2 + 2) * (3 + 3), 2)
+    assert np.allclose(points.min(axis=0), 0.)
+    assert np.allclose(points.max(axis=0), lengths)
+
+    pins = [(axis, line) for axis in range(2)
+            for line in range(elements[axis] + 1)]
+    curves = patch.isocurves()
+
+    assert len(curves) == len(pins)
+
+    for (axis, line), curve in zip(pins, curves):
+        running = 1 - axis
+        points = curve.control_points
+
+        assert points.shape[1] == 2
+        assert np.allclose(points[:, axis], station(axis, line))
+        assert curve.degree == degrees[running]
+        assert np.isclose(points[:, running].max(), lengths[running])
