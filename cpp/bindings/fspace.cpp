@@ -20,8 +20,8 @@ namespace iguana::bindings
 namespace
 {
 
-using SurfaceFunctionSpace = FunctionSpace<double, 2>;
-using VolumeFunctionSpace = FunctionSpace<double, 3>;
+using FunctionSpace2d = FunctionSpace<double, 2>;
+using FunctionSpace3d = FunctionSpace<double, 3>;
 
 /// @brief Number of degrees of freedom, read from the map of the space
 template<std::size_t d>
@@ -58,13 +58,13 @@ Eigen::VectorXi functions(const FunctionSpace<double, d>& space)
 
 void fspace(py::module_& module)
 {
-    py::class_<SurfaceFunctionSpace>(module, "SurfaceFunctionSpace")
+    py::class_<FunctionSpace2d>(module, "FunctionSpace2d")
         .def(py::init<TensorBSpline<double, 2>, const Embedding<double, 2>&>(),
              py::arg("basis"), py::arg("embedding"))
         .def_property_readonly("num_dofs", &num_dofs<2>)
         .def_property_readonly("functions", &functions<2>);
 
-    py::class_<VolumeFunctionSpace>(module, "VolumeFunctionSpace")
+    py::class_<FunctionSpace3d>(module, "FunctionSpace3d")
         .def(py::init<TensorBSpline<double, 3>, const Embedding<double, 3>&>(),
              py::arg("basis"), py::arg("embedding"))
         .def_property_readonly("num_dofs", &num_dofs<3>)

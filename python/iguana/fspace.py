@@ -26,7 +26,7 @@ class FunctionSpace:
     """The standard space of a patch, one degree of freedom per function
     active on the physical domain."""
 
-    _cpp_object: _cpp.SurfaceFunctionSpace | _cpp.VolumeFunctionSpace
+    _cpp_object: _cpp.FunctionSpace2d | _cpp.FunctionSpace3d
 
     def __init__(self, patch: PlanarPatch | SurfacePatch | VolumePatch,
                  cell_types: Sequence[CellType] | None = None) -> None:
@@ -45,10 +45,10 @@ class FunctionSpace:
             ValueError: If there is not one cell type per element.
         """
         if isinstance(patch, VolumePatch):
-            space = _cpp.VolumeFunctionSpace
+            space = _cpp.FunctionSpace3d
             embedding = _cpp.VolumeEmbedding
         elif isinstance(patch, (PlanarPatch, SurfacePatch)):
-            space = _cpp.SurfaceFunctionSpace
+            space = _cpp.FunctionSpace2d
             embedding = _cpp.SurfaceEmbedding
         else:
             raise TypeError('the patch must be a planar, surface or volume '
