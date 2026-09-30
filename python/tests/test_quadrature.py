@@ -193,6 +193,35 @@ def test_trimmed_surface():
     assert (positions[:, :2].sum(axis=1) <= 1. + 1e-12).all()
 
 
+def test_planar_region():
+    """Moment fitting on the cut cells of a planar patch integrates the
+    area and first moments of a polygon given in the plane."""
+    rectangle = iguana.create_rectangle(lengths=(4., 2.), elements=(4, 2),
+                                        degrees=(2, 1), origin=ORIGIN[:2])
+
+    # The triangle below the diagonal of the rectangle, with it on the
+    # left of its segments. Of the unit elements, the two at its right
+    # angle lie inside it and the two in the far corner outside
+    corners = ORIGIN[:2] + np.array([[0., 0.], [4., 0.], [0., 2.]])
+    segments = [[0, 1], [1, 2], [2, 0]]
+    cell_types = [CellType.inside] * 2 + [CellType.cut] * 4 \
+        + [CellType.outside] * 2
+
+    quadrature = DomainQuadrature(rectangle, cell_types)
+    quadrature.fill_gauss_legendre(CellType.inside, 3)
+    quadrature.fill_moment_fitting(CellType.cut, corners, segments)
+
+    # Weights in parameter space, times the area of the rectangle
+    weights = quadrature.weights * 8.
+    positions = quadrature.positions
+
+    np.testing.assert_allclose(weights.sum(), 4.)
+    np.testing.assert_allclose(weights @ positions, 4. * corners.mean(axis=0))
+
+    assert (weights > 0.).all()
+    assert ((positions - ORIGIN[:2]) @ [1 / 4, 1 / 2] <= 1. + 1e-12).all()
+
+
 def test_invalid_arguments():
     """Invalid arguments raise and leave the quadrature unchanged."""
     # A curve patch, and one cell type too few
