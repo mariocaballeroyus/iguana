@@ -5,9 +5,11 @@
 
 #include <iguana/iguana.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <stdexcept>
+#include <type_traits>
 #include <variant>
 #include <vector>
 
@@ -36,6 +38,19 @@ BSpline<double> cubic()
 BSpline<double> repeated()
 {
     return BSpline<double>(2, {0., 0., 0., .5, .5, 1., 1., 1.});
+}
+
+/// @brief Basis of one, two and three directions, with mixed degrees and a
+///        repeated knot
+using Basis = std::variant<TensorBSpline<double, 1>,
+                           TensorBSpline<double, 2>,
+                           TensorBSpline<double, 3>>;
+
+std::array<Basis, 3> test_bases()
+{
+    return {TensorBSpline<double, 1>({quadratic()}),
+            TensorBSpline<double, 2>({quadratic(), cubic()}),
+            TensorBSpline<double, 3>({quadratic(), cubic(), repeated()})};
 }
 
 template<std::size_t d>
@@ -103,15 +118,7 @@ double greville(const BSpline<double>& axis, int function)
 TEST_CASE("Tensor basis is non-negative and partitions unity on every element",
           "[tensor_bspline]")
 {
-    using Basis = std::variant<TensorBSpline<double, 1>,
-                               TensorBSpline<double, 2>,
-                               TensorBSpline<double, 3>>;
-
-    const std::array<Basis, 3> bases{
-        TensorBSpline<double, 1>({quadratic()}),
-        TensorBSpline<double, 2>({quadratic(), cubic()}),
-        TensorBSpline<double, 3>({quadratic(), cubic(), repeated()})
-    };
+    const std::array<Basis, 3> bases = test_bases();
     Eigen::MatrixXd values;
 
     for (const Basis& entry : bases) {
@@ -133,6 +140,136 @@ TEST_CASE("Tensor basis is non-negative and partitions unity on every element",
                 for (Eigen::Index point = 0; point < points.rows(); ++point)
                     REQUIRE_THAT(values.col(point).sum(),
                                  WithinAbs(1., 1e-13));
+            }
+        }, entry);
+    }
+}
+
+TEST_CASE("Tensor gradients match finite differences of the values",
+          "[tensor_bspline]")
+{
+    const std::array<Basis, 3> bases = test_bases();
+    const double step = 1e-6;
+
+    for (const Basis& entry : bases) {
+        std::visit([step](const auto& basis) {
+            constexpr std::size_t d =
+                std::decay_t<decltype(basis)>::dimension;
+
+            INFO("dimension " << d);
+            const int num_elements = basis.domain().num_elements();
+
+            Eigen::MatrixXd values;
+            Eigen::MatrixXd reference;
+            Eigen::MatrixXd above;
+            Eigen::MatrixXd below;
+            std::array<Eigen::MatrixXd, d> gradients;
+
+            for (int element = 0; element < num_elements; ++element) {
+                INFO("element " << element);
+                const std::array<int, d> first =
+                    first_active_of(basis, element);
+                const Eigen::MatrixXd points = points_on(basis, element);
+
+                basis.grad_on_element(first, points, values, gradients);
+                basis.eval_on_element(first, points, reference);
+
+                REQUIRE(values.isApprox(reference, 1e-14));
+
+                for (std::size_t direction = 0; direction < d; ++direction) {
+                    INFO("direction " << direction);
+                    Eigen::MatrixXd shifted = points;
+
+                    shifted.col(direction).array() += step;
+                    basis.eval_on_element(first, shifted, above);
+                    shifted.col(direction).array() -= 2. * step;
+                    basis.eval_on_element(first, shifted, below);
+
+                    const Eigen::MatrixXd difference =
+                        (above - below) / (2. * step);
+                    const double scale = std::max(
+                        1., gradients[direction].cwiseAbs().maxCoeff());
+
+                    REQUIRE((gradients[direction] - difference)
+                                .cwiseAbs().maxCoeff() <= 1e-6 * scale);
+                }
+            }
+        }, entry);
+    }
+}
+
+TEST_CASE("Tensor Hessians match finite differences of the gradients",
+          "[tensor_bspline]")
+{
+    const std::array<Basis, 3> bases = test_bases();
+    const double step = 1e-6;
+
+    for (const Basis& entry : bases) {
+        std::visit([step](const auto& basis) {
+            constexpr std::size_t d =
+                std::decay_t<decltype(basis)>::dimension;
+            constexpr std::size_t num_pairs = d * (d + 1) / 2;
+
+            INFO("dimension " << d);
+
+            // Directions of each second derivative, pure ones first and
+            // mixed ones after in lexicographic order
+            std::array<std::array<std::size_t, 2>, num_pairs> pairs{};
+            std::size_t pair = 0;
+
+            for (std::size_t direction = 0; direction < d; ++direction)
+                pairs[pair++] = {direction, direction};
+
+            for (std::size_t row = 0; row < d; ++row)
+                for (std::size_t column = row + 1; column < d; ++column)
+                    pairs[pair++] = {row, column};
+
+            Eigen::MatrixXd values;
+            Eigen::MatrixXd reference;
+            std::array<Eigen::MatrixXd, d> gradients;
+            std::array<Eigen::MatrixXd, d> reference_gradients;
+            std::array<Eigen::MatrixXd, d> above;
+            std::array<Eigen::MatrixXd, d> below;
+            std::array<Eigen::MatrixXd, num_pairs> hessians;
+
+            for (int element = 0; element < basis.domain().num_elements();
+                 ++element) {
+                INFO("element " << element);
+                const std::array<int, d> first =
+                    first_active_of(basis, element);
+                const Eigen::MatrixXd points = points_on(basis, element);
+
+                basis.hess_on_element(first, points, values, gradients,
+                                      hessians);
+                basis.grad_on_element(first, points, reference,
+                                      reference_gradients);
+
+                REQUIRE(values.isApprox(reference, 1e-14));
+
+                for (std::size_t direction = 0; direction < d; ++direction)
+                    REQUIRE(gradients[direction].isApprox(
+                        reference_gradients[direction], 1e-14));
+
+                for (std::size_t index = 0; index < num_pairs; ++index) {
+                    const auto [along, across] = pairs[index];
+                    INFO("pair " << along << ", " << across);
+                    Eigen::MatrixXd shifted = points;
+
+                    // Differentiate the gradient along one direction of the
+                    // pair across the other
+                    shifted.col(across).array() += step;
+                    basis.grad_on_element(first, shifted, reference, above);
+                    shifted.col(across).array() -= 2. * step;
+                    basis.grad_on_element(first, shifted, reference, below);
+
+                    const Eigen::MatrixXd difference =
+                        (above[along] - below[along]) / (2. * step);
+                    const double scale = std::max(
+                        1., hessians[index].cwiseAbs().maxCoeff());
+
+                    REQUIRE((hessians[index] - difference)
+                                .cwiseAbs().maxCoeff() <= 1e-6 * scale);
+                }
             }
         }, entry);
     }

@@ -6,6 +6,7 @@
 #ifndef IGUANA_GEOMETRY_PATCH_HPP
 #define IGUANA_GEOMETRY_PATCH_HPP
 
+#include <array>
 #include <concepts>
 #include <cstddef>
 
@@ -95,6 +96,27 @@ public:
     void position_on_element(const Eigen::VectorXi& actives,
                              const Eigen::MatrixX<T>& values,
                              PointMatrix<T, n>& positions) const;
+
+    /**
+     * @brief Tangents of the patch at points of an element, the derivatives
+     *        of the map along each parametric direction
+     *
+     * They are the columns of the Jacobian of the map
+     *
+     * @param actives Functions that are non-zero on the element, as given by
+     *        active_on_element()
+     * @param gradients Their derivatives along each direction at the points,
+     *        each of size (num_active,num_points), as given by
+     *        grad_on_element()
+     * @param tangents Output with one buffer per direction, each of size
+     *        (num_points,n), resized if its shape changes
+     *
+     * @pre @p actives and @p gradients come from the same element. It is not
+     *      checked
+     */
+    void tangent_on_element(const Eigen::VectorXi& actives,
+                            const std::array<Eigen::MatrixX<T>, d>& gradients,
+                            std::array<PointMatrix<T, n>, d>& tangents) const;
 
 private:
     /// @brief Basis of the map

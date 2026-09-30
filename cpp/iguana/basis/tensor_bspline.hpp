@@ -110,6 +110,55 @@ public:
                          const Eigen::MatrixX<T>& points,
                          Eigen::MatrixX<T>& values) const;
 
+    /**
+     * @brief Evaluates the non-zero functions on an element and their
+     *        gradients
+     *
+     * The derivative along a direction differentiates the univariate factor
+     * of that direction alone
+     *
+     * @param first_active First active function in each direction
+     * @param points Evaluation points, with size (num_points, dimension)
+     * @param values Output of size (num_active(), num_points), as given by
+     *        eval_on_element(). It is resized when necessary
+     * @param gradients Output with one matrix per direction, of the size of
+     *        @p values, holding the derivatives along it. They are resized
+     *        when necessary
+     *
+     * @pre @p first_active belongs to an existing element, @p points has
+     *      dimension columns, and every point lies inside that element
+     */
+    void grad_on_element(const std::array<int, d>& first_active,
+                         const Eigen::MatrixX<T>& points,
+                         Eigen::MatrixX<T>& values,
+                         std::array<Eigen::MatrixX<T>, d>& gradients) const;
+
+    /**
+     * @brief Evaluates the non-zero functions on an element, their gradients
+     *        and their Hessians
+     *
+     * A second derivative differentiates the univariate factors of its
+     * directions, twice for a pure one and once each for a mixed one. They
+     * are ordered pure first, then mixed in lexicographic order of their
+     * directions: xx, yy, zz, xy, xz, yz
+     *
+     * @param first_active First active function in each direction
+     * @param points Evaluation points, with size (num_points, dimension)
+     * @param values Output of size (num_active(), num_points), filled as
+     *        eval_on_element() fills it. It is resized when necessary
+     * @param gradients Output filled as grad_on_element() fills it
+     * @param hessians Output with one matrix per pair of directions, of the
+     *        size of @p values. They are resized when necessary
+     *
+     * @pre @p first_active belongs to an existing element, @p points has
+     *      dimension columns, and every point lies inside that element
+     */
+    void hess_on_element(
+        const std::array<int, d>& first_active,
+        const Eigen::MatrixX<T>& points, Eigen::MatrixX<T>& values,
+        std::array<Eigen::MatrixX<T>, d>& gradients,
+        std::array<Eigen::MatrixX<T>, d * (d + 1) / 2>& hessians) const;
+
 private:
     /// @brief Domain, with the knot vector of each direction
     TensorDomain<T, d> domain_;

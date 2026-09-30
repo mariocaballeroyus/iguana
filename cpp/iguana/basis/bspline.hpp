@@ -99,6 +99,27 @@ public:
     void eval_on_element(int first_active, std::span<const T> points,
                          Eigen::MatrixX<T>& values) const;
 
+    /**
+     * @brief Evaluates the derivatives of the non-zero functions on an
+     *        element, from order 0 up to a given order
+     *
+     * Derivatives above the degree vanish
+     *
+     * @param first_active Index of the first function active on the element
+     * @param points Parameters at which the functions are evaluated
+     * @param order Highest derivative order
+     * @param derivatives Output with one matrix per order, each of size
+     *        (num_active,num_points). It is resized when necessary
+     *
+     * @pre @p order is non-negative
+     * @pre @p first_active is the first active function of an existing,
+     *      non-empty knot span
+     * @pre Every point in @p points lies inside that element
+     */
+    void derivs_on_element(int first_active, std::span<const T> points,
+                           int order,
+                           std::vector<Eigen::MatrixX<T>>& derivatives) const;
+
 private:
     /// @brief Knot vector, with the degree and the elements of the basis
     KnotVector<T> knots_;
