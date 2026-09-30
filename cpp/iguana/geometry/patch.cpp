@@ -38,6 +38,20 @@ void Patch<T, d, n>::position_on_element(const Eigen::VectorXi& actives,
     positions.noalias() = values.transpose() * coefficients_(actives, all);
 }
 
+template<std::floating_point T, std::size_t d, std::size_t n>
+void Patch<T, d, n>::tangents_on_element(
+    const Eigen::VectorXi& actives,
+    const std::array<Eigen::MatrixX<T>, d>& gradients,
+    std::array<PointMatrix<T, n>, d>& tangents) const
+{
+    for (std::size_t direction = 0; direction < d; ++direction) {
+        // Weight the control points of the active functions by the
+        // derivatives of their functions along the direction
+        tangents[direction].noalias() =
+            gradients[direction].transpose() * coefficients_(actives, all);
+    }
+}
+
 // Curves in the plane and in space, planar regions, surfaces in space and
 // volumes
 template class Patch<double, 1, 2>;
