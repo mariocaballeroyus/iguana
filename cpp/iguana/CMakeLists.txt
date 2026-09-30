@@ -8,6 +8,7 @@ add_library(iguana
     domain/tensor_domain_iterator.cpp
     embedding/embedding.cpp
     fspace/dof_map.cpp
+    fspace/function_space.cpp
     geometry/patch.cpp
     quadrature/box_rule.cpp
     quadrature/domain_quadrature.cpp
