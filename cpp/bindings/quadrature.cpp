@@ -179,6 +179,8 @@ void quadrature(py::module_& module)
                                &SurfaceQuadrature::num_elements)
         .def_property_readonly("num_points", &SurfaceQuadrature::num_points)
         .def_property_readonly("weights", &SurfaceQuadrature::weights, copy)
+        .def("positions", &positions<2, 2>, py::arg("patch"),
+             py::arg("domain"))
         .def("positions", &positions<2, 3>, py::arg("patch"),
              py::arg("domain"));
 

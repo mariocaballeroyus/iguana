@@ -25,6 +25,8 @@ namespace iguana::bindings
 namespace
 {
 
+using PlanarCurvePatch = Patch<double, 1, 2>;
+using PlanarPatch = Patch<double, 2, 2>;
 using CurvePatch = Patch<double, 1, 3>;
 using SurfacePatch = Patch<double, 2, 3>;
 using VolumePatch = Patch<double, 3, 3>;
@@ -158,6 +160,18 @@ std::vector<Patch<double, d - 1, n>> isopatches(
 
 void patch(py::module_& module)
 {
+    py::class_<PlanarCurvePatch>(module, "PlanarCurvePatch")
+        .def_property_readonly("basis", &PlanarCurvePatch::basis)
+        .def_property_readonly("coefficients",
+                               &PlanarCurvePatch::coefficients);
+
+    py::class_<PlanarPatch>(module, "PlanarPatch")
+        .def(py::init<TensorBSpline<double, 2>, PointMatrix<double, 2>>(),
+             py::arg("basis"), py::arg("coefficients"))
+        .def_property_readonly("basis", &PlanarPatch::basis)
+        .def_property_readonly("coefficients", &PlanarPatch::coefficients)
+        .def("isocurves", &isopatches<2, 2>);
+
     py::class_<CurvePatch>(module, "CurvePatch")
         .def_property_readonly("basis", &CurvePatch::basis)
         .def_property_readonly("coefficients", &CurvePatch::coefficients);
