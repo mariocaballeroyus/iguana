@@ -23,7 +23,7 @@ using iguana::BSpline;
 using iguana::Patch;
 using iguana::TensorBSpline;
 
-using Points = iguana::PointMatrix<double>;
+using Points = iguana::PointMatrix<double, 3>;
 
 BSpline<double> quadratic()
 {
@@ -54,7 +54,7 @@ double greville(const BSpline<double>& axis, int function)
 
 TEST_CASE("Patch requires one control point per basis function", "[patch]")
 {
-    using Surface = Patch<double, 2>;
+    using Surface = Patch<double, 2, 3>;
 
     const TensorBSpline<double, 2> basis({quadratic(), cubic()});
     const int expected = basis.num_functions();
@@ -128,7 +128,7 @@ TEST_CASE("Patch reproduces affine maps exactly", "[patch]")
                 coefficients.row(fun) = (map * node + shift).transpose();
             }
 
-            const Patch<double, d> patch(basis, coefficients);
+            const Patch<double, d, 3> patch(basis, coefficients);
             Eigen::MatrixXd values;
             Eigen::VectorXi actives;
             Points positions;

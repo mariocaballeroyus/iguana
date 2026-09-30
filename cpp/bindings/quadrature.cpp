@@ -83,10 +83,11 @@ int element_holding(const KnotVector<double>& knots, double parameter)
  *         have the knots of the patch, or if an element of the quadrature
  *         lies outside the domain
  */
-template<std::size_t d>
-PointMatrix<double> positions(const DomainQuadrature<double, d>& quadrature,
-                              const Patch<double, d>& patch,
-                              const HierarchicalDomain<double, d>& domain)
+template<std::size_t d, std::size_t n>
+PointMatrix<double, n> positions(
+    const DomainQuadrature<double, d>& quadrature,
+    const Patch<double, d, n>& patch,
+    const HierarchicalDomain<double, d>& domain)
 {
     const TensorBSpline<double, d>& basis = patch.basis();
 
@@ -117,13 +118,13 @@ PointMatrix<double> positions(const DomainQuadrature<double, d>& quadrature,
         held[element] = position;
     }
 
-    PointMatrix<double> result(quadrature.num_points(), 3);
+    PointMatrix<double, n> result(quadrature.num_points(), n);
 
     // Buffers reused over the elements
     Eigen::MatrixXd parameters;
     Eigen::MatrixXd values;
     Eigen::VectorXi actives;
-    PointMatrix<double> element_positions;
+    PointMatrix<double, n> element_positions;
 
     for (const HierarchicalDomainIterator<double, d>& element : domain) {
         const int position = held[element.index()];
@@ -178,7 +179,7 @@ void quadrature(py::module_& module)
                                &SurfaceQuadrature::num_elements)
         .def_property_readonly("num_points", &SurfaceQuadrature::num_points)
         .def_property_readonly("weights", &SurfaceQuadrature::weights, copy)
-        .def("positions", &positions<2>, py::arg("patch"),
+        .def("positions", &positions<2, 3>, py::arg("patch"),
              py::arg("domain"));
 
     py::class_<VolumeQuadrature>(module, "VolumeQuadrature")
@@ -193,7 +194,7 @@ void quadrature(py::module_& module)
                                &VolumeQuadrature::num_elements)
         .def_property_readonly("num_points", &VolumeQuadrature::num_points)
         .def_property_readonly("weights", &VolumeQuadrature::weights, copy)
-        .def("positions", &positions<3>, py::arg("patch"),
+        .def("positions", &positions<3, 3>, py::arg("patch"),
              py::arg("domain"));
 }
 
