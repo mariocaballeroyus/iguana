@@ -144,9 +144,9 @@ public:
      *
      * @param first_active First active function in each direction
      * @param points Evaluation points, with size (num_points, dimension)
-     * @param values Output of size (num_active(), num_points), as given by
-     *        eval_on_element(). It is resized when necessary
-     * @param gradients Output as given by grad_on_element()
+     * @param values Output of size (num_active(), num_points), filled as
+     *        eval_on_element() fills it. It is resized when necessary
+     * @param gradients Output filled as grad_on_element() fills it
      * @param hessians Output with one matrix per pair of directions, of the
      *        size of @p values. They are resized when necessary
      *
