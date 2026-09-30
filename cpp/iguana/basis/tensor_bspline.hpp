@@ -110,6 +110,30 @@ public:
                          const Eigen::MatrixX<T>& points,
                          Eigen::MatrixX<T>& values) const;
 
+    /**
+     * @brief Evaluates the non-zero functions on an element and their
+     *        gradients
+     *
+     * The derivative along a direction differentiates the univariate factor
+     * of that direction alone
+     *
+     * @param first_active First active function in each direction
+     * @param points Evaluation points, with size (num_points, dimension)
+     * @param values Output of size (num_active(), num_points), as given by
+     *        eval_on_element(). It is resized when necessary
+     * @param gradients Output with one matrix per direction, of the size of
+     *        @p values, holding the derivatives along it. They are resized
+     *        when necessary
+     *
+     * @pre @p first_active belongs to an existing element, @p points has
+     *      dimension columns, and every point lies inside that element
+     */
+    void eval_grads_on_element(const std::array<int, d>& first_active,
+                               const Eigen::MatrixX<T>& points,
+                               Eigen::MatrixX<T>& values,
+                               std::array<Eigen::MatrixX<T>, d>& gradients)
+        const;
+
 private:
     /// @brief Domain, with the knot vector of each direction
     TensorDomain<T, d> domain_;

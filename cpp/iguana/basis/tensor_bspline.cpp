@@ -7,6 +7,7 @@
 
 #include <span>
 #include <utility>
+#include <vector>
 
 #include "iguana/utils/multi_index.hpp"
 
@@ -188,6 +189,47 @@ void TensorBSpline<T, d>::eval_on_element(
     Eigen::MatrixX<T> scratch;
 
     khatri_rao_into(factors, accumulated, scratch, values);
+}
+
+template<std::floating_point T, std::size_t d>
+void TensorBSpline<T, d>::eval_grads_on_element(
+    const std::array<int, d>& first_active,
+    const Eigen::MatrixX<T>& points, Eigen::MatrixX<T>& values,
+    std::array<Eigen::MatrixX<T>, d>& gradients) const
+{
+    const Eigen::Index num_points = points.rows();
+
+    values.resize(num_active_, num_points);
+
+    // Values and first derivatives of the active univariate functions
+    std::array<std::vector<Eigen::MatrixX<T>>, d> axis_derivs;
+
+    for (std::size_t direction = 0; direction < d; ++direction) {
+        const std::span<const T> coords(points.col(direction).data(),
+                                        num_points);
+
+        axes_[direction].eval_derivs_on_element(first_active[direction],
+                                                coords, 1,
+                                                axis_derivs[direction]);
+    }
+
+    std::array<const Eigen::MatrixX<T>*, d> factors{};
+
+    for (std::size_t direction = 0; direction < d; ++direction)
+        factors[direction] = &axis_derivs[direction][0];
+
+    Eigen::MatrixX<T> accumulated;
+    Eigen::MatrixX<T> scratch;
+
+    khatri_rao_into(factors, accumulated, scratch, values);
+
+    // Each gradient swaps the factor of its direction for its derivative
+    for (std::size_t direction = 0; direction < d; ++direction) {
+        factors[direction] = &axis_derivs[direction][1];
+        gradients[direction].resize(num_active_, num_points);
+        khatri_rao_into(factors, accumulated, scratch, gradients[direction]);
+        factors[direction] = &axis_derivs[direction][0];
+    }
 }
 
 template class TensorBSpline<double, 1>;
