@@ -7,6 +7,8 @@ add_executable(iguana_tests
     embedding/test_clipper.cpp
     embedding/test_inside.cpp
     embedding/test_slicer.cpp
+    fspace/test_dof_map.cpp
+    fspace/test_function_space.cpp
     geometry/test_patch.cpp
     quadrature/test_domain_quadrature.cpp
     quadrature/gauss_legendre/test_gauss_legendre.cpp
