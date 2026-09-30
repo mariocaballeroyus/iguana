@@ -88,7 +88,7 @@ TEST_CASE("An open quadratic basis is the Bernstein basis", "[bspline]")
     basis.eval_on_element(0, points, values);
 
     std::vector<Eigen::MatrixXd> derivs;
-    basis.eval_derivs_on_element(0, points, 3, derivs);
+    basis.derivs_on_element(0, points, 3, derivs);
 
     for (Eigen::Index point = 0; point < values.cols(); ++point) {
         const double u = points[static_cast<std::size_t>(point)];
@@ -131,8 +131,7 @@ TEST_CASE("Derivatives match finite differences of the order below",
                 const std::array stencil{points[point] - step, points[point],
                                          points[point] + step};
 
-                basis.eval_derivs_on_element(first, stencil, degree + 1,
-                                             derivs);
+                basis.derivs_on_element(first, stencil, degree + 1, derivs);
                 basis.eval_on_element(first, stencil, values);
 
                 REQUIRE(derivs[0].isApprox(values, 1e-14));

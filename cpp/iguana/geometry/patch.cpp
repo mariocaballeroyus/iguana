@@ -39,7 +39,7 @@ void Patch<T, d, n>::position_on_element(const Eigen::VectorXi& actives,
 }
 
 template<std::floating_point T, std::size_t d, std::size_t n>
-void Patch<T, d, n>::tangents_on_element(
+void Patch<T, d, n>::tangent_on_element(
     const Eigen::VectorXi& actives,
     const std::array<Eigen::MatrixX<T>, d>& gradients,
     std::array<PointMatrix<T, n>, d>& tangents) const

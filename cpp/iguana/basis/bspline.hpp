@@ -116,9 +116,9 @@ public:
      *      non-empty knot span
      * @pre Every point in @p points lies inside that element
      */
-    void eval_derivs_on_element(
-        int first_active, std::span<const T> points, int order,
-        std::vector<Eigen::MatrixX<T>>& derivatives) const;
+    void derivs_on_element(int first_active, std::span<const T> points,
+                           int order,
+                           std::vector<Eigen::MatrixX<T>>& derivatives) const;
 
 private:
     /// @brief Knot vector, with the degree and the elements of the basis

@@ -107,16 +107,16 @@ public:
      *        active_on_element()
      * @param gradients Their derivatives along each direction at the points,
      *        each of size (num_active,num_points), as given by
-     *        eval_grads_on_element()
+     *        grad_on_element()
      * @param tangents Output with one buffer per direction, each of size
      *        (num_points,n), resized if its shape changes
      *
      * @pre @p actives and @p gradients come from the same element. It is not
      *      checked
      */
-    void tangents_on_element(const Eigen::VectorXi& actives,
-                             const std::array<Eigen::MatrixX<T>, d>& gradients,
-                             std::array<PointMatrix<T, n>, d>& tangents) const;
+    void tangent_on_element(const Eigen::VectorXi& actives,
+                            const std::array<Eigen::MatrixX<T>, d>& gradients,
+                            std::array<PointMatrix<T, n>, d>& tangents) const;
 
 private:
     /// @brief Basis of the map

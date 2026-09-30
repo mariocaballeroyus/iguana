@@ -76,7 +76,7 @@ void BSpline<T>::eval_on_element(int first_active, std::span<const T> points,
 }
 
 template<std::floating_point T>
-void BSpline<T>::eval_derivs_on_element(
+void BSpline<T>::derivs_on_element(
     int first_active, std::span<const T> points, int order,
     std::vector<Eigen::MatrixX<T>>& derivatives) const
 {

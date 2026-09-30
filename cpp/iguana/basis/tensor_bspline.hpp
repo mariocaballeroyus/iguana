@@ -128,11 +128,10 @@ public:
      * @pre @p first_active belongs to an existing element, @p points has
      *      dimension columns, and every point lies inside that element
      */
-    void eval_grads_on_element(const std::array<int, d>& first_active,
-                               const Eigen::MatrixX<T>& points,
-                               Eigen::MatrixX<T>& values,
-                               std::array<Eigen::MatrixX<T>, d>& gradients)
-        const;
+    void grad_on_element(const std::array<int, d>& first_active,
+                         const Eigen::MatrixX<T>& points,
+                         Eigen::MatrixX<T>& values,
+                         std::array<Eigen::MatrixX<T>, d>& gradients) const;
 
 private:
     /// @brief Domain, with the knot vector of each direction

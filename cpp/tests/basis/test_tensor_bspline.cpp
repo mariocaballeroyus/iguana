@@ -174,8 +174,7 @@ TEST_CASE("Tensor gradients match finite differences of the values",
                     first_active_of(basis, element);
                 const Eigen::MatrixXd points = points_on(basis, element);
 
-                basis.eval_grads_on_element(first, points, values,
-                                            gradients);
+                basis.grad_on_element(first, points, values, gradients);
                 basis.eval_on_element(first, points, reference);
 
                 REQUIRE(values.isApprox(reference, 1e-14));

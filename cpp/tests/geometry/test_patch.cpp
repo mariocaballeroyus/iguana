@@ -129,8 +129,8 @@ void check_affine(const TensorBSpline<double, d>& basis,
         }
 
         // The tangents of an affine map are the columns of its linear part
-        basis.eval_grads_on_element(first, points, values, gradients);
-        patch.tangents_on_element(actives, gradients, tangents);
+        basis.grad_on_element(first, points, values, gradients);
+        patch.tangent_on_element(actives, gradients, tangents);
 
         for (std::size_t dir = 0; dir < d; ++dir) {
             INFO("direction " << dir);

@@ -192,7 +192,7 @@ void TensorBSpline<T, d>::eval_on_element(
 }
 
 template<std::floating_point T, std::size_t d>
-void TensorBSpline<T, d>::eval_grads_on_element(
+void TensorBSpline<T, d>::grad_on_element(
     const std::array<int, d>& first_active,
     const Eigen::MatrixX<T>& points, Eigen::MatrixX<T>& values,
     std::array<Eigen::MatrixX<T>, d>& gradients) const
@@ -208,9 +208,8 @@ void TensorBSpline<T, d>::eval_grads_on_element(
         const std::span<const T> coords(points.col(direction).data(),
                                         num_points);
 
-        axes_[direction].eval_derivs_on_element(first_active[direction],
-                                                coords, 1,
-                                                axis_derivs[direction]);
+        axes_[direction].derivs_on_element(first_active[direction], coords,
+                                           1, axis_derivs[direction]);
     }
 
     std::array<const Eigen::MatrixX<T>*, d> factors{};
