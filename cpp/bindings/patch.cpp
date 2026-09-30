@@ -25,9 +25,11 @@ namespace iguana::bindings
 namespace
 {
 
-using CurvePatch = Patch<double, 1>;
-using SurfacePatch = Patch<double, 2>;
-using VolumePatch = Patch<double, 3>;
+using PlanarCurvePatch = Patch<double, 1, 2>;
+using PlanarPatch = Patch<double, 2, 2>;
+using CurvePatch = Patch<double, 1, 3>;
+using SurfacePatch = Patch<double, 2, 3>;
+using VolumePatch = Patch<double, 3, 3>;
 
 /**
  * @brief Axes of a basis, leaving out the one of a given direction
@@ -62,10 +64,10 @@ std::array<BSpline<double>, d - 1> other_axes(
  * @pre @p line lies in [0,num_elements] of the pinned axis, which
  *      isopatches() ensures
  */
-template<std::size_t d>
-Patch<double, d - 1> isopatch(const Patch<double, d>& patch,
-                              std::size_t direction,
-                              int line)
+template<std::size_t d, std::size_t n>
+Patch<double, d - 1, n> isopatch(const Patch<double, d, n>& patch,
+                                 std::size_t direction,
+                                 int line)
 {
     static_assert(d > 1, "isopatch: "
                          "a patch needs a direction to keep");
@@ -96,8 +98,8 @@ Patch<double, d - 1> isopatch(const Patch<double, d>& patch,
     }
 
     const int num_kept = basis.num_functions() / counts[direction];
-    PointMatrix<double> coefficients =
-        PointMatrix<double>::Zero(num_kept, 3);
+    PointMatrix<double, n> coefficients =
+        PointMatrix<double, n>::Zero(num_kept, n);
 
     // Every function of the net, the first direction running fastest.
     // Those active at the knot line add to the control point that shares
@@ -123,7 +125,7 @@ Patch<double, d - 1> isopatch(const Patch<double, d>& patch,
         ++function;
     } while (next_lexicographic(index, counts));
 
-    return Patch<double, d - 1>(
+    return Patch<double, d - 1, n>(
         TensorBSpline<double, d - 1>(other_axes(
             basis, direction, std::make_index_sequence<d - 1>{})),
         std::move(coefficients));
@@ -137,10 +139,11 @@ Patch<double, d - 1> isopatch(const Patch<double, d>& patch,
  * @return Patches pinned in each direction in turn, at its knot lines in
  *         increasing order
  */
-template<std::size_t d>
-std::vector<Patch<double, d - 1>> isopatches(const Patch<double, d>& patch)
+template<std::size_t d, std::size_t n>
+std::vector<Patch<double, d - 1, n>> isopatches(
+    const Patch<double, d, n>& patch)
 {
-    std::vector<Patch<double, d - 1>> result;
+    std::vector<Patch<double, d - 1, n>> result;
 
     for (std::size_t direction = 0; direction < d; ++direction) {
         // n elements are bounded by the knot lines 0 to n
@@ -157,21 +160,35 @@ std::vector<Patch<double, d - 1>> isopatches(const Patch<double, d>& patch)
 
 void patch(py::module_& module)
 {
+    py::class_<PlanarCurvePatch>(module, "PlanarCurvePatch")
+        .def_property_readonly("basis", &PlanarCurvePatch::basis)
+        .def_property_readonly("coefficients",
+                               &PlanarCurvePatch::coefficients);
+
+    py::class_<PlanarPatch>(module, "PlanarPatch")
+        .def(py::init<TensorBSpline<double, 2>, PointMatrix<double, 2>>(),
+             py::arg("basis"), py::arg("coefficients"))
+        .def_property_readonly("basis", &PlanarPatch::basis)
+        .def_property_readonly("coefficients", &PlanarPatch::coefficients)
+        .def("isocurves", &isopatches<2, 2>);
+
     py::class_<CurvePatch>(module, "CurvePatch")
         .def_property_readonly("basis", &CurvePatch::basis)
         .def_property_readonly("coefficients", &CurvePatch::coefficients);
 
     py::class_<SurfacePatch>(module, "SurfacePatch")
+        .def(py::init<TensorBSpline<double, 2>, PointMatrix<double, 3>>(),
+             py::arg("basis"), py::arg("coefficients"))
         .def_property_readonly("basis", &SurfacePatch::basis)
         .def_property_readonly("coefficients", &SurfacePatch::coefficients)
-        .def("isocurves", &isopatches<2>);
+        .def("isocurves", &isopatches<2, 3>);
 
     py::class_<VolumePatch>(module, "VolumePatch")
-        .def(py::init<TensorBSpline<double, 3>, PointMatrix<double>>(),
+        .def(py::init<TensorBSpline<double, 3>, PointMatrix<double, 3>>(),
              py::arg("basis"), py::arg("coefficients"))
         .def_property_readonly("basis", &VolumePatch::basis)
         .def_property_readonly("coefficients", &VolumePatch::coefficients)
-        .def("isosurfaces", &isopatches<3>);
+        .def("isosurfaces", &isopatches<3, 3>);
 }
 
 } // namespace iguana::bindings

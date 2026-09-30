@@ -17,7 +17,7 @@ import numpy.typing as npt
 from iguana import cpp as _cpp
 from iguana.domain import HierarchicalDomain
 from iguana.embedding import CellType
-from iguana.patch import SurfacePatch, VolumePatch
+from iguana.patch import PlanarPatch, SurfacePatch, VolumePatch
 
 
 class DomainQuadrature:
@@ -25,14 +25,14 @@ class DomainQuadrature:
 
     _cpp_object: _cpp.SurfaceQuadrature | _cpp.VolumeQuadrature
 
-    def __init__(self, patch: SurfacePatch | VolumePatch,
+    def __init__(self, patch: PlanarPatch | SurfacePatch | VolumePatch,
                  cell_types: Sequence[CellType] | None = None,
                  domain: HierarchicalDomain | None = None) -> None:
         """Initialize an empty quadrature over the cells of a patch.
 
         Args:
-            patch: The background patch, a surface or volume patch, which
-                places the points in space.
+            patch: The background patch, a planar, surface or volume
+                patch, which places the points in physical space.
             cell_types: The type of each cell, in the numbering of the
                 domain. Without them, every cell lies inside.
             domain: A hierarchical domain on the knots of the patch, whose
@@ -41,8 +41,8 @@ class DomainQuadrature:
                 fastest.
 
         Raises:
-            TypeError: If the patch is neither a surface nor a volume patch,
-                or if the domain is not a hierarchical domain.
+            TypeError: If the patch is not a planar, surface or volume
+                patch, or if the domain is not a hierarchical domain.
             ValueError: If the domain does not lie on the knots of the
                 patch, or if there is not one cell type per cell.
         """
@@ -50,12 +50,13 @@ class DomainQuadrature:
             self._cpp_object = _cpp.VolumeQuadrature()
             embedding = _cpp.VolumeEmbedding
             self._dimension = 3
-        elif isinstance(patch, SurfacePatch):
+        elif isinstance(patch, (PlanarPatch, SurfacePatch)):
             self._cpp_object = _cpp.SurfaceQuadrature()
             embedding = _cpp.SurfaceEmbedding
             self._dimension = 2
         else:
-            raise TypeError('the patch must be a surface or volume patch')
+            raise TypeError('the patch must be a planar, surface or volume '
+                            'patch')
 
         if domain is None:
             # The elements of the patch, as a domain that is not refined
@@ -85,7 +86,7 @@ class DomainQuadrature:
         self._embedding = embedding(self._cell_types)
 
     @property
-    def patch(self) -> SurfacePatch | VolumePatch:
+    def patch(self) -> PlanarPatch | SurfacePatch | VolumePatch:
         """The background patch, which places the points in space."""
         return self._patch
 
@@ -111,14 +112,16 @@ class DomainQuadrature:
 
     @property
     def positions(self) -> npt.NDArray[np.float64]:
-        """Positions of the points in space, of shape ``(num_points, 3)``."""
+        """Positions of the points in physical space, of shape
+        `(num_points, 2)` on a planar patch and `(num_points, 3)`
+        otherwise."""
         return self._cpp_object.positions(self._patch._cpp_object,
                                           self._domain._cpp_object)
 
     @property
     def weights(self) -> npt.NDArray[np.float64]:
         """Weights of the points in parameter space, of shape
-        ``(num_points,)``."""
+        `(num_points,)`."""
         return self._cpp_object.weights
 
     def fill_gauss_legendre(self, cell_type: CellType,
@@ -148,49 +151,66 @@ class DomainQuadrature:
 
     def fill_moment_fitting(self, cell_type: CellType,
                             vertices: npt.ArrayLike,
-                            triangles: npt.ArrayLike,
+                            facets: npt.ArrayLike,
                             order: int = 2) -> None:
-        """Fill the cells of one type with rules fitted to a solid.
+        """Fill the cells of one type with rules fitted to a domain.
 
         The rule of each cell integrates the Legendre polynomials up to the
-        order in each direction over its part inside the solid, with
-        positive weights at points inside it. The patch must map its
-        parameter box onto an axis-aligned block, as create_box builds it,
-        through which the vertices map back to parameters.
+        order in each direction over its part inside the domain, with
+        positive weights at points inside it.
+
+        On a surface patch the domain is the region a closed polygon
+        trims, given in parameter space, where the trimming curves of a
+        trimmed surface lie. On a planar patch it is a region a closed
+        polygon bounds in the plane, and on a volume patch a solid given
+        in space. The planar or volume patch must then map its parameter
+        box onto an axis-aligned rectangle or block, as create_rectangle
+        and create_box build them, through which the vertices map back to
+        parameters.
 
         Args:
             cell_type: The type of the cells to fill, usually the cut cells.
-            vertices: Vertices of a closed triangle mesh of the solid in
-                space, of shape ``(num_vertices, 3)``.
-            triangles: Vertices of each triangle, counterclockwise seen from
-                outside, of shape ``(num_triangles, 3)``.
+            vertices: On a surface patch, the vertices of the polygon in
+                parameter space, and on a planar patch in the plane, of
+                shape `(num_vertices, 2)`. On a volume patch, the
+                vertices of a closed triangle mesh of the solid in space,
+                of shape `(num_vertices, 3)`.
+            facets: On a surface or planar patch, the vertices of each
+                segment of the polygon, with the domain on their left, of
+                shape `(num_segments, 2)`. On a volume patch, the
+                vertices of each triangle, counterclockwise seen from
+                outside, of shape `(num_triangles, 3)`.
             order: Highest polynomial degree of each direction.
 
         Raises:
-            TypeError: If the patch is not a volume patch.
-            ValueError: If the mesh is malformed, if the order lies outside
-                [0, 4], or if the cells of this type are already filled.
+            ValueError: If the polygon or mesh is malformed, if the order
+                lies outside [0, 7] on a surface or planar patch or [0, 4]
+                on a volume patch, or if the cells of this type are already
+                filled.
         """
-        if self._dimension != 3:
-            raise TypeError('moment fitting needs a volume patch')
-
-        parameters = _to_parameters(self._patch, vertices)
+        # Trimming curves lie in parameter space already
+        if isinstance(self._patch, SurfacePatch):
+            parameters = np.asarray(vertices, dtype=float)
+        else:
+            parameters = _to_parameters(self._patch, vertices)
 
         self._cpp_object.fill_moment_fitting(
             self._domain._cpp_object, self._embedding, cell_type,
-            parameters, np.asarray(triangles, dtype=np.int32), order)
+            parameters, np.asarray(facets, dtype=np.int32), order)
 
     def __repr__(self) -> str:
         return (f'DomainQuadrature(num_elements={self.num_elements}, '
                 f'num_points={self.num_points})')
 
 
-def _to_parameters(patch: VolumePatch,
+def _to_parameters(patch: PlanarPatch | VolumePatch,
                    points: npt.ArrayLike) -> npt.NDArray[np.float64]:
-    """Parameters of points in space under the map of an axis-aligned block.
+    """Parameters of points under the map of an axis-aligned rectangle or
+    block.
 
-    The corners of such a block are its extreme control points, so each
-    coordinate scales back onto the knot range of its direction.
+    The corners of such a rectangle or block are its extreme control
+    points, so each coordinate scales back onto the knot range of its
+    direction.
     """
     points = np.asarray(points, dtype=float)
     net = patch.control_points

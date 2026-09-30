@@ -13,9 +13,9 @@ namespace iguana
 
 using Eigen::placeholders::all;
 
-template<std::floating_point T, std::size_t d>
-Patch<T, d>::Patch(TensorBSpline<T, d> basis,
-                   PointMatrix<T> coefficients)
+template<std::floating_point T, std::size_t d, std::size_t n>
+Patch<T, d, n>::Patch(TensorBSpline<T, d> basis,
+                      PointMatrix<T, n> coefficients)
     : basis_(std::move(basis)),
       coefficients_(std::move(coefficients))
 {
@@ -25,21 +25,25 @@ Patch<T, d>::Patch(TensorBSpline<T, d> basis,
                                     "basis function");
 }
 
-template<std::floating_point T, std::size_t d>
-void Patch<T, d>::position_on_element(const Eigen::VectorXi& actives,
-                                      const Eigen::MatrixX<T>& values,
-                                      PointMatrix<T>& positions) const
+template<std::floating_point T, std::size_t d, std::size_t n>
+void Patch<T, d, n>::position_on_element(const Eigen::VectorXi& actives,
+                                         const Eigen::MatrixX<T>& values,
+                                         PointMatrix<T, n>& positions) const
 {
     // Reuse the output buffer when its shape is unchanged
-    positions.resize(values.cols(), 3);
+    positions.resize(values.cols(), n);
 
     // Gather the control points of the active functions, then weight each
     // of them by the value of its function at every point
     positions.noalias() = values.transpose() * coefficients_(actives, all);
 }
 
-template class Patch<double, 1>;
-template class Patch<double, 2>;
-template class Patch<double, 3>;
+// Curves in the plane and in space, planar regions, surfaces in space and
+// volumes
+template class Patch<double, 1, 2>;
+template class Patch<double, 1, 3>;
+template class Patch<double, 2, 2>;
+template class Patch<double, 2, 3>;
+template class Patch<double, 3, 3>;
 
 } // namespace iguana

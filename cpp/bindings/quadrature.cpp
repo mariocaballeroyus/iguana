@@ -39,16 +39,18 @@ void fill_gauss_legendre(DomainQuadrature<double, d>& quadrature,
                     GaussLegendre<double, d>(num_points));
 }
 
-/// @brief Fills the cells of one type with rules fitted to a solid, given
-///        as a closed triangle mesh in parameter space
-void fill_moment_fitting(VolumeQuadrature& quadrature,
-                         const HierarchicalDomain<double, 3>& domain,
-                         const Embedding<double, 3>& embedding,
+/// @brief Fills the cells of one type with rules fitted to a domain, closed
+///        by facets in parameter space: segments with the domain on their
+///        left, or triangles counterclockwise seen from outside
+template<std::size_t d>
+void fill_moment_fitting(DomainQuadrature<double, d>& quadrature,
+                         const HierarchicalDomain<double, d>& domain,
+                         const Embedding<double, d>& embedding,
                          CellType cell_type, const Eigen::MatrixXd& vertices,
-                         const Eigen::MatrixXi& triangles, int order)
+                         const Eigen::MatrixXi& facets, int order)
 {
     quadrature.fill(domain, embedding, cell_type,
-                    MomentFitting<double, 3>(vertices, triangles, order));
+                    MomentFitting<double, d>(vertices, facets, order));
 }
 
 /// @brief Element of a knot vector holding a parameter, the last one that
@@ -83,10 +85,11 @@ int element_holding(const KnotVector<double>& knots, double parameter)
  *         have the knots of the patch, or if an element of the quadrature
  *         lies outside the domain
  */
-template<std::size_t d>
-PointMatrix<double> positions(const DomainQuadrature<double, d>& quadrature,
-                              const Patch<double, d>& patch,
-                              const HierarchicalDomain<double, d>& domain)
+template<std::size_t d, std::size_t n>
+PointMatrix<double, n> positions(
+    const DomainQuadrature<double, d>& quadrature,
+    const Patch<double, d, n>& patch,
+    const HierarchicalDomain<double, d>& domain)
 {
     const TensorBSpline<double, d>& basis = patch.basis();
 
@@ -117,13 +120,13 @@ PointMatrix<double> positions(const DomainQuadrature<double, d>& quadrature,
         held[element] = position;
     }
 
-    PointMatrix<double> result(quadrature.num_points(), 3);
+    PointMatrix<double, n> result(quadrature.num_points(), n);
 
     // Buffers reused over the elements
     Eigen::MatrixXd parameters;
     Eigen::MatrixXd values;
     Eigen::VectorXi actives;
-    PointMatrix<double> element_positions;
+    PointMatrix<double, n> element_positions;
 
     for (const HierarchicalDomainIterator<double, d>& element : domain) {
         const int position = held[element.index()];
@@ -174,11 +177,16 @@ void quadrature(py::module_& module)
         .def("fill_gauss_legendre", &fill_gauss_legendre<2>,
              py::arg("domain"), py::arg("embedding"), py::arg("cell_type"),
              py::arg("num_points"))
+        .def("fill_moment_fitting", &fill_moment_fitting<2>,
+             py::arg("domain"), py::arg("embedding"), py::arg("cell_type"),
+             py::arg("vertices"), py::arg("facets"), py::arg("order"))
         .def_property_readonly("num_elements",
                                &SurfaceQuadrature::num_elements)
         .def_property_readonly("num_points", &SurfaceQuadrature::num_points)
         .def_property_readonly("weights", &SurfaceQuadrature::weights, copy)
-        .def("positions", &positions<2>, py::arg("patch"),
+        .def("positions", &positions<2, 2>, py::arg("patch"),
+             py::arg("domain"))
+        .def("positions", &positions<2, 3>, py::arg("patch"),
              py::arg("domain"));
 
     py::class_<VolumeQuadrature>(module, "VolumeQuadrature")
@@ -186,14 +194,14 @@ void quadrature(py::module_& module)
         .def("fill_gauss_legendre", &fill_gauss_legendre<3>,
              py::arg("domain"), py::arg("embedding"), py::arg("cell_type"),
              py::arg("num_points"))
-        .def("fill_moment_fitting", &fill_moment_fitting, py::arg("domain"),
-             py::arg("embedding"), py::arg("cell_type"), py::arg("vertices"),
-             py::arg("triangles"), py::arg("order"))
+        .def("fill_moment_fitting", &fill_moment_fitting<3>,
+             py::arg("domain"), py::arg("embedding"), py::arg("cell_type"),
+             py::arg("vertices"), py::arg("facets"), py::arg("order"))
         .def_property_readonly("num_elements",
                                &VolumeQuadrature::num_elements)
         .def_property_readonly("num_points", &VolumeQuadrature::num_points)
         .def_property_readonly("weights", &VolumeQuadrature::weights, copy)
-        .def("positions", &positions<3>, py::arg("patch"),
+        .def("positions", &positions<3, 3>, py::arg("patch"),
              py::arg("domain"));
 }
 
