@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-#include "tensor_domain.hpp"
+#include "tensor_grid.hpp"
 
 #include <utility>
 
@@ -11,7 +11,7 @@ namespace iguana
 {
 
 template<std::floating_point T, std::size_t d>
-TensorDomain<T, d>::TensorDomain(std::array<KnotVector<T>, d> knots)
+TensorGrid<T, d>::TensorGrid(std::array<KnotVector<T>, d> knots)
     : knots_(std::move(knots)),
       num_elements_(1)
 {
@@ -20,13 +20,13 @@ TensorDomain<T, d>::TensorDomain(std::array<KnotVector<T>, d> knots)
 }
 
 template<std::floating_point T, std::size_t d>
-TensorDomainIterator<T, d> TensorDomain<T, d>::begin() const noexcept
+TensorGridIterator<T, d> TensorGrid<T, d>::begin() const noexcept
 {
-    return TensorDomainIterator<T, d>(*this);
+    return TensorGridIterator<T, d>(*this);
 }
 
-template class TensorDomain<double, 1>;
-template class TensorDomain<double, 2>;
-template class TensorDomain<double, 3>;
+template class TensorGrid<double, 1>;
+template class TensorGrid<double, 2>;
+template class TensorGrid<double, 3>;
 
 } // namespace iguana

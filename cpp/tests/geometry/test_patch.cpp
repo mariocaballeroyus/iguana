@@ -91,7 +91,7 @@ void check_affine(const TensorBSpline<double, d>& basis,
     std::array<Eigen::MatrixXd, d> gradients;
     std::array<iguana::PointMatrix<double, n>, d> tangents;
 
-    for (int element = 0; element < basis.domain().num_elements();
+    for (int element = 0; element < basis.grid().num_elements();
          ++element) {
         INFO("element " << element);
         std::array<int, d> first{};
@@ -242,7 +242,7 @@ TEST_CASE("NURBS patch reproduces a half annulus exactly", "[patch]")
     std::array<Eigen::MatrixXd, 2> gradients;
     std::array<iguana::PointMatrix<double, 2>, 2> tangents;
 
-    for (const auto& element : basis.domain()) {
+    for (const auto& element : basis.grid()) {
         INFO("element " << element.index());
         Eigen::MatrixXd points(2, 2);
 

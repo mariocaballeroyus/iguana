@@ -89,11 +89,11 @@ TEST_CASE("A knot vector rejects invalid definitions", "[knot_vector]")
                       std::invalid_argument);
 }
 
-TEST_CASE("The elements are the non-empty knot spans of the domain",
+TEST_CASE("The elements are the non-empty knot spans of the parametric domain",
           "[knot_vector]")
 {
-    // Unclamped, with the domain [1, 2] and an empty span at the repeated
-    // knot 1.5, whose last repeat starts the second element
+    // Unclamped, with the parametric domain [1, 2] and an empty span at the
+    // repeated knot 1.5, whose last repeat starts the second element
     const KnotVector<double> knots(2, {0., .5, 1., 1.5, 1.5, 2., 3., 3.5});
 
     REQUIRE(knots.domain_start() == 1.);

@@ -20,17 +20,17 @@ namespace
 using Catch::Matchers::WithinRel;
 using iguana::CellType;
 using iguana::Embedding;
-using iguana::HierarchicalDomain;
+using iguana::HierarchicalGrid;
 using iguana::KnotVector;
-using iguana::TensorDomain;
+using iguana::TensorGrid;
 
 using Quadrature = iguana::DomainQuadrature<double, 3>;
 using Gauss = iguana::GaussLegendre<double, 3>;
 
-/// @brief Domain over uneven knot spans, with six elements
-TensorDomain<double, 3> uneven()
+/// @brief Grid over uneven knot spans, with six elements
+TensorGrid<double, 3> uneven()
 {
-    return TensorDomain<double, 3>(
+    return TensorGrid<double, 3>(
         {KnotVector<double>(2, {0., 0., 0., 1., 3., 4., 4., 4.}),
          KnotVector<double>(1, {0., 0., .5, 2., 2.}),
          KnotVector<double>(1, {0., 0., 1., 1.})});
@@ -80,14 +80,14 @@ TEST_CASE("The flat arrays must describe one block of points per element",
 TEST_CASE("The filled cells integrate the polynomials of the rule exactly",
           "[quadrature]")
 {
-    const TensorDomain<double, 3> domain = uneven();
+    const TensorGrid<double, 3> grid = uneven();
     const Embedding<double, 3> embedding = mixed();
 
     // Exact up to degree 2n - 1 in each direction
     const std::array<int, 3> counts{2, 3, 1};
 
     Quadrature quadrature;
-    quadrature.fill(domain, embedding, CellType::inside, Gauss(counts));
+    quadrature.fill(grid, embedding, CellType::inside, Gauss(counts));
 
     REQUIRE(quadrature.elements() == integers({0, 2, 4}));
 
@@ -95,7 +95,7 @@ TEST_CASE("The filled cells integrate the polynomials of the rule exactly",
     const Eigen::VectorXd& weights = quadrature.weights();
     int held = 0;
 
-    for (const auto& element : domain) {
+    for (const auto& element : grid) {
         if (embedding.cell_type(element.index()) != CellType::inside)
             continue;
 
@@ -136,12 +136,12 @@ TEST_CASE("The filled cells integrate the polynomials of the rule exactly",
 TEST_CASE("Cell types are filled one after another, once each",
           "[quadrature]")
 {
-    const TensorDomain<double, 3> domain = uneven();
+    const TensorGrid<double, 3> grid = uneven();
     const Embedding<double, 3> embedding = mixed();
 
     Quadrature quadrature;
-    quadrature.fill(domain, embedding, CellType::inside, Gauss(2));
-    quadrature.fill(domain, embedding, CellType::cut, Gauss(1));
+    quadrature.fill(grid, embedding, CellType::inside, Gauss(2));
+    quadrature.fill(grid, embedding, CellType::cut, Gauss(1));
 
     REQUIRE(quadrature.elements() == integers({0, 2, 4, 1, 5}));
     REQUIRE(quadrature.offsets() == integers({0, 8, 16, 24, 25, 26}));
@@ -151,41 +151,41 @@ TEST_CASE("Cell types are filled one after another, once each",
     const Quadrature before = quadrature;
 
     REQUIRE_THROWS_AS(
-        quadrature.fill(domain, embedding, CellType::inside, Gauss(1)),
+        quadrature.fill(grid, embedding, CellType::inside, Gauss(1)),
         std::invalid_argument);
     REQUIRE_THROWS_AS(
-        quadrature.fill(domain, Embedding<double, 3>({CellType::outside}),
+        quadrature.fill(grid, Embedding<double, 3>({CellType::outside}),
                         CellType::outside, Gauss(1)),
         std::invalid_argument);
     REQUIRE(quadrature.offsets() == before.offsets());
     REQUIRE(quadrature.points() == before.points());
 }
 
-TEST_CASE("A hierarchical domain is filled over its whole parametric domain",
+TEST_CASE("A hierarchical grid is filled over its whole parametric domain",
           "[quadrature]")
 {
     // Six elements over [0, 4] x [0, 2], refined twice, the second time
     // inside the first refinement
-    const HierarchicalDomain<double, 2> coarse(TensorDomain<double, 2>(
+    const HierarchicalGrid<double, 2> coarse(TensorGrid<double, 2>(
         {KnotVector<double>(2, {0., 0., 0., 1., 3., 4., 4., 4.}),
          KnotVector<double>(1, {0., 0., .5, 2., 2.})}));
-    const HierarchicalDomain<double, 2> domain =
+    const HierarchicalGrid<double, 2> grid =
         refine(refine(coarse, std::vector<int>{0, 4}),
                std::vector<int>{0, 11});
 
     const Embedding<double, 2> embedding(
-        std::vector<CellType>(domain.num_elements(), CellType::inside));
+        std::vector<CellType>(grid.num_elements(), CellType::inside));
 
     // Exact up to degree 2n - 1 in each direction
     const std::array<int, 2> counts{3, 2};
 
     iguana::DomainQuadrature<double, 2> quadrature;
-    quadrature.fill(domain, embedding, CellType::inside,
+    quadrature.fill(grid, embedding, CellType::inside,
                     iguana::GaussLegendre<double, 2>(counts));
 
-    REQUIRE(quadrature.num_elements() == domain.num_elements());
+    REQUIRE(quadrature.num_elements() == grid.num_elements());
 
-    // The cells tile the domain, so together they integrate its
+    // The cells tile the parametric domain, so together they integrate its
     // polynomials exactly
     const Eigen::MatrixXd& points = quadrature.points();
     const Eigen::VectorXd& weights = quadrature.weights();

@@ -17,7 +17,7 @@ namespace iguana
 {
 
 /**
- * @brief Quadrature over the elements of a domain
+ * @brief Quadrature over the elements of a grid
  *
  * The points and weights are stored element after element, and an offset
  * marks where the points of each element start. Elements may hold different
@@ -28,7 +28,7 @@ namespace iguana
  * own, such as Gauss-Legendre on inside cells and moment fitting on cut
  * cells
  *
- * The points lie in the parameter space of the domain. The weights include
+ * The points lie in the parameter space of the grid. The weights include
  * the measure of their element in parameter space but not the Jacobian of
  * the geometry map, which the assembly applies
  *
@@ -49,7 +49,7 @@ public:
      * @brief Constructs the quadrature from its flat arrays
      *
      * @param elements Index of each integrated element, in the numbering of
-     *        the domain the quadrature is built on
+     *        the grid the quadrature is built on
      * @param offsets First point of each integrated element, followed by
      *        the number of points, with size num_elements + 1
      * @param points Points in parameter space, with size (num_points, d)
@@ -71,25 +71,25 @@ public:
      * cell and which is appended in increasing element index after the
      * elements already held. If it throws, the quadrature is left unchanged
      *
-     * @tparam Domain Domain with num_elements() whose walk gives each
-     *         element its index(), start() and end(), as TensorDomain and
-     *         HierarchicalDomain do
+     * @tparam Grid Grid with num_elements() whose walk gives each
+     *         element its index(), start() and end(), as TensorGrid and
+     *         HierarchicalGrid do
      * @tparam Rule Rule with fill_to_reference_space(start, end, points,
      *         weights), as BoxRule states it. The number of points may
      *         differ from one cell to another
      *
-     * @param domain Domain whose elements are the cells
-     * @param embedding Cell type of each element of the domain
+     * @param grid Grid whose elements are the cells
+     * @param embedding Cell type of each element of the grid
      * @param cell_type Type of the cells to fill
      * @param rule Rule giving the points and weights of each cell
      *
      * @throws std::invalid_argument If the embedding does not have one cell
-     *         type per element of the domain, if an element already held
-     *         lies outside the domain, or if a cell of this type is already
+     *         type per element of the grid, if an element already held
+     *         lies outside the grid, or if a cell of this type is already
      *         held
      */
-    template<typename Domain, typename Rule>
-    void fill(const Domain& domain, const Embedding<T, d>& embedding,
+    template<typename Grid, typename Rule>
+    void fill(const Grid& grid, const Embedding<T, d>& embedding,
               CellType cell_type, const Rule& rule);
 
     /// @brief Number of integrated elements
@@ -100,7 +100,7 @@ public:
     constexpr int num_points() const noexcept
     { return static_cast<int>(weights_.size()); }
 
-    /// @brief Index of each integrated element, in the domain numbering
+    /// @brief Index of each integrated element, in the grid numbering
     constexpr const Eigen::VectorXi& elements() const noexcept
     { return elements_; }
 
@@ -117,7 +117,7 @@ public:
     { return weights_; }
 
 private:
-    /// @brief Index of each integrated element, in the domain numbering
+    /// @brief Index of each integrated element, in the grid numbering
     Eigen::VectorXi elements_;
 
     /// @brief First point of each element, followed by the number of points

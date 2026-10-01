@@ -69,7 +69,7 @@ std::array<Basis, 3> test_bases()
 ///        direction
 template<std::size_t d>
 Eigen::MatrixXd points_on(
-    const iguana::TensorDomainIterator<double, d>& element)
+    const iguana::TensorGridIterator<double, d>& element)
 {
     const std::array fractions{.2, .5, .8};
     Eigen::MatrixXd points(fractions.size(), d);
@@ -109,7 +109,7 @@ TEST_CASE("NURBS basis is non-negative and partitions unity",
         std::visit([&values](const auto& basis) {
             INFO("dimension " << basis.dimension);
 
-            for (const auto& element : basis.domain()) {
+            for (const auto& element : basis.grid()) {
                 INFO("element " << element.index());
                 const Eigen::MatrixXd points = points_on(element);
 
@@ -160,7 +160,7 @@ TEST_CASE("NURBS derivatives match finite differences", "[tensor_nurbs]")
             std::array<Eigen::MatrixXd, d> gradients_below;
             std::array<Eigen::MatrixXd, num_pairs> hessians;
 
-            for (const auto& element : basis.domain()) {
+            for (const auto& element : basis.grid()) {
                 INFO("element " << element.index());
                 const std::array<int, d>& first = element.first_active();
                 const Eigen::MatrixXd points = points_on(element);

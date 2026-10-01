@@ -22,7 +22,7 @@ DofMap standard_dof_map(
     const Basis& basis,
     const Embedding<typename Basis::Scalar, Basis::dimension>& embedding)
 {
-    const int num_elements = basis.domain().num_elements();
+    const int num_elements = basis.grid().num_elements();
 
     if (embedding.num_elements() != num_elements)
         throw std::invalid_argument("FunctionSpace: "

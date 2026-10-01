@@ -3,16 +3,16 @@
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef IGUANA_DOMAIN_TENSOR_DOMAIN_HPP
-#define IGUANA_DOMAIN_TENSOR_DOMAIN_HPP
+#ifndef IGUANA_GRID_TENSOR_GRID_HPP
+#define IGUANA_GRID_TENSOR_GRID_HPP
 
 #include <array>
 #include <concepts>
 #include <cstddef>
 #include <iterator>
 
-#include "iguana/domain/knot_vector.hpp"
-#include "iguana/domain/tensor_domain_iterator.hpp"
+#include "iguana/grid/knot_vector.hpp"
+#include "iguana/grid/tensor_grid_iterator.hpp"
 
 namespace iguana
 {
@@ -27,18 +27,18 @@ namespace iguana
  * @tparam d Number of parametric directions
  */
 template<std::floating_point T, std::size_t d>
-class TensorDomain
+class TensorGrid
 {
 public:
     /// @brief Number of parametric directions
     static constexpr std::size_t dimension = d;
 
     /**
-     * @brief Constructs the domain from the knot vector of each direction
+     * @brief Constructs the grid from the knot vector of each direction
      *
      * @param knots Knot vector of each parametric direction
      */
-    explicit TensorDomain(std::array<KnotVector<T>, d> knots);
+    explicit TensorGrid(std::array<KnotVector<T>, d> knots);
 
     /**
      * @brief Knot vector of a parametric direction
@@ -55,7 +55,7 @@ public:
     { return num_elements_; }
 
     /// @brief Iterator at the first element
-    TensorDomainIterator<T, d> begin() const noexcept;
+    TensorGridIterator<T, d> begin() const noexcept;
 
     /// @brief Sentinel past the last element
     constexpr std::default_sentinel_t end() const noexcept
@@ -71,4 +71,4 @@ private:
 
 } // namespace iguana
 
-#endif // IGUANA_DOMAIN_TENSOR_DOMAIN_HPP
+#endif // IGUANA_GRID_TENSOR_GRID_HPP

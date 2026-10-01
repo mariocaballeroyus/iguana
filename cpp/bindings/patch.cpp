@@ -217,7 +217,7 @@ auto isopatches(const Patch<Basis, n>& patch)
     for (std::size_t direction = 0; direction < Basis::dimension;
          ++direction) {
         // n elements are bounded by the knot lines 0 to n
-        const int last = patch.basis().domain().knots(direction)
+        const int last = patch.basis().grid().knots(direction)
                              .num_elements();
 
         for (int line = 0; line <= last; ++line)

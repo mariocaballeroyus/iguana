@@ -30,12 +30,12 @@ using VolumeQuadrature = DomainQuadrature<double, 3>;
 ///        Python never handles itself
 template<std::size_t d>
 void fill_gauss_legendre(DomainQuadrature<double, d>& quadrature,
-                         const HierarchicalDomain<double, d>& domain,
+                         const HierarchicalGrid<double, d>& grid,
                          const Embedding<double, d>& embedding,
                          CellType cell_type,
                          const std::array<int, d>& num_points)
 {
-    quadrature.fill(domain, embedding, cell_type,
+    quadrature.fill(grid, embedding, cell_type,
                     GaussLegendre<double, d>(num_points));
 }
 
@@ -44,12 +44,12 @@ void fill_gauss_legendre(DomainQuadrature<double, d>& quadrature,
 ///        left, or triangles counterclockwise seen from outside
 template<std::size_t d>
 void fill_moment_fitting(DomainQuadrature<double, d>& quadrature,
-                         const HierarchicalDomain<double, d>& domain,
+                         const HierarchicalGrid<double, d>& grid,
                          const Embedding<double, d>& embedding,
                          CellType cell_type, const Eigen::MatrixXd& vertices,
                          const Eigen::MatrixXi& facets, int order)
 {
-    quadrature.fill(domain, embedding, cell_type,
+    quadrature.fill(grid, embedding, cell_type,
                     MomentFitting<double, d>(vertices, facets, order));
 }
 
@@ -78,45 +78,44 @@ int element_holding(const KnotVector<double>& knots, double parameter)
  * @brief Positions of the points in physical space, the only form Python
  *        needs, as it draws them
  *
- * Every element of the domain lies inside an element of the patch, the one
+ * Every element of the grid lies inside an element of the patch, the one
  * holding the parameters at which it starts, whose functions map its points
  *
- * @throws std::invalid_argument If the coarse level of the domain does not
+ * @throws std::invalid_argument If the coarse level of the grid does not
  *         have the knots of the patch, or if an element of the quadrature
- *         lies outside the domain
+ *         lies outside the grid
  */
 template<typename Basis, std::size_t n>
 PointMatrix<double, n> positions(
     const DomainQuadrature<double, Basis::dimension>& quadrature,
     const Patch<Basis, n>& patch,
-    const HierarchicalDomain<double, Basis::dimension>& domain)
+    const HierarchicalGrid<double, Basis::dimension>& grid)
 {
     constexpr std::size_t d = Basis::dimension;
     const Basis& basis = patch.basis();
 
     for (std::size_t direction = 0; direction < d; ++direction) {
-        const KnotVector<double>& coarse = domain.level(0).knots(direction);
-        const KnotVector<double>& knots = basis.domain().knots(direction);
+        const KnotVector<double>& coarse = grid.level(0).knots(direction);
+        const KnotVector<double>& knots = basis.grid().knots(direction);
 
         if (coarse.degree() != knots.degree() ||
             coarse.values() != knots.values())
             throw std::invalid_argument("DomainQuadrature: "
-                                        "the domain must lie on the knots of "
+                                        "the grid must lie on the knots of "
                                         "the patch");
     }
 
     const Eigen::VectorXi& offsets = quadrature.offsets();
 
     // Position of each element among the held ones, or -1 if not held
-    std::vector<int> held(domain.num_elements(), -1);
+    std::vector<int> held(grid.num_elements(), -1);
 
     for (int position = 0; position < quadrature.num_elements(); ++position) {
         const int element = quadrature.elements()(position);
 
-        if (element < 0 || element >= domain.num_elements())
+        if (element < 0 || element >= grid.num_elements())
             throw std::invalid_argument("DomainQuadrature: "
-                                        "the elements must lie in the "
-                                        "domain");
+                                        "the elements must lie in the grid");
 
         held[element] = position;
     }
@@ -129,7 +128,7 @@ PointMatrix<double, n> positions(
     Eigen::VectorXi actives;
     PointMatrix<double, n> element_positions;
 
-    for (const HierarchicalDomainIterator<double, d>& element : domain) {
+    for (const HierarchicalGridIterator<double, d>& element : grid) {
         const int position = held[element.index()];
 
         if (position < 0)
@@ -142,7 +141,7 @@ PointMatrix<double, n> positions(
         int stride = 1;
 
         for (std::size_t direction = 0; direction < d; ++direction) {
-            const KnotVector<double>& knots = basis.domain().knots(direction);
+            const KnotVector<double>& knots = basis.grid().knots(direction);
             const int axis_element =
                 element_holding(knots, element.start()[direction]);
 
@@ -176,36 +175,36 @@ void quadrature(py::module_& module)
     py::class_<SurfaceQuadrature>(module, "SurfaceQuadrature")
         .def(py::init<>())
         .def("fill_gauss_legendre", &fill_gauss_legendre<2>,
-             py::arg("domain"), py::arg("embedding"), py::arg("cell_type"),
+             py::arg("grid"), py::arg("embedding"), py::arg("cell_type"),
              py::arg("num_points"))
         .def("fill_moment_fitting", &fill_moment_fitting<2>,
-             py::arg("domain"), py::arg("embedding"), py::arg("cell_type"),
+             py::arg("grid"), py::arg("embedding"), py::arg("cell_type"),
              py::arg("vertices"), py::arg("facets"), py::arg("order"))
         .def_property_readonly("num_elements",
                                &SurfaceQuadrature::num_elements)
         .def_property_readonly("num_points", &SurfaceQuadrature::num_points)
         .def_property_readonly("weights", &SurfaceQuadrature::weights, copy)
         .def("positions", &positions<TensorBSpline<double, 2>, 2>,
-             py::arg("patch"), py::arg("domain"))
+             py::arg("patch"), py::arg("grid"))
         .def("positions", &positions<TensorBSpline<double, 2>, 3>,
-             py::arg("patch"), py::arg("domain"))
+             py::arg("patch"), py::arg("grid"))
         .def("positions", &positions<TensorNURBS<double, 2>, 3>,
-             py::arg("patch"), py::arg("domain"));
+             py::arg("patch"), py::arg("grid"));
 
     py::class_<VolumeQuadrature>(module, "VolumeQuadrature")
         .def(py::init<>())
         .def("fill_gauss_legendre", &fill_gauss_legendre<3>,
-             py::arg("domain"), py::arg("embedding"), py::arg("cell_type"),
+             py::arg("grid"), py::arg("embedding"), py::arg("cell_type"),
              py::arg("num_points"))
         .def("fill_moment_fitting", &fill_moment_fitting<3>,
-             py::arg("domain"), py::arg("embedding"), py::arg("cell_type"),
+             py::arg("grid"), py::arg("embedding"), py::arg("cell_type"),
              py::arg("vertices"), py::arg("facets"), py::arg("order"))
         .def_property_readonly("num_elements",
                                &VolumeQuadrature::num_elements)
         .def_property_readonly("num_points", &VolumeQuadrature::num_points)
         .def_property_readonly("weights", &VolumeQuadrature::weights, copy)
         .def("positions", &positions<TensorBSpline<double, 3>, 3>,
-             py::arg("patch"), py::arg("domain"));
+             py::arg("patch"), py::arg("grid"));
 }
 
 } // namespace iguana::bindings

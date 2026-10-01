@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef IGUANA_DOMAIN_TENSOR_DOMAIN_ITERATOR_HPP
-#define IGUANA_DOMAIN_TENSOR_DOMAIN_ITERATOR_HPP
+#ifndef IGUANA_GRID_TENSOR_GRID_ITERATOR_HPP
+#define IGUANA_GRID_TENSOR_GRID_ITERATOR_HPP
 
 #include <array>
 #include <concepts>
@@ -15,10 +15,10 @@ namespace iguana
 {
 
 template<std::floating_point T, std::size_t d>
-class TensorDomain;
+class TensorGrid;
 
 /**
- * @brief Walks the elements of a tensor domain
+ * @brief Walks the elements of a tensor grid
  *
  * The iterator visits every element once, in increasing flat index with
  * the first direction running fastest, and serves as the handle of the
@@ -27,25 +27,25 @@ class TensorDomain;
  * @tparam T Floating-point type
  * @tparam d Number of parametric directions
  *
- * @warning The iterator reads its domain, which must outlive it
+ * @warning The iterator reads its grid, which must outlive it
  */
 template<std::floating_point T, std::size_t d>
-class TensorDomainIterator
+class TensorGridIterator
 {
 public:
     /**
-     * @brief Starts at the first element of a domain
+     * @brief Starts at the first element of a grid
      *
-     * @param domain Domain whose elements are walked
+     * @param grid Grid whose elements are walked
      */
-    explicit TensorDomainIterator(const TensorDomain<T, d>& domain) noexcept;
+    explicit TensorGridIterator(const TensorGrid<T, d>& grid) noexcept;
 
     /// @brief Element handle, the iterator itself
-    constexpr const TensorDomainIterator& operator*() const noexcept
+    constexpr const TensorGridIterator& operator*() const noexcept
     { return *this; }
 
     /// @brief Advances to the next element
-    TensorDomainIterator& operator++() noexcept;
+    TensorGridIterator& operator++() noexcept;
 
     /// @brief Whether the iterator has passed the last element
     constexpr bool operator==(std::default_sentinel_t) const noexcept
@@ -71,10 +71,10 @@ private:
     /// @brief Refills the element data from the element of each direction
     void update() noexcept;
 
-    /// @brief Domain whose elements are walked
-    const TensorDomain<T, d>* domain_ = nullptr;
+    /// @brief Grid whose elements are walked
+    const TensorGrid<T, d>* grid_ = nullptr;
 
-    /// @brief Number of elements of the domain
+    /// @brief Number of elements of the grid
     int num_elements_ = 0;
 
     /// @brief Number of elements of each direction
@@ -98,4 +98,4 @@ private:
 
 } // namespace iguana
 
-#endif // IGUANA_DOMAIN_TENSOR_DOMAIN_ITERATOR_HPP
+#endif // IGUANA_GRID_TENSOR_GRID_ITERATOR_HPP

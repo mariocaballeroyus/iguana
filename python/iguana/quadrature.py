@@ -15,7 +15,7 @@ import numpy as np
 import numpy.typing as npt
 
 from iguana import cpp as _cpp
-from iguana.domain import HierarchicalDomain
+from iguana.grid import HierarchicalGrid
 from iguana.embedding import CellType
 from iguana.patch import PlanarPatch, SurfacePatch, VolumePatch
 
@@ -27,23 +27,23 @@ class DomainQuadrature:
 
     def __init__(self, patch: PlanarPatch | SurfacePatch | VolumePatch,
                  cell_types: Sequence[CellType] | None = None,
-                 domain: HierarchicalDomain | None = None) -> None:
+                 grid: HierarchicalGrid | None = None) -> None:
         """Initialize an empty quadrature over the cells of a patch.
 
         Args:
             patch: The background patch, a planar, surface or volume
                 patch, which places the points in physical space.
             cell_types: The type of each cell, in the numbering of the
-                domain. Without them, every cell lies inside.
-            domain: A hierarchical domain on the knots of the patch, whose
+                grid. Without them, every cell lies inside.
+            grid: A hierarchical grid on the knots of the patch, whose
                 active elements are the cells. Without it, the cells are
                 the elements of the patch, with the first direction running
                 fastest.
 
         Raises:
             TypeError: If the patch is not a planar, surface or volume
-                patch, or if the domain is not a hierarchical domain.
-            ValueError: If the domain does not lie on the knots of the
+                patch, or if the grid is not a hierarchical grid.
+            ValueError: If the grid does not lie on the knots of the
                 patch, or if there is not one cell type per cell.
         """
         if isinstance(patch, VolumePatch):
@@ -58,21 +58,21 @@ class DomainQuadrature:
             raise TypeError('the patch must be a planar, surface or volume '
                             'patch')
 
-        if domain is None:
-            # The elements of the patch, as a domain that is not refined
-            domain = HierarchicalDomain(patch.degrees, patch.knots)
-        elif not isinstance(domain, HierarchicalDomain):
-            raise TypeError('the domain must be a hierarchical domain')
-        elif domain._dimension != self._dimension:
-            raise ValueError('the domain must lie on the knots of the '
+        if grid is None:
+            # The elements of the patch, as a grid that is not refined
+            grid = HierarchicalGrid(patch.degrees, patch.knots)
+        elif not isinstance(grid, HierarchicalGrid):
+            raise TypeError('the grid must be a hierarchical grid')
+        elif grid._dimension != self._dimension:
+            raise ValueError('the grid must lie on the knots of the '
                              'patch')
         else:
-            # Positions of the empty quadrature only check that the domain
+            # Positions of the empty quadrature only check that the grid
             # lies on the knots of the patch
             self._cpp_object.positions(patch._cpp_object,
-                                       domain._cpp_object)
+                                       grid._cpp_object)
 
-        num_elements = domain.num_elements
+        num_elements = grid.num_elements
 
         if cell_types is None:
             cell_types = [CellType.inside] * num_elements
@@ -81,7 +81,7 @@ class DomainQuadrature:
             raise ValueError('there must be one cell type per cell')
 
         self._patch = patch
-        self._domain = domain
+        self._grid = grid
         self._cell_types = list(cell_types)
         self._embedding = embedding(self._cell_types)
 
@@ -91,13 +91,13 @@ class DomainQuadrature:
         return self._patch
 
     @property
-    def domain(self) -> HierarchicalDomain:
-        """The domain whose active elements are the cells."""
-        return self._domain
+    def grid(self) -> HierarchicalGrid:
+        """The grid whose active elements are the cells."""
+        return self._grid
 
     @property
     def cell_types(self) -> list[CellType]:
-        """Type of each cell, in the numbering of the domain."""
+        """Type of each cell, in the numbering of the grid."""
         return list(self._cell_types)
 
     @property
@@ -116,7 +116,7 @@ class DomainQuadrature:
         `(num_points, 2)` on a planar patch and `(num_points, 3)`
         otherwise."""
         return self._cpp_object.positions(self._patch._cpp_object,
-                                          self._domain._cpp_object)
+                                          self._grid._cpp_object)
 
     @property
     def weights(self) -> npt.NDArray[np.float64]:
@@ -146,7 +146,7 @@ class DomainQuadrature:
                              'direction')
 
         self._cpp_object.fill_gauss_legendre(
-            self._domain._cpp_object, self._embedding, cell_type,
+            self._grid._cpp_object, self._embedding, cell_type,
             list(num_points))
 
     def fill_moment_fitting(self, cell_type: CellType,
@@ -195,7 +195,7 @@ class DomainQuadrature:
             parameters = _to_parameters(self._patch, vertices)
 
         self._cpp_object.fill_moment_fitting(
-            self._domain._cpp_object, self._embedding, cell_type,
+            self._grid._cpp_object, self._embedding, cell_type,
             parameters, np.asarray(facets, dtype=np.int32), order)
 
     def __repr__(self) -> str:

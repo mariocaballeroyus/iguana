@@ -43,14 +43,14 @@ public:
     constexpr int num_dofs() const noexcept
     { return num_dofs_; }
 
-    /// @brief Number of elements, in the numbering of the domain
+    /// @brief Number of elements, in the numbering of the grid
     constexpr int num_elements() const noexcept
     { return static_cast<int>(offsets_.size()) - 1; }
 
     /**
      * @brief Degrees of freedom of the functions active on an element
      *
-     * @param element Element index, in the numbering of the domain
+     * @param element Element index, in the numbering of the grid
      *
      * @pre @p element lies in [0, num_elements())
      */

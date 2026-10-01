@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 import iguana
-from iguana import CellType, DomainQuadrature, HierarchicalDomain
+from iguana import CellType, DomainQuadrature, HierarchicalGrid
 
 ORIGIN = np.array([1., 0., -1.])
 
@@ -102,8 +102,8 @@ def test_fill_order():
                                 for element in (1, 6, 0, 2, 4, 5, 7)])
 
 
-def test_hierarchical_domain():
-    """The cells of a refined domain integrate the patch exactly, each
+def test_hierarchical_grid():
+    """The cells of a refined grid integrate the patch exactly, each
     through the patch element holding it."""
     block = box()
     net = block.control_points.copy()
@@ -113,11 +113,11 @@ def test_hierarchical_domain():
     patch = iguana.VolumePatch(
         iguana.cpp.VolumePatch(block._cpp_object.basis, net))
 
-    domain = HierarchicalDomain(patch.degrees, patch.knots)
-    domain = domain.refine([5, 1]).refine([7])
+    grid = HierarchicalGrid(patch.degrees, patch.knots)
+    grid = grid.refine([5, 1]).refine([7])
 
     # Exact for the map, of degree 2 along x and 1 along y and z
-    quadrature = DomainQuadrature(patch, domain=domain)
+    quadrature = DomainQuadrature(patch, grid=grid)
     quadrature.fill_gauss_legendre(CellType.inside, (2, 1, 1))
 
     # A B-spline integrates to (t[i + p + 1] - t[i]) / (p + 1), and the
@@ -253,12 +253,12 @@ def test_invalid_arguments():
     with pytest.raises(ValueError):
         DomainQuadrature(box(), mixed()[:-1])
 
-    # A domain must lie on the knots of the patch
+    # A grid must lie on the knots of the patch
     with pytest.raises(TypeError):
-        DomainQuadrature(box(), domain=box())
+        DomainQuadrature(box(), grid=box())
 
     with pytest.raises(ValueError):
-        DomainQuadrature(box(), domain=HierarchicalDomain(
+        DomainQuadrature(box(), grid=HierarchicalGrid(
             (2, 1, 1), [[0., 0., 0., 1., 1., 1.], [0., 0., 1., 1.],
                         [0., 0., 1., 1.]]))
 

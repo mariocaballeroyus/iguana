@@ -49,7 +49,7 @@ public:
      *        embedding places on its elements
      *
      * @param basis Basis whose functions span the space
-     * @param embedding Cell type of each element of the basis domain. With
+     * @param embedding Cell type of each element of the basis grid. With
      *        every cell inside, each function gets the degree of freedom of
      *        its own index
      *
@@ -62,7 +62,7 @@ public:
     constexpr const Basis& basis() const noexcept
     { return basis_; }
 
-    /// @brief Degrees of freedom of each element of the basis domain
+    /// @brief Degrees of freedom of each element of the basis grid
     constexpr const DofMap& dof_map() const noexcept
     { return dof_map_; }
 

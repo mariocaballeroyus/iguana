@@ -34,7 +34,7 @@ KnotVector<T>::KnotVector(int degree, std::vector<T> knots)
         throw std::invalid_argument("KnotVector: "
                                     "too few knots for the given degree");
 
-    // The domain runs from the knot of index p to the one of index
+    // The parametric domain runs from the knot of index p to the one of
     // num_knots - p - 1, and its elements are the non-empty spans between
     const int last = static_cast<int>(knots_.size()) - degree_ - 1;
 

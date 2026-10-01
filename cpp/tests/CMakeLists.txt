@@ -2,9 +2,9 @@ add_executable(iguana_tests
     basis/test_bspline.cpp
     basis/test_tensor_bspline.cpp
     basis/test_tensor_nurbs.cpp
-    domain/test_hierarchical_domain.cpp
-    domain/test_knot_vector.cpp
-    domain/test_tensor_domain_iterator.cpp
+    grid/test_hierarchical_grid.cpp
+    grid/test_knot_vector.cpp
+    grid/test_tensor_grid_iterator.cpp
     embedding/test_clipper.cpp
     embedding/test_inside.cpp
     embedding/test_slicer.cpp

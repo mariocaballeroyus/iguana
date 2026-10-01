@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef IGUANA_DOMAIN_KNOT_VECTOR_HPP
-#define IGUANA_DOMAIN_KNOT_VECTOR_HPP
+#ifndef IGUANA_GRID_KNOT_VECTOR_HPP
+#define IGUANA_GRID_KNOT_VECTOR_HPP
 
 #include <concepts>
 #include <cstddef>
@@ -48,7 +48,8 @@ public:
     constexpr const std::vector<T>& values() const noexcept
     { return knots_; }
 
-    /// @brief Number of elements, the non-empty knot spans of the domain
+    /// @brief Number of elements, the non-empty knot spans of the parametric
+    ///        domain
     constexpr int num_elements() const noexcept
     { return static_cast<int>(element_spans_.size()); }
 
@@ -146,4 +147,4 @@ Eigen::MatrixX<T> refinement_matrix(const KnotVector<T>& coarse,
 
 } // namespace iguana
 
-#endif // IGUANA_DOMAIN_KNOT_VECTOR_HPP
+#endif // IGUANA_GRID_KNOT_VECTOR_HPP

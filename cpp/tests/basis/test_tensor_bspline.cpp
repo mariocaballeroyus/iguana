@@ -23,7 +23,7 @@ using Catch::Matchers::WithinAbs;
 using iguana::BSpline;
 using iguana::KnotVector;
 using iguana::TensorBSpline;
-using iguana::TensorDomain;
+using iguana::TensorGrid;
 
 BSpline<double> quadratic()
 {
@@ -124,7 +124,7 @@ TEST_CASE("Tensor basis is non-negative and partitions unity on every element",
     for (const Basis& entry : bases) {
         std::visit([&values](const auto& basis) {
             INFO("dimension " << basis.dimension);
-            const int num_elements = basis.domain().num_elements();
+            const int num_elements = basis.grid().num_elements();
 
             for (int element = 0; element < num_elements; ++element) {
                 INFO("element " << element);
@@ -157,7 +157,7 @@ TEST_CASE("Tensor gradients match finite differences of the values",
                 std::decay_t<decltype(basis)>::dimension;
 
             INFO("dimension " << d);
-            const int num_elements = basis.domain().num_elements();
+            const int num_elements = basis.grid().num_elements();
 
             Eigen::MatrixXd values;
             Eigen::MatrixXd reference;
@@ -232,7 +232,7 @@ TEST_CASE("Tensor Hessians match finite differences of the gradients",
             std::array<Eigen::MatrixXd, d> below;
             std::array<Eigen::MatrixXd, num_pairs> hessians;
 
-            for (int element = 0; element < basis.domain().num_elements();
+            for (int element = 0; element < basis.grid().num_elements();
                  ++element) {
                 INFO("element " << element);
                 const std::array<int, d> first =
@@ -283,7 +283,7 @@ TEST_CASE("Tensor basis reproduces coordinates through active indices",
     Eigen::MatrixXd values;
     Eigen::VectorXi actives;
 
-    for (int element = 0; element < basis.domain().num_elements(); ++element) {
+    for (int element = 0; element < basis.grid().num_elements(); ++element) {
         INFO("element " << element);
         const Eigen::MatrixXd points = points_on(basis, element);
 
@@ -330,27 +330,27 @@ TEST_CASE("Tensor basis reproduces coordinates through active indices",
     }
 }
 
-TEST_CASE("A basis is built on the knot vectors of its domain",
+TEST_CASE("A basis is built on the knot vectors of its grid",
           "[tensor_bspline]")
 {
-    const TensorDomain<double, 3> domain(
+    const TensorGrid<double, 3> grid(
         {quadratic().knots(), cubic().knots(), repeated().knots()});
-    const TensorBSpline<double, 3> basis(domain);
+    const TensorBSpline<double, 3> basis(grid);
 
     // One univariate basis per knot vector, over the two elements of each
     for (std::size_t direction = 0; direction < 3; ++direction)
         REQUIRE(basis.axis(direction).knots().values()
-                == domain.knots(direction).values());
+                == grid.knots(direction).values());
 
-    REQUIRE(basis.domain().num_elements() == 2 * 2 * 2);
+    REQUIRE(basis.grid().num_elements() == 2 * 2 * 2);
 
-    // Built from the univariate bases, it has the same domain
+    // Built from the univariate bases, it has the same grid
     const TensorBSpline<double, 3> from_axes(
         {quadratic(), cubic(), repeated()});
 
     for (std::size_t direction = 0; direction < 3; ++direction)
-        REQUIRE(from_axes.domain().knots(direction).values()
-                == domain.knots(direction).values());
+        REQUIRE(from_axes.grid().knots(direction).values()
+                == grid.knots(direction).values());
 
     // A degree beyond the univariate bases is rejected, on a valid knot
     // vector clamped on [0, 1]
@@ -359,7 +359,7 @@ TEST_CASE("A basis is built on the knot vectors of its domain",
     knots.resize(2 * (degree + 1), 1.);
 
     using Univariate = TensorBSpline<double, 1>;
-    const TensorDomain<double, 1> beyond(
+    const TensorGrid<double, 1> beyond(
         std::array{KnotVector<double>(degree, knots)});
 
     REQUIRE_THROWS_AS(Univariate(beyond), std::invalid_argument);

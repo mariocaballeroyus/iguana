@@ -18,9 +18,9 @@ namespace
 {
 
 using Catch::Matchers::WithinAbs;
-using iguana::HierarchicalDomain;
+using iguana::HierarchicalGrid;
 using iguana::KnotVector;
-using iguana::TensorDomain;
+using iguana::TensorGrid;
 
 /// @brief Parameters at which an element starts, then those at which it
 ///        ends
@@ -28,35 +28,35 @@ using Box = std::array<std::array<double, 2>, 2>;
 
 } // namespace
 
-TEST_CASE("Refined elements tile the domain", "[domain]")
+TEST_CASE("Refined elements tile the parametric domain", "[grid]")
 {
     // Six elements over [0, 4] x [0, 2], with a repeated interior knot and
     // uneven spans
-    const HierarchicalDomain<double, 2> coarse(TensorDomain<double, 2>(
+    const HierarchicalGrid<double, 2> coarse(TensorGrid<double, 2>(
         {KnotVector<double>(2, {0., 0., 0., 1., 1., 3., 4., 4., 4.}),
          KnotVector<double>(1, {0., 0., .5, 2., 2.})}));
 
     // Each distinct mark trades an element for its four children, the
     // first ones on a new level
-    const HierarchicalDomain<double, 2> once =
+    const HierarchicalGrid<double, 2> once =
         refine(coarse, std::vector<int>{0, 4, 4});
 
     REQUIRE(once.num_levels() == 2);
     REQUIRE(once.num_elements() == 6 + 2 * 3);
 
     // Every coarse element and a child, which leaves level 0 empty
-    const HierarchicalDomain<double, 2> domain =
+    const HierarchicalGrid<double, 2> grid =
         refine(once, std::vector<int>{0, 1, 2, 3, 4});
 
-    REQUIRE(domain.num_levels() == 3);
-    REQUIRE(domain.active_elements(0).empty());
-    REQUIRE(domain.num_elements() == 12 + 5 * 3);
+    REQUIRE(grid.num_levels() == 3);
+    REQUIRE(grid.active_elements(0).empty());
+    REQUIRE(grid.num_elements() == 12 + 5 * 3);
 
     std::vector<Box> boxes;
     int level = 0;
     int position = 0;
 
-    for (const auto& element : domain) {
+    for (const auto& element : grid) {
         REQUIRE(element.index() == static_cast<int>(boxes.size()));
         REQUIRE(element.level() >= level);
 
@@ -65,12 +65,12 @@ TEST_CASE("Refined elements tile the domain", "[domain]")
             position = 0;
         }
 
-        // The element of the level domain it stands for, whose walk is the
+        // The element of the level grid it stands for, whose walk is the
         // reference
-        const int active = domain.active_elements(level)[position];
+        const int active = grid.active_elements(level)[position];
         ++position;
 
-        for (const auto& reference : domain.level(level)) {
+        for (const auto& reference : grid.level(level)) {
             if (reference.index() != active)
                 continue;
 
@@ -82,9 +82,10 @@ TEST_CASE("Refined elements tile the domain", "[domain]")
         boxes.push_back({element.start(), element.end()});
     }
 
-    REQUIRE(static_cast<int>(boxes.size()) == domain.num_elements());
+    REQUIRE(static_cast<int>(boxes.size()) == grid.num_elements());
 
-    // Pairwise disjoint boxes whose areas add up to that of the domain
+    // Pairwise disjoint boxes whose areas add up to that of the parametric
+    // domain
     double area = 0.;
 
     for (std::size_t box = 0; box < boxes.size(); ++box) {
@@ -107,23 +108,23 @@ TEST_CASE("Refined elements tile the domain", "[domain]")
     REQUIRE_THAT(area, WithinAbs(4. * 2., 1e-12));
 }
 
-TEST_CASE("Refinement rejects what it cannot refine", "[domain]")
+TEST_CASE("Refinement rejects what it cannot refine", "[grid]")
 {
     const KnotVector<double> knots(1, {0., 0., 1., 1.});
-    HierarchicalDomain<double, 3> domain(
-        TensorDomain<double, 3>({knots, knots, knots}));
+    HierarchicalGrid<double, 3> grid(
+        TensorGrid<double, 3>({knots, knots, knots}));
 
-    REQUIRE_THROWS_AS(refine(domain, std::vector<int>{-1}),
+    REQUIRE_THROWS_AS(refine(grid, std::vector<int>{-1}),
                       std::invalid_argument);
-    REQUIRE_THROWS_AS(refine(domain, std::vector<int>{1}),
+    REQUIRE_THROWS_AS(refine(grid, std::vector<int>{1}),
                       std::invalid_argument);
 
     // Refining the last element ten times leaves 8^10 = 2^30 elements on
     // the finest level, so the next one would have 2^33, beyond int
     for (int step = 0; step < 10; ++step)
-        domain = refine(domain, std::vector<int>{domain.num_elements() - 1});
+        grid = refine(grid, std::vector<int>{grid.num_elements() - 1});
 
     REQUIRE_THROWS_AS(
-        refine(domain, std::vector<int>{domain.num_elements() - 1}),
+        refine(grid, std::vector<int>{grid.num_elements() - 1}),
         std::invalid_argument);
 }

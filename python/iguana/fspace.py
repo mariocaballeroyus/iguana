@@ -17,7 +17,7 @@ import numpy as np
 import numpy.typing as npt
 
 from iguana import cpp as _cpp
-from iguana.domain import HierarchicalDomain
+from iguana.grid import HierarchicalGrid
 from iguana.embedding import CellType
 from iguana.patch import PlanarPatch, SurfacePatch, VolumePatch
 
@@ -60,8 +60,8 @@ class FunctionSpace:
             raise TypeError('the patch must be a planar, surface or volume '
                             'patch')
 
-        # The elements of the patch, as a domain that is not refined
-        num_elements = HierarchicalDomain(patch.degrees,
+        # The elements of the patch, as a grid that is not refined
+        num_elements = HierarchicalGrid(patch.degrees,
                                           patch.knots).num_elements
 
         if cell_types is None:

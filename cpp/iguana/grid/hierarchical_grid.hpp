@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef IGUANA_DOMAIN_HIERARCHICAL_DOMAIN_HPP
-#define IGUANA_DOMAIN_HIERARCHICAL_DOMAIN_HPP
+#ifndef IGUANA_GRID_HIERARCHICAL_GRID_HPP
+#define IGUANA_GRID_HIERARCHICAL_GRID_HPP
 
 #include <concepts>
 #include <cstddef>
@@ -12,57 +12,57 @@
 #include <span>
 #include <vector>
 
-#include "iguana/domain/hierarchical_domain_iterator.hpp"
-#include "iguana/domain/tensor_domain.hpp"
+#include "iguana/grid/hierarchical_grid_iterator.hpp"
+#include "iguana/grid/tensor_grid.hpp"
 
 namespace iguana
 {
 
 /**
  * @brief Elements of a hierarchical basis, active elements taken from a
- *        sequence of nested tensor domains
+ *        sequence of nested tensor grids
  *
- * Level 0 is the coarse tensor domain, and level l + 1 halves every
+ * Level 0 is the coarse tensor grid, and level l + 1 halves every
  * element of level l in each direction, so that element i of level l has
  * the 2^d children 2i + {0, 1}^d. The active elements of the levels tile
  * the parametric domain. They are numbered level by level and, within a
- * level, in increasing index of the level domain
+ * level, in increasing index of the level grid
  *
  * @tparam T Floating-point type
  * @tparam d Number of parametric directions
  */
 template<std::floating_point T, std::size_t d>
-class HierarchicalDomain
+class HierarchicalGrid
 {
 public:
     /// @brief Number of parametric directions
     static constexpr std::size_t dimension = d;
 
     /**
-     * @brief Constructs the domain with a single level, whose elements are
+     * @brief Constructs the grid with a single level, whose elements are
      *        all active
      *
-     * @param coarse Tensor domain of level 0
+     * @param coarse Tensor grid of level 0
      */
-    explicit HierarchicalDomain(TensorDomain<T, d> coarse);
+    explicit HierarchicalGrid(TensorGrid<T, d> coarse);
 
     /// @brief Number of levels, the finest one possibly without elements
     constexpr int num_levels() const noexcept
     { return static_cast<int>(levels_.size()); }
 
     /**
-     * @brief Tensor domain of a level
+     * @brief Tensor grid of a level
      *
      * @param level Level index
      *
      * @pre @p level lies in [0, num_levels())
      */
-    constexpr const TensorDomain<T, d>& level(int level) const noexcept
+    constexpr const TensorGrid<T, d>& level(int level) const noexcept
     { return levels_[static_cast<std::size_t>(level)]; }
 
     /**
      * @brief Active elements of a level, in increasing index of the level
-     *        domain
+     *        grid
      *
      * @param level Level index
      *
@@ -76,7 +76,7 @@ public:
     { return offsets_.back(); }
 
     /// @brief Iterator at the first active element
-    HierarchicalDomainIterator<T, d> begin() const noexcept;
+    HierarchicalGridIterator<T, d> begin() const noexcept;
 
     /// @brief Sentinel past the last active element
     constexpr std::default_sentinel_t end() const noexcept
@@ -84,11 +84,11 @@ public:
 
 private:
     template<std::floating_point U, std::size_t e>
-    friend HierarchicalDomain<U, e> refine(const HierarchicalDomain<U, e>&,
+    friend HierarchicalGrid<U, e> refine(const HierarchicalGrid<U, e>&,
                                            std::span<const int>);
 
-    /// @brief Tensor domain of each level
-    std::vector<TensorDomain<T, d>> levels_;
+    /// @brief Tensor grid of each level
+    std::vector<TensorGrid<T, d>> levels_;
 
     /// @brief Active elements of each level, in increasing index
     std::vector<std::vector<int>> active_;
@@ -99,25 +99,25 @@ private:
 };
 
 /**
- * @brief Hierarchical domain with elements replaced by their children
+ * @brief Hierarchical grid with elements replaced by their children
  *
  * Each marked element is replaced by its 2^d children on the next level,
  * which is added if the element lies on the finest one. The other
  * elements stay active, although the numbering changes
  *
- * @param domain Domain to refine
+ * @param grid Grid to refine
  * @param elements Active elements to refine, in any order and possibly
  *        repeated
- * @return Domain with the children of the marked elements active instead
+ * @return Grid with the children of the marked elements active instead
  *
  * @throws std::invalid_argument If an element lies outside
- *         [0, domain.num_elements()), or if a new level would have more
+ *         [0, grid.num_elements()), or if a new level would have more
  *         elements than int can count
  */
 template<std::floating_point T, std::size_t d>
-HierarchicalDomain<T, d> refine(const HierarchicalDomain<T, d>& domain,
+HierarchicalGrid<T, d> refine(const HierarchicalGrid<T, d>& grid,
                                 std::span<const int> elements);
 
 } // namespace iguana
 
-#endif // IGUANA_DOMAIN_HIERARCHICAL_DOMAIN_HPP
+#endif // IGUANA_GRID_HIERARCHICAL_GRID_HPP

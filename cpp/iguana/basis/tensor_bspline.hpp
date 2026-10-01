@@ -13,7 +13,7 @@
 #include <Eigen/Core>
 
 #include "bspline.hpp"
-#include "iguana/domain/tensor_domain.hpp"
+#include "iguana/grid/tensor_grid.hpp"
 
 namespace iguana
 {
@@ -41,14 +41,14 @@ public:
     static constexpr std::size_t dimension = d;
 
     /**
-     * @brief Constructs the basis on a domain, with one univariate basis on
+     * @brief Constructs the basis on a grid, with one univariate basis on
      *        the knot vector of each direction
      *
-     * @param domain Domain holding the knot vector of each direction
+     * @param grid Grid holding the knot vector of each direction
      *
      * @throws std::invalid_argument If a degree exceeds BSpline::max_degree
      */
-    explicit TensorBSpline(TensorDomain<T, d> domain);
+    explicit TensorBSpline(TensorGrid<T, d> grid);
 
     /**
      * @brief Constructs a tensor-product B-spline basis.
@@ -57,9 +57,9 @@ public:
      */
     explicit TensorBSpline(std::array<BSpline<T>, d> axes);
 
-    /// @brief Domain, whose elements the basis is defined on
-    constexpr const TensorDomain<T, d>& domain() const noexcept
-    { return domain_; }
+    /// @brief Grid, whose elements the basis is defined on
+    constexpr const TensorGrid<T, d>& grid() const noexcept
+    { return grid_; }
 
     /**
      * @brief Univariate basis of a parametric direction.
@@ -90,7 +90,7 @@ public:
      * @param actives Output vector of num_active() function indices. It is
      *        resized when necessary.
      *
-     * @pre @p element lies in [0, domain().num_elements())
+     * @pre @p element lies in [0, grid().num_elements())
      */
     void active_on_element(int element, Eigen::VectorXi& actives) const;
 
@@ -178,8 +178,8 @@ public:
         std::array<Eigen::MatrixX<T>, d * (d + 1) / 2>& hessians) const;
 
 private:
-    /// @brief Domain, with the knot vector of each direction
-    TensorDomain<T, d> domain_;
+    /// @brief Grid, with the knot vector of each direction
+    TensorGrid<T, d> grid_;
 
     /// @brief Univariate bases, one per parametric direction.
     std::array<BSpline<T>, d> axes_;

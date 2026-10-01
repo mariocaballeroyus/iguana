@@ -17,29 +17,29 @@ namespace iguana
 namespace
 {
 
-/// @brief Univariate bases on the knot vectors of a domain
+/// @brief Univariate bases on the knot vectors of a grid
 template<std::floating_point T, std::size_t d, std::size_t... direction>
-std::array<BSpline<T>, d> axes_on(const TensorDomain<T, d>& domain,
+std::array<BSpline<T>, d> axes_on(const TensorGrid<T, d>& grid,
                                   std::index_sequence<direction...>)
 {
-    return {BSpline<T>(domain.knots(direction))...};
+    return {BSpline<T>(grid.knots(direction))...};
 }
 
-/// @brief Domain on the knot vectors of univariate bases
+/// @brief Grid on the knot vectors of univariate bases
 template<std::floating_point T, std::size_t d, std::size_t... direction>
-TensorDomain<T, d> domain_of(const std::array<BSpline<T>, d>& axes,
+TensorGrid<T, d> grid_of(const std::array<BSpline<T>, d>& axes,
                              std::index_sequence<direction...>)
 {
-    return TensorDomain<T, d>(
+    return TensorGrid<T, d>(
         std::array<KnotVector<T>, d>{axes[direction].knots()...});
 }
 
 } // namespace
 
 template<std::floating_point T, std::size_t d>
-TensorBSpline<T, d>::TensorBSpline(TensorDomain<T, d> domain)
-    : domain_(std::move(domain)),
-      axes_(axes_on(domain_, std::make_index_sequence<d>{})),
+TensorBSpline<T, d>::TensorBSpline(TensorGrid<T, d> grid)
+    : grid_(std::move(grid)),
+      axes_(axes_on(grid_, std::make_index_sequence<d>{})),
       num_functions_(1),
       num_active_(1)
 {
@@ -51,7 +51,7 @@ TensorBSpline<T, d>::TensorBSpline(TensorDomain<T, d> domain)
 
 template<std::floating_point T, std::size_t d>
 TensorBSpline<T, d>::TensorBSpline(std::array<BSpline<T>, d> axes)
-    : TensorBSpline(domain_of(axes, std::make_index_sequence<d>{}))
+    : TensorBSpline(grid_of(axes, std::make_index_sequence<d>{}))
 {
 }
 

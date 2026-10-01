@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-#include "hierarchical_domain.hpp"
+#include "hierarchical_grid.hpp"
 
 #include <algorithm>
 #include <array>
@@ -13,7 +13,7 @@
 #include <stdexcept>
 #include <utility>
 
-#include "iguana/domain/knot_vector.hpp"
+#include "iguana/grid/knot_vector.hpp"
 #include "iguana/utils/multi_index.hpp"
 
 namespace iguana
@@ -35,20 +35,20 @@ KnotVector<T> halve_elements(const KnotVector<T>& knots)
     return insert_knots(knots, midpoints);
 }
 
-/// @brief Domain of the next level, with every element halved in each
+/// @brief Grid of the next level, with every element halved in each
 ///        direction
 template<std::floating_point T, std::size_t d, std::size_t... direction>
-TensorDomain<T, d> next_level(const TensorDomain<T, d>& domain,
+TensorGrid<T, d> next_level(const TensorGrid<T, d>& grid,
                               std::index_sequence<direction...>)
 {
-    return TensorDomain<T, d>(std::array<KnotVector<T>, d>{
-        halve_elements(domain.knots(direction))...});
+    return TensorGrid<T, d>(std::array<KnotVector<T>, d>{
+        halve_elements(grid.knots(direction))...});
 }
 
 } // namespace
 
 template<std::floating_point T, std::size_t d>
-HierarchicalDomain<T, d>::HierarchicalDomain(TensorDomain<T, d> coarse)
+HierarchicalGrid<T, d>::HierarchicalGrid(TensorGrid<T, d> coarse)
     : active_(1),
       offsets_{0, coarse.num_elements()}
 {
@@ -58,41 +58,41 @@ HierarchicalDomain<T, d>::HierarchicalDomain(TensorDomain<T, d> coarse)
 }
 
 template<std::floating_point T, std::size_t d>
-HierarchicalDomainIterator<T, d>
-HierarchicalDomain<T, d>::begin() const noexcept
+HierarchicalGridIterator<T, d>
+HierarchicalGrid<T, d>::begin() const noexcept
 {
-    return HierarchicalDomainIterator<T, d>(*this);
+    return HierarchicalGridIterator<T, d>(*this);
 }
 
 template<std::floating_point T, std::size_t d>
-HierarchicalDomain<T, d> refine(const HierarchicalDomain<T, d>& domain,
+HierarchicalGrid<T, d> refine(const HierarchicalGrid<T, d>& grid,
                                 std::span<const int> elements)
 {
-    const int num_elements = domain.num_elements();
+    const int num_elements = grid.num_elements();
 
     if (!std::ranges::all_of(elements, [num_elements](int element) {
             return 0 <= element && element < num_elements;
         }))
         throw std::invalid_argument("refine: "
-                                    "the elements must lie in the domain");
+                                    "the elements must lie in the grid");
 
-    // Marked elements of each level, by their index in the level domain.
+    // Marked elements of each level, by their index in the level grid.
     // The offsets are non-decreasing, so the last one not above an element
     // is that of its level, skipping the levels without elements
-    std::vector<std::vector<int>> marked(domain.num_levels());
+    std::vector<std::vector<int>> marked(grid.num_levels());
 
     for (const int element : elements) {
-        const auto after = std::ranges::upper_bound(domain.offsets_, element);
+        const auto after = std::ranges::upper_bound(grid.offsets_, element);
         const int level =
-            static_cast<int>(std::distance(domain.offsets_.begin(), after)) - 1;
+            static_cast<int>(std::distance(grid.offsets_.begin(), after)) - 1;
 
         marked[level].push_back(
-            domain.active_[level][element - domain.offsets_[level]]);
+            grid.active_[level][element - grid.offsets_[level]]);
     }
 
-    HierarchicalDomain<T, d> refined = domain;
+    HierarchicalGrid<T, d> refined = grid;
 
-    for (int level = 0; level < domain.num_levels(); ++level) {
+    for (int level = 0; level < grid.num_levels(); ++level) {
         std::vector<int>& parents = marked[level];
 
         if (parents.empty())
@@ -168,15 +168,15 @@ HierarchicalDomain<T, d> refine(const HierarchicalDomain<T, d>& domain,
     return refined;
 }
 
-template class HierarchicalDomain<double, 1>;
-template class HierarchicalDomain<double, 2>;
-template class HierarchicalDomain<double, 3>;
+template class HierarchicalGrid<double, 1>;
+template class HierarchicalGrid<double, 2>;
+template class HierarchicalGrid<double, 3>;
 
-template HierarchicalDomain<double, 1> refine(
-    const HierarchicalDomain<double, 1>&, std::span<const int>);
-template HierarchicalDomain<double, 2> refine(
-    const HierarchicalDomain<double, 2>&, std::span<const int>);
-template HierarchicalDomain<double, 3> refine(
-    const HierarchicalDomain<double, 3>&, std::span<const int>);
+template HierarchicalGrid<double, 1> refine(
+    const HierarchicalGrid<double, 1>&, std::span<const int>);
+template HierarchicalGrid<double, 2> refine(
+    const HierarchicalGrid<double, 2>&, std::span<const int>);
+template HierarchicalGrid<double, 3> refine(
+    const HierarchicalGrid<double, 3>&, std::span<const int>);
 
 } // namespace iguana

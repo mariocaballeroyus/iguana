@@ -1,13 +1,13 @@
 # Copyright (c) 2026 Mario Caballero
 # SPDX-License-Identifier: MIT
 
-"""Tests of the hierarchical domain"""
+"""Tests of the hierarchical grid"""
 
 import numpy as np
 import pytest
 
 import iguana
-from iguana import HierarchicalDomain
+from iguana import HierarchicalGrid
 
 
 def box():
@@ -16,17 +16,17 @@ def box():
                              degrees=(2, 1, 1))
 
 
-def domain():
-    """Domain on the knots of the block."""
+def grid():
+    """Grid on the knots of the block."""
     patch = box()
 
-    return HierarchicalDomain(patch.degrees, patch.knots)
+    return HierarchicalGrid(patch.degrees, patch.knots)
 
 
-def test_unrefined_domain_holds_the_patch_elements():
-    """Before any refinement, the domain on the knots of a patch holds its
+def test_unrefined_grid_holds_the_patch_elements():
+    """Before any refinement, the grid on the knots of a patch holds its
     elements in their numbering, the first direction running fastest."""
-    coarse = domain()
+    coarse = grid()
 
     assert coarse.num_levels == 1
     assert coarse.num_elements == 8
@@ -42,9 +42,9 @@ def test_unrefined_domain_holds_the_patch_elements():
 
 
 def test_refine_replaces_elements_by_their_children():
-    """Refining returns a new domain, in which the marked element gives way
+    """Refining returns a new grid, in which the marked element gives way
     to its children on the next level."""
-    coarse = domain()
+    coarse = grid()
     refined = coarse.refine(np.array([5, 5]))
 
     assert coarse.num_elements == 8
@@ -61,15 +61,15 @@ def test_refine_replaces_elements_by_their_children():
 
 
 def test_rejects_what_it_cannot_build_or_refine():
-    """A domain has two or three directions with one degree each, and only
+    """A grid has two or three directions with one degree each, and only
     its active elements can be refined."""
     knots = box().knots
 
     with pytest.raises(ValueError):
-        HierarchicalDomain((2, 1), knots)
+        HierarchicalGrid((2, 1), knots)
 
     with pytest.raises(ValueError):
-        HierarchicalDomain((2,), knots[:1])
+        HierarchicalGrid((2,), knots[:1])
 
     with pytest.raises(ValueError):
-        domain().refine([8])
+        grid().refine([8])

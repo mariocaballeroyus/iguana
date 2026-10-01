@@ -13,7 +13,7 @@
 #include <Eigen/Core>
 
 #include "tensor_bspline.hpp"
-#include "iguana/domain/tensor_domain.hpp"
+#include "iguana/grid/tensor_grid.hpp"
 
 namespace iguana
 {
@@ -63,9 +63,9 @@ public:
     constexpr const Eigen::VectorX<T>& weights() const noexcept
     { return weights_; }
 
-    /// @brief Domain, whose elements the basis is defined on
-    constexpr const TensorDomain<T, d>& domain() const noexcept
-    { return bspline_.domain(); }
+    /// @brief Grid, whose elements the basis is defined on
+    constexpr const TensorGrid<T, d>& grid() const noexcept
+    { return bspline_.grid(); }
 
     /// @brief Number of basis functions
     constexpr int num_functions() const noexcept
@@ -83,7 +83,7 @@ public:
      * @param actives Output vector of num_active() function indices. It is
      *        resized when necessary
      *
-     * @pre @p element lies in [0, domain().num_elements())
+     * @pre @p element lies in [0, grid().num_elements())
      */
     void active_on_element(int element, Eigen::VectorXi& actives) const
     { bspline_.active_on_element(element, actives); }

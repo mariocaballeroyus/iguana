@@ -2,11 +2,11 @@ add_library(iguana
     basis/bspline.cpp
     basis/tensor_bspline.cpp
     basis/tensor_nurbs.cpp
-    domain/hierarchical_domain.cpp
-    domain/hierarchical_domain_iterator.cpp
-    domain/knot_vector.cpp
-    domain/tensor_domain.cpp
-    domain/tensor_domain_iterator.cpp
+    grid/hierarchical_grid.cpp
+    grid/hierarchical_grid_iterator.cpp
+    grid/knot_vector.cpp
+    grid/tensor_grid.cpp
+    grid/tensor_grid_iterator.cpp
     embedding/embedding.cpp
     fspace/dof_map.cpp
     fspace/function_space.cpp

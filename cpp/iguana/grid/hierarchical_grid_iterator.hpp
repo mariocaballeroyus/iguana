@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef IGUANA_DOMAIN_HIERARCHICAL_DOMAIN_ITERATOR_HPP
-#define IGUANA_DOMAIN_HIERARCHICAL_DOMAIN_ITERATOR_HPP
+#ifndef IGUANA_GRID_HIERARCHICAL_GRID_ITERATOR_HPP
+#define IGUANA_GRID_HIERARCHICAL_GRID_ITERATOR_HPP
 
 #include <array>
 #include <concepts>
@@ -15,40 +15,40 @@ namespace iguana
 {
 
 template<std::floating_point T, std::size_t d>
-class HierarchicalDomain;
+class HierarchicalGrid;
 
 /**
- * @brief Walks the active elements of a hierarchical domain
+ * @brief Walks the active elements of a hierarchical grid
  *
  * The iterator visits every active element once, in increasing
  * hierarchical index, that is level by level and, within a level, in
- * increasing index of the level domain. It serves as the handle of the
+ * increasing index of the level grid. It serves as the handle of the
  * element it has reached, and its data is refilled in place as it
  * advances
  *
  * @tparam T Floating-point type
  * @tparam d Number of parametric directions
  *
- * @warning The iterator reads its domain, which must outlive it
+ * @warning The iterator reads its grid, which must outlive it
  */
 template<std::floating_point T, std::size_t d>
-class HierarchicalDomainIterator
+class HierarchicalGridIterator
 {
 public:
     /**
-     * @brief Starts at the first active element of a domain
+     * @brief Starts at the first active element of a grid
      *
-     * @param domain Domain whose active elements are walked
+     * @param grid Grid whose active elements are walked
      */
-    explicit HierarchicalDomainIterator(
-        const HierarchicalDomain<T, d>& domain) noexcept;
+    explicit HierarchicalGridIterator(
+        const HierarchicalGrid<T, d>& grid) noexcept;
 
     /// @brief Element handle, the iterator itself
-    constexpr const HierarchicalDomainIterator& operator*() const noexcept
+    constexpr const HierarchicalGridIterator& operator*() const noexcept
     { return *this; }
 
     /// @brief Advances to the next active element
-    HierarchicalDomainIterator& operator++() noexcept;
+    HierarchicalGridIterator& operator++() noexcept;
 
     /// @brief Whether the iterator has passed the last active element
     constexpr bool operator==(std::default_sentinel_t) const noexcept
@@ -80,13 +80,13 @@ private:
     ///        refills the element data unless the walk is over
     void settle() noexcept;
 
-    /// @brief Refills the element data from the level domain
+    /// @brief Refills the element data from the level grid
     void update() noexcept;
 
-    /// @brief Domain whose active elements are walked
-    const HierarchicalDomain<T, d>* domain_ = nullptr;
+    /// @brief Grid whose active elements are walked
+    const HierarchicalGrid<T, d>* grid_ = nullptr;
 
-    /// @brief Number of active elements of the domain
+    /// @brief Number of active elements of the grid
     int num_elements_ = 0;
 
     /// @brief Hierarchical element index
@@ -110,4 +110,4 @@ private:
 
 } // namespace iguana
 
-#endif // IGUANA_DOMAIN_HIERARCHICAL_DOMAIN_ITERATOR_HPP
+#endif // IGUANA_GRID_HIERARCHICAL_GRID_ITERATOR_HPP

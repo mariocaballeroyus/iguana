@@ -19,7 +19,7 @@ using iguana::CellType;
 using iguana::Embedding;
 using iguana::KnotVector;
 using iguana::TensorBSpline;
-using iguana::TensorDomain;
+using iguana::TensorGrid;
 
 using Space = iguana::FunctionSpace<TensorBSpline<double, 2>>;
 
@@ -27,7 +27,7 @@ using Space = iguana::FunctionSpace<TensorBSpline<double, 2>>;
 ///        direction and two along the second
 TensorBSpline<double, 2> uneven()
 {
-    return TensorBSpline<double, 2>(TensorDomain<double, 2>(
+    return TensorBSpline<double, 2>(TensorGrid<double, 2>(
         {KnotVector<double>(2, {0., 0., 0., 1., 2., 6., 6., 6.}),
          KnotVector<double>(1, {0., 0., 1., 4., 4.})}));
 }
@@ -58,7 +58,7 @@ Eigen::VectorXd integrals(const Space& space,
 
     // Two points per direction integrate the quadratic functions exactly
     iguana::DomainQuadrature<double, 2> quadrature;
-    quadrature.fill(basis.domain(), embedding, CellType::inside,
+    quadrature.fill(basis.grid(), embedding, CellType::inside,
                     iguana::GaussLegendre<double, 2>(2));
 
     Eigen::VectorXd result =
@@ -66,7 +66,7 @@ Eigen::VectorXd integrals(const Space& space,
     Eigen::MatrixXd values;
     int held = 0;
 
-    for (const auto& element : basis.domain()) {
+    for (const auto& element : basis.grid()) {
         if (embedding.cell_type(element.index()) != CellType::inside)
             continue;
 
