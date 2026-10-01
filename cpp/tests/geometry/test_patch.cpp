@@ -6,6 +6,7 @@
 #include <iguana/iguana.hpp>
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <stdexcept>
 
@@ -19,6 +20,7 @@ using Catch::Matchers::WithinAbs;
 using iguana::BSpline;
 using iguana::Patch;
 using iguana::TensorBSpline;
+using iguana::TensorNURBS;
 
 using Points = iguana::PointMatrix<double, 3>;
 
@@ -197,4 +199,82 @@ TEST_CASE("Patch reproduces affine maps exactly", "[patch]")
                        curve.topRows<2>(), shift.head<2>());
     check_affine<2, 2>(TensorBSpline<double, 2>({quadratic(), cubic()}),
                        surface.topRows<2>(), shift.head<2>());
+}
+
+TEST_CASE("NURBS patch reproduces a half annulus exactly", "[patch]")
+{
+    // Two quarter circles of unit radius joined at a double knot, swept
+    // along a radius running linearly from 1 to 2
+    const TensorBSpline<double, 2> bspline(
+        {BSpline<double>(2, {0., 0., 0., .5, .5, 1., 1., 1.}),
+         BSpline<double>(1, {0., 0., 1., 1.})});
+
+    Eigen::Matrix<double, 5, 2> circle;
+    circle << 1., 0.,
+              1., 1.,
+              0., 1.,
+             -1., 1.,
+             -1., 0.;
+
+    const double corner = std::sqrt(.5);
+    Eigen::Vector<double, 5> circle_weights;
+    circle_weights << 1., corner, 1., corner, 1.;
+
+    // The weights vary along the first direction alone, so that a weight
+    // gathered along the wrong direction breaks the circle
+    Eigen::VectorXd weights(bspline.num_functions());
+    iguana::PointMatrix<double, 2> coefficients(bspline.num_functions(), 2);
+
+    for (int ring = 0; ring < 2; ++ring) {
+        for (int arc = 0; arc < 5; ++arc) {
+            weights(arc + 5 * ring) = circle_weights(arc);
+            coefficients.row(arc + 5 * ring) = (1. + ring) * circle.row(arc);
+        }
+    }
+
+    const Patch<TensorNURBS<double, 2>, 2> patch(
+        TensorNURBS<double, 2>(bspline, weights), coefficients);
+    const TensorNURBS<double, 2>& basis = patch.basis();
+
+    Eigen::MatrixXd values;
+    Eigen::VectorXi actives;
+    iguana::PointMatrix<double, 2> positions;
+    std::array<Eigen::MatrixXd, 2> gradients;
+    std::array<iguana::PointMatrix<double, 2>, 2> tangents;
+
+    for (const auto& element : basis.domain()) {
+        INFO("element " << element.index());
+        Eigen::MatrixXd points(2, 2);
+
+        for (std::size_t dir = 0; dir < 2; ++dir) {
+            const double start = element.start()[dir];
+            const double width = element.end()[dir] - start;
+            const double shear = .1 * static_cast<double>(dir);
+
+            points(0, dir) = start + (.25 + shear) * width;
+            points(1, dir) = start + (.75 - shear) * width;
+        }
+
+        basis.active_on_element(element.index(), actives);
+        basis.grad_on_element(element.first_active(), points, values,
+                              gradients);
+        patch.position_on_element(actives, values, positions);
+        patch.tangent_on_element(actives, gradients, tangents);
+
+        for (Eigen::Index pt = 0; pt < points.rows(); ++pt) {
+            INFO("point " << pt);
+            const Eigen::Vector2d position = positions.row(pt).transpose();
+            const double radius = position.norm();
+
+            // The radius follows the second parameter, so the first moves
+            // along a circle and the second along a ray
+            REQUIRE_THAT(radius, WithinAbs(1. + points(pt, 1), 1e-14));
+            REQUIRE_THAT(position.dot(tangents[0].row(pt).transpose()),
+                         WithinAbs(0., 1e-13));
+
+            for (Eigen::Index c = 0; c < 2; ++c)
+                REQUIRE_THAT(tangents[1](pt, c),
+                             WithinAbs(position[c] / radius, 1e-13));
+        }
+    }
 }
