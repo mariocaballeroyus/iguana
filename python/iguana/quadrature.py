@@ -23,7 +23,7 @@ from iguana.patch import PlanarPatch, SurfacePatch, VolumePatch
 class DomainQuadrature:
     """The quadrature points over the cells of a patch."""
 
-    _cpp_object: _cpp.SurfaceQuadrature | _cpp.VolumeQuadrature
+    _cpp_object: _cpp.DomainQuadrature2d | _cpp.DomainQuadrature3d
 
     def __init__(self, patch: PlanarPatch | SurfacePatch | VolumePatch,
                  cell_types: Sequence[CellType] | None = None,
@@ -47,12 +47,12 @@ class DomainQuadrature:
                 patch, or if there is not one cell type per cell.
         """
         if isinstance(patch, VolumePatch):
-            self._cpp_object = _cpp.VolumeQuadrature()
-            embedding = _cpp.VolumeEmbedding
+            self._cpp_object = _cpp.DomainQuadrature3d()
+            domain = _cpp.EmbeddedDomain3d
             self._dimension = 3
         elif isinstance(patch, (PlanarPatch, SurfacePatch)):
-            self._cpp_object = _cpp.SurfaceQuadrature()
-            embedding = _cpp.SurfaceEmbedding
+            self._cpp_object = _cpp.DomainQuadrature2d()
+            domain = _cpp.EmbeddedDomain2d
             self._dimension = 2
         else:
             raise TypeError('the patch must be a planar, surface or volume '
@@ -83,7 +83,7 @@ class DomainQuadrature:
         self._patch = patch
         self._grid = grid
         self._cell_types = list(cell_types)
-        self._embedding = embedding(self._cell_types)
+        self._domain = domain(self._cell_types)
 
     @property
     def patch(self) -> PlanarPatch | SurfacePatch | VolumePatch:
@@ -146,7 +146,7 @@ class DomainQuadrature:
                              'direction')
 
         self._cpp_object.fill_gauss_legendre(
-            self._grid._cpp_object, self._embedding, cell_type,
+            self._grid._cpp_object, self._domain, cell_type,
             list(num_points))
 
     def fill_moment_fitting(self, cell_type: CellType,
@@ -195,7 +195,7 @@ class DomainQuadrature:
             parameters = _to_parameters(self._patch, vertices)
 
         self._cpp_object.fill_moment_fitting(
-            self._grid._cpp_object, self._embedding, cell_type,
+            self._grid._cpp_object, self._domain, cell_type,
             parameters, np.asarray(facets, dtype=np.int32), order)
 
     def __repr__(self) -> str:

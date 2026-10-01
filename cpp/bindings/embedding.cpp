@@ -18,8 +18,8 @@ namespace iguana::bindings
 namespace
 {
 
-using SurfaceEmbedding = EmbeddedDomain<double, 2>;
-using VolumeEmbedding = EmbeddedDomain<double, 3>;
+using EmbeddedDomain2d = EmbeddedDomain<double, 2>;
+using EmbeddedDomain3d = EmbeddedDomain<double, 3>;
 
 } // namespace
 
@@ -30,10 +30,10 @@ void embedding(py::module_& module)
         .value("inside", CellType::inside)
         .value("cut", CellType::cut);
 
-    py::class_<SurfaceEmbedding>(module, "SurfaceEmbedding")
+    py::class_<EmbeddedDomain2d>(module, "EmbeddedDomain2d")
         .def(py::init<std::vector<CellType>>(), py::arg("cell_types"));
 
-    py::class_<VolumeEmbedding>(module, "VolumeEmbedding")
+    py::class_<EmbeddedDomain3d>(module, "EmbeddedDomain3d")
         .def(py::init<std::vector<CellType>>(), py::arg("cell_types"));
 }
 

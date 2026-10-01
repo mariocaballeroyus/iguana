@@ -23,8 +23,8 @@ namespace iguana::bindings
 namespace
 {
 
-using SurfaceQuadrature = DomainQuadrature<double, 2>;
-using VolumeQuadrature = DomainQuadrature<double, 3>;
+using DomainQuadrature2d = DomainQuadrature<double, 2>;
+using DomainQuadrature3d = DomainQuadrature<double, 3>;
 
 /// @brief Fills the cells of one type with a Gauss-Legendre rule, which
 ///        Python never handles itself
@@ -172,18 +172,18 @@ void quadrature(py::module_& module)
     // The weights are copied, as filling reallocates them
     constexpr py::return_value_policy copy = py::return_value_policy::copy;
 
-    py::class_<SurfaceQuadrature>(module, "SurfaceQuadrature")
+    py::class_<DomainQuadrature2d>(module, "DomainQuadrature2d")
         .def(py::init<>())
         .def("fill_gauss_legendre", &fill_gauss_legendre<2>,
-             py::arg("grid"), py::arg("embedding"), py::arg("cell_type"),
+             py::arg("grid"), py::arg("domain"), py::arg("cell_type"),
              py::arg("num_points"))
         .def("fill_moment_fitting", &fill_moment_fitting<2>,
-             py::arg("grid"), py::arg("embedding"), py::arg("cell_type"),
+             py::arg("grid"), py::arg("domain"), py::arg("cell_type"),
              py::arg("vertices"), py::arg("facets"), py::arg("order"))
         .def_property_readonly("num_elements",
-                               &SurfaceQuadrature::num_elements)
-        .def_property_readonly("num_points", &SurfaceQuadrature::num_points)
-        .def_property_readonly("weights", &SurfaceQuadrature::weights, copy)
+                               &DomainQuadrature2d::num_elements)
+        .def_property_readonly("num_points", &DomainQuadrature2d::num_points)
+        .def_property_readonly("weights", &DomainQuadrature2d::weights, copy)
         .def("positions", &positions<TensorBSpline<double, 2>, 2>,
              py::arg("patch"), py::arg("grid"))
         .def("positions", &positions<TensorBSpline<double, 2>, 3>,
@@ -191,18 +191,18 @@ void quadrature(py::module_& module)
         .def("positions", &positions<TensorNURBS<double, 2>, 3>,
              py::arg("patch"), py::arg("grid"));
 
-    py::class_<VolumeQuadrature>(module, "VolumeQuadrature")
+    py::class_<DomainQuadrature3d>(module, "DomainQuadrature3d")
         .def(py::init<>())
         .def("fill_gauss_legendre", &fill_gauss_legendre<3>,
-             py::arg("grid"), py::arg("embedding"), py::arg("cell_type"),
+             py::arg("grid"), py::arg("domain"), py::arg("cell_type"),
              py::arg("num_points"))
         .def("fill_moment_fitting", &fill_moment_fitting<3>,
-             py::arg("grid"), py::arg("embedding"), py::arg("cell_type"),
+             py::arg("grid"), py::arg("domain"), py::arg("cell_type"),
              py::arg("vertices"), py::arg("facets"), py::arg("order"))
         .def_property_readonly("num_elements",
-                               &VolumeQuadrature::num_elements)
-        .def_property_readonly("num_points", &VolumeQuadrature::num_points)
-        .def_property_readonly("weights", &VolumeQuadrature::weights, copy)
+                               &DomainQuadrature3d::num_elements)
+        .def_property_readonly("num_points", &DomainQuadrature3d::num_points)
+        .def_property_readonly("weights", &DomainQuadrature3d::weights, copy)
         .def("positions", &positions<TensorBSpline<double, 3>, 3>,
              py::arg("patch"), py::arg("grid"));
 }
