@@ -175,6 +175,28 @@ def test_planar():
     np.testing.assert_allclose(quadrature.positions, centres)
 
 
+def test_nurbs_surface():
+    """The points on a NURBS quarter cylinder lie at its radius."""
+    # Quadratic around, with the weights of a circular arc, and linear
+    # along, with weights that change along it too
+    corner = np.sqrt(.5)
+    arc = np.array([[2., 0.], [2., 2.], [0., 2.]])
+    net = np.vstack([np.column_stack([arc, np.full(3, height)])
+                     for height in (0., 3.)])
+    weights = np.outer([1., 2.5], [1., corner, 1.]).ravel()
+
+    cylinder = iguana.create_surface(degrees=(2, 1),
+                                     knots=([0., 0., 0., 1., 1., 1.],
+                                            [0., 0., 1., 1.]),
+                                     control_points=net, weights=weights)
+    quadrature = DomainQuadrature(cylinder)
+    quadrature.fill_gauss_legendre(CellType.inside, 3)
+    positions = quadrature.positions
+
+    np.testing.assert_allclose(np.hypot(positions[:, 0], positions[:, 1]),
+                               2.)
+
+
 def test_trimmed_surface():
     """Moment fitting on the cut cells of a trimmed surface integrates the
     area and first moments of the trimmed region."""

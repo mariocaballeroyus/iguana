@@ -24,12 +24,14 @@ def test_invalid_arguments():
 
 
 def test_control_net():
-    """The patch of a block carries its basis and a net spanning it."""
+    """The patch of a block carries its basis and a net spanning it, of unit
+    weights."""
     patch = iguana.create_box(lengths=LENGTHS, elements=(3, 2, 2),
                               degrees=(2, 3, 1))
     points = patch.control_points
 
     assert patch.degrees == (2, 3, 1)
+    assert np.array_equal(patch.weights, np.ones(len(points)))
 
     # A direction of degree p and n elements carries p + n functions,
     # and p + 1 more knots than functions
@@ -246,3 +248,64 @@ def test_surface_from_isosurface():
             assert copy.degree == curve.degree
             assert np.array_equal(copy.knots, curve.knots)
             assert np.allclose(copy.control_points, curve.control_points)
+
+
+def test_curves():
+    """A curve lies in the plane or in space, as its control points do, and
+    weights make it rational."""
+    knots = [0., 0., 0., .5, 1., 1., 1.]
+    planar = np.array([[0., 0.], [1., 2.], [2., 0.], [3., 1.]])
+    spatial = np.column_stack([planar, [0., 1., 2., 3.]])
+    weights = np.array([1., .5, 2., 1.])
+
+    plain = iguana.create_curve(degree=2, knots=knots, control_points=planar)
+    rational = iguana.create_curve(degree=2, knots=knots,
+                                   control_points=spatial, weights=weights)
+
+    assert plain.degree == rational.degree == 2
+    assert np.array_equal(plain.knots, knots)
+    assert np.array_equal(plain.control_points, planar)
+    assert np.array_equal(rational.control_points, spatial)
+    assert np.array_equal(plain.weights, np.ones(4))
+    assert np.array_equal(rational.weights, weights)
+
+
+def test_curve_invalid_arguments():
+    """The factory rejects points that lie neither in the plane nor in
+    space, and weights that are not positive."""
+    knots = [0., 0., 0., 1., 1., 1.]
+
+    with pytest.raises(ValueError):
+        iguana.create_curve(degree=2, knots=knots,
+                            control_points=np.zeros((3, 4)))
+
+    with pytest.raises(ValueError):
+        iguana.create_curve(degree=2, knots=knots,
+                            control_points=np.zeros((3, 2)),
+                            weights=[1., 0., 1.])
+
+
+def test_nurbs_isocurve():
+    """An isocurve of a NURBS surface blends the rows of the net around its
+    knot line by their weights."""
+    knots = ([0., 0., 0., 1., 1., 1.], [0., 0., 0., .5, 1., 1., 1.])
+    function = np.arange(12)
+    net = np.column_stack([function % 3, function // 3, np.sin(function)])
+    weights = 1. + .5 * np.cos(function)
+
+    surface = iguana.create_surface(degrees=(2, 2), knots=knots,
+                                    control_points=net, weights=weights)
+
+    # The curves pinned in the first direction come first, at its two knot
+    # lines, then those pinned in the second, the middle one at v = 1/2
+    curve = surface.isocurves()[3]
+
+    # There the two middle rows of the second direction weigh 1/2 each
+    rows = net.reshape(4, 3, 3)
+    row_weights = weights.reshape(4, 3)
+    total = row_weights[1] + row_weights[2]
+    blend = (row_weights[1, :, None] * rows[1]
+             + row_weights[2, :, None] * rows[2]) / total[:, None]
+
+    assert np.allclose(curve.weights, .5 * total)
+    assert np.allclose(curve.control_points, blend)
