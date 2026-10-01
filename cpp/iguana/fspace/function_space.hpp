@@ -10,7 +10,7 @@
 
 #include "iguana/basis/tensor_bspline.hpp"
 #include "iguana/basis/tensor_nurbs.hpp"
-#include "iguana/embedding/embedding.hpp"
+#include "iguana/embedding/embedded_domain.hpp"
 #include "iguana/fspace/dof_map.hpp"
 
 namespace iguana
@@ -27,9 +27,9 @@ namespace iguana
  * active_on_element() of the basis, so that the basis values pair with them
  * directly. Outside cells list no degrees of freedom
  *
- * The space covers the cells its embedding does not mark outside, so a
- * method integrating a smaller region, such as the inside cells alone,
- * passes the embedding of that region
+ * The space covers the cells its domain does not mark outside, so a method
+ * integrating a smaller region, such as the inside cells alone, passes that
+ * region as its domain
  *
  * @tparam Basis Basis whose functions span the space, TensorBSpline or
  *         TensorNURBS
@@ -45,18 +45,19 @@ public:
     static constexpr std::size_t dimension = Basis::dimension;
 
     /**
-     * @brief Constructs the space of a basis on the physical domain that an
-     *        embedding places on its elements
+     * @brief Constructs the space of a basis on a physical domain embedded
+     *        in its elements
      *
      * @param basis Basis whose functions span the space
-     * @param embedding Cell type of each element of the basis grid. With
-     *        every cell inside, each function gets the degree of freedom of
-     *        its own index
+     * @param domain Cell type of each element of the basis grid. With every
+     *        cell inside, each function gets the degree of freedom of its
+     *        own index
      *
-     * @throws std::invalid_argument If the embedding does not have one cell
-     *         type per element
+     * @throws std::invalid_argument If the domain does not have one cell type
+     *         per element
      */
-    FunctionSpace(Basis basis, const Embedding<Scalar, dimension>& embedding);
+    FunctionSpace(Basis basis,
+                  const EmbeddedDomain<Scalar, dimension>& domain);
 
     /// @brief Basis whose functions span the space
     constexpr const Basis& basis() const noexcept

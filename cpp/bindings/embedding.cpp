@@ -18,8 +18,8 @@ namespace iguana::bindings
 namespace
 {
 
-using SurfaceEmbedding = Embedding<double, 2>;
-using VolumeEmbedding = Embedding<double, 3>;
+using SurfaceEmbedding = EmbeddedDomain<double, 2>;
+using VolumeEmbedding = EmbeddedDomain<double, 3>;
 
 } // namespace
 

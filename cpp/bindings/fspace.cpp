@@ -60,7 +60,8 @@ Eigen::VectorXi functions(const FunctionSpace<Basis>& space)
 void fspace(py::module_& module)
 {
     py::class_<FunctionSpace2d>(module, "FunctionSpace2d")
-        .def(py::init<TensorBSpline<double, 2>, const Embedding<double, 2>&>(),
+        .def(py::init<TensorBSpline<double, 2>,
+                      const EmbeddedDomain<double, 2>&>(),
              py::arg("basis"), py::arg("embedding"))
         .def_property_readonly("num_dofs",
                                &num_dofs<TensorBSpline<double, 2>>)
@@ -68,7 +69,8 @@ void fspace(py::module_& module)
                                &functions<TensorBSpline<double, 2>>);
 
     py::class_<FunctionSpace3d>(module, "FunctionSpace3d")
-        .def(py::init<TensorBSpline<double, 3>, const Embedding<double, 3>&>(),
+        .def(py::init<TensorBSpline<double, 3>,
+                      const EmbeddedDomain<double, 3>&>(),
              py::arg("basis"), py::arg("embedding"))
         .def_property_readonly("num_dofs",
                                &num_dofs<TensorBSpline<double, 3>>)
@@ -76,7 +78,8 @@ void fspace(py::module_& module)
                                &functions<TensorBSpline<double, 3>>);
 
     py::class_<NURBSFunctionSpace2d>(module, "NURBSFunctionSpace2d")
-        .def(py::init<TensorNURBS<double, 2>, const Embedding<double, 2>&>(),
+        .def(py::init<TensorNURBS<double, 2>,
+                      const EmbeddedDomain<double, 2>&>(),
              py::arg("basis"), py::arg("embedding"))
         .def_property_readonly("num_dofs",
                                &num_dofs<TensorNURBS<double, 2>>)

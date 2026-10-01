@@ -31,11 +31,11 @@ using VolumeQuadrature = DomainQuadrature<double, 3>;
 template<std::size_t d>
 void fill_gauss_legendre(DomainQuadrature<double, d>& quadrature,
                          const HierarchicalGrid<double, d>& grid,
-                         const Embedding<double, d>& embedding,
+                         const EmbeddedDomain<double, d>& domain,
                          CellType cell_type,
                          const std::array<int, d>& num_points)
 {
-    quadrature.fill(grid, embedding, cell_type,
+    quadrature.fill(grid, domain, cell_type,
                     GaussLegendre<double, d>(num_points));
 }
 
@@ -45,11 +45,11 @@ void fill_gauss_legendre(DomainQuadrature<double, d>& quadrature,
 template<std::size_t d>
 void fill_moment_fitting(DomainQuadrature<double, d>& quadrature,
                          const HierarchicalGrid<double, d>& grid,
-                         const Embedding<double, d>& embedding,
+                         const EmbeddedDomain<double, d>& domain,
                          CellType cell_type, const Eigen::MatrixXd& vertices,
                          const Eigen::MatrixXi& facets, int order)
 {
-    quadrature.fill(grid, embedding, cell_type,
+    quadrature.fill(grid, domain, cell_type,
                     MomentFitting<double, d>(vertices, facets, order));
 }
 

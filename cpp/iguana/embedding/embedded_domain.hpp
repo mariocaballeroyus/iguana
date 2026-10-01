@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef IGUANA_EMBEDDING_EMBEDDING_HPP
-#define IGUANA_EMBEDDING_EMBEDDING_HPP
+#ifndef IGUANA_EMBEDDING_EMBEDDED_DOMAIN_HPP
+#define IGUANA_EMBEDDING_EMBEDDED_DOMAIN_HPP
 
 #include <concepts>
 #include <cstddef>
@@ -19,7 +19,7 @@ namespace iguana
  *        to the physical domain
  *
  * The type is geometric only. How each type of cell is integrated is up to
- * the method built on the embedding
+ * the method built on the domain
  */
 enum class CellType : std::uint8_t
 {
@@ -34,30 +34,29 @@ enum class CellType : std::uint8_t
 };
 
 /**
- * @brief Embedding of a physical domain in the elements of a background
- *        grid
+ * @brief Physical domain embedded in the elements of a background grid
  *
- * The embedding tells how the physical domain lies on the elements, with
- * the cell type of each one. The cell types are given rather than
- * computed, and the embedding holds no geometry of the solid
+ * The domain tells how it lies on the elements, with the cell type of each
+ * one. The cell types are given rather than computed, and the domain holds
+ * no geometry of the solid
  *
  * @tparam T Floating-point type
  * @tparam d Number of parametric directions
  */
 template<std::floating_point T, std::size_t d>
-class Embedding
+class EmbeddedDomain
 {
 public:
     /// @brief Number of parametric directions
     static constexpr std::size_t dimension = d;
 
     /**
-     * @brief Constructs the embedding from the cell type of each element
+     * @brief Constructs the domain from the cell type of each element
      *
      * @param cell_types Cell type of each element, in the numbering of the
      *        grid
      */
-    explicit Embedding(std::vector<CellType> cell_types);
+    explicit EmbeddedDomain(std::vector<CellType> cell_types);
 
     /// @brief Number of elements, one per cell type
     constexpr int num_elements() const noexcept
@@ -80,4 +79,4 @@ private:
 
 } // namespace iguana
 
-#endif // IGUANA_EMBEDDING_EMBEDDING_HPP
+#endif // IGUANA_EMBEDDING_EMBEDDED_DOMAIN_HPP
