@@ -34,6 +34,9 @@ class TensorBSpline
                          "the parametric dimension must be positive");
 
 public:
+    /// @brief Floating-point type
+    using Scalar = T;
+
     /// @brief Number of parametric directions.
     static constexpr std::size_t dimension = d;
 

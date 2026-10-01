@@ -25,11 +25,11 @@ namespace iguana::bindings
 namespace
 {
 
-using PlanarCurvePatch = Patch<double, 1, 2>;
-using PlanarPatch = Patch<double, 2, 2>;
-using CurvePatch = Patch<double, 1, 3>;
-using SurfacePatch = Patch<double, 2, 3>;
-using VolumePatch = Patch<double, 3, 3>;
+using PlanarCurvePatch = Patch<TensorBSpline<double, 1>, 2>;
+using PlanarPatch = Patch<TensorBSpline<double, 2>, 2>;
+using CurvePatch = Patch<TensorBSpline<double, 1>, 3>;
+using SurfacePatch = Patch<TensorBSpline<double, 2>, 3>;
+using VolumePatch = Patch<TensorBSpline<double, 3>, 3>;
 
 /**
  * @brief Axes of a basis, leaving out the one of a given direction
@@ -65,9 +65,9 @@ std::array<BSpline<double>, d - 1> other_axes(
  *      isopatches() ensures
  */
 template<std::size_t d, std::size_t n>
-Patch<double, d - 1, n> isopatch(const Patch<double, d, n>& patch,
-                                 std::size_t direction,
-                                 int line)
+Patch<TensorBSpline<double, d - 1>, n> isopatch(
+    const Patch<TensorBSpline<double, d>, n>& patch, std::size_t direction,
+    int line)
 {
     static_assert(d > 1, "isopatch: "
                          "a patch needs a direction to keep");
@@ -125,7 +125,7 @@ Patch<double, d - 1, n> isopatch(const Patch<double, d, n>& patch,
         ++function;
     } while (next_lexicographic(index, counts));
 
-    return Patch<double, d - 1, n>(
+    return Patch<TensorBSpline<double, d - 1>, n>(
         TensorBSpline<double, d - 1>(other_axes(
             basis, direction, std::make_index_sequence<d - 1>{})),
         std::move(coefficients));
@@ -140,10 +140,10 @@ Patch<double, d - 1, n> isopatch(const Patch<double, d, n>& patch,
  *         increasing order
  */
 template<std::size_t d, std::size_t n>
-std::vector<Patch<double, d - 1, n>> isopatches(
-    const Patch<double, d, n>& patch)
+std::vector<Patch<TensorBSpline<double, d - 1>, n>> isopatches(
+    const Patch<TensorBSpline<double, d>, n>& patch)
 {
-    std::vector<Patch<double, d - 1, n>> result;
+    std::vector<Patch<TensorBSpline<double, d - 1>, n>> result;
 
     for (std::size_t direction = 0; direction < d; ++direction) {
         // n elements are bounded by the knot lines 0 to n

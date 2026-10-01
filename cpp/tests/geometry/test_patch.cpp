@@ -82,7 +82,7 @@ void check_affine(const TensorBSpline<double, d>& basis,
         coefficients.row(fun) = (map * node + shift).transpose();
     }
 
-    const Patch<double, d, n> patch(basis, coefficients);
+    const Patch<TensorBSpline<double, d>, n> patch(basis, coefficients);
     Eigen::MatrixXd values;
     Eigen::VectorXi actives;
     iguana::PointMatrix<double, n> positions;
@@ -148,7 +148,7 @@ void check_affine(const TensorBSpline<double, d>& basis,
 
 TEST_CASE("Patch requires one control point per basis function", "[patch]")
 {
-    using Surface = Patch<double, 2, 3>;
+    using Surface = Patch<TensorBSpline<double, 2>, 3>;
 
     const TensorBSpline<double, 2> basis({quadratic(), cubic()});
     const int expected = basis.num_functions();

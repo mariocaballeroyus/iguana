@@ -13,9 +13,8 @@ namespace iguana
 
 using Eigen::placeholders::all;
 
-template<std::floating_point T, std::size_t d, std::size_t n>
-Patch<T, d, n>::Patch(TensorBSpline<T, d> basis,
-                      PointMatrix<T, n> coefficients)
+template<typename Basis, std::size_t n>
+Patch<Basis, n>::Patch(Basis basis, PointMatrix<Scalar, n> coefficients)
     : basis_(std::move(basis)),
       coefficients_(std::move(coefficients))
 {
@@ -25,10 +24,10 @@ Patch<T, d, n>::Patch(TensorBSpline<T, d> basis,
                                     "basis function");
 }
 
-template<std::floating_point T, std::size_t d, std::size_t n>
-void Patch<T, d, n>::position_on_element(const Eigen::VectorXi& actives,
-                                         const Eigen::MatrixX<T>& values,
-                                         PointMatrix<T, n>& positions) const
+template<typename Basis, std::size_t n>
+void Patch<Basis, n>::position_on_element(
+    const Eigen::VectorXi& actives, const Eigen::MatrixX<Scalar>& values,
+    PointMatrix<Scalar, n>& positions) const
 {
     // Reuse the output buffer when its shape is unchanged
     positions.resize(values.cols(), n);
@@ -38,13 +37,13 @@ void Patch<T, d, n>::position_on_element(const Eigen::VectorXi& actives,
     positions.noalias() = values.transpose() * coefficients_(actives, all);
 }
 
-template<std::floating_point T, std::size_t d, std::size_t n>
-void Patch<T, d, n>::tangent_on_element(
+template<typename Basis, std::size_t n>
+void Patch<Basis, n>::tangent_on_element(
     const Eigen::VectorXi& actives,
-    const std::array<Eigen::MatrixX<T>, d>& gradients,
-    std::array<PointMatrix<T, n>, d>& tangents) const
+    const std::array<Eigen::MatrixX<Scalar>, dim>& gradients,
+    std::array<PointMatrix<Scalar, n>, dim>& tangents) const
 {
-    for (std::size_t direction = 0; direction < d; ++direction) {
+    for (std::size_t direction = 0; direction < dim; ++direction) {
         // Weight the control points of the active functions by the
         // derivatives of their functions along the direction
         tangents[direction].noalias() =
@@ -53,11 +52,16 @@ void Patch<T, d, n>::tangent_on_element(
 }
 
 // Curves in the plane and in space, planar regions, surfaces in space and
-// volumes
-template class Patch<double, 1, 2>;
-template class Patch<double, 1, 3>;
-template class Patch<double, 2, 2>;
-template class Patch<double, 2, 3>;
-template class Patch<double, 3, 3>;
+// volumes, on B-splines and on NURBS
+template class Patch<TensorBSpline<double, 1>, 2>;
+template class Patch<TensorBSpline<double, 1>, 3>;
+template class Patch<TensorBSpline<double, 2>, 2>;
+template class Patch<TensorBSpline<double, 2>, 3>;
+template class Patch<TensorBSpline<double, 3>, 3>;
+template class Patch<TensorNURBS<double, 1>, 2>;
+template class Patch<TensorNURBS<double, 1>, 3>;
+template class Patch<TensorNURBS<double, 2>, 2>;
+template class Patch<TensorNURBS<double, 2>, 3>;
+template class Patch<TensorNURBS<double, 3>, 3>;
 
 } // namespace iguana

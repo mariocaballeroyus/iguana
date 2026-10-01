@@ -88,7 +88,7 @@ int element_holding(const KnotVector<double>& knots, double parameter)
 template<std::size_t d, std::size_t n>
 PointMatrix<double, n> positions(
     const DomainQuadrature<double, d>& quadrature,
-    const Patch<double, d, n>& patch,
+    const Patch<TensorBSpline<double, d>, n>& patch,
     const HierarchicalDomain<double, d>& domain)
 {
     const TensorBSpline<double, d>& basis = patch.basis();

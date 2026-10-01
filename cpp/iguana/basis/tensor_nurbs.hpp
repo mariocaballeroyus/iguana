@@ -38,6 +38,9 @@ template<std::floating_point T, std::size_t d>
 class TensorNURBS
 {
 public:
+    /// @brief Floating-point type
+    using Scalar = T;
+
     /// @brief Number of parametric directions
     static constexpr std::size_t dimension = d;
 
