@@ -26,7 +26,8 @@ class FunctionSpace:
     """The standard space of a patch, one degree of freedom per function
     active on the physical domain."""
 
-    _cpp_object: _cpp.FunctionSpace2d | _cpp.FunctionSpace3d
+    _cpp_object: (_cpp.FunctionSpace2d | _cpp.FunctionSpace3d
+                  | _cpp.NURBSFunctionSpace2d)
 
     def __init__(self, patch: PlanarPatch | SurfacePatch | VolumePatch,
                  cell_types: Sequence[CellType] | None = None) -> None:
@@ -48,8 +49,13 @@ class FunctionSpace:
             space = _cpp.FunctionSpace3d
             embedding = _cpp.VolumeEmbedding
         elif isinstance(patch, (PlanarPatch, SurfacePatch)):
-            space = _cpp.FunctionSpace2d
             embedding = _cpp.SurfaceEmbedding
+
+            # A NURBS surface spans its space with its rational functions
+            if isinstance(patch._cpp_object, _cpp.NURBSSurfacePatch):
+                space = _cpp.NURBSFunctionSpace2d
+            else:
+                space = _cpp.FunctionSpace2d
         else:
             raise TypeError('the patch must be a planar, surface or volume '
                             'patch')

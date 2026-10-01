@@ -16,10 +16,13 @@ from iguana import cpp as _cpp
 class CurvePatch:
     """A spline map from an interval into the plane or into space."""
 
-    _cpp_object: _cpp.PlanarCurvePatch | _cpp.CurvePatch
+    _cpp_object: (_cpp.PlanarCurvePatch | _cpp.CurvePatch
+                  | _cpp.NURBSPlanarCurvePatch | _cpp.NURBSCurvePatch)
 
     def __init__(self,
-                 curve: _cpp.PlanarCurvePatch | _cpp.CurvePatch) -> None:
+                 curve: (_cpp.PlanarCurvePatch | _cpp.CurvePatch
+                         | _cpp.NURBSPlanarCurvePatch
+                         | _cpp.NURBSCurvePatch)) -> None:
         """Initialize the curve from a C++ curve.
 
         Args:
@@ -42,6 +45,19 @@ class CurvePatch:
         """Control points, of shape `(num_control_points, 2)` in the plane
         and `(num_control_points, 3)` in space."""
         return self._cpp_object.coefficients
+
+    @property
+    def weights(self) -> npt.NDArray[np.float64]:
+        """Weight of each control point, of shape `(num_control_points,)`.
+
+        A B-spline curve has unit weights.
+        """
+        basis = self._cpp_object.basis
+
+        if isinstance(basis, _cpp.UnivariateNURBS):
+            return basis.weights
+
+        return np.ones(len(self.control_points))
 
     def __repr__(self) -> str:
         return (f'CurvePatch(degree={self.degree}, '
@@ -86,6 +102,14 @@ class PlanarPatch:
         """
         return self._cpp_object.coefficients
 
+    @property
+    def weights(self) -> npt.NDArray[np.float64]:
+        """Weight of each control point, of shape `(num_control_points,)`.
+
+        Planar patches are B-spline patches, so their weights are ones.
+        """
+        return np.ones(len(self.control_points))
+
     def isocurves(self) -> list[CurvePatch]:
         """Isocurves of the patch along all of its knot lines, in the plane.
 
@@ -102,9 +126,10 @@ class PlanarPatch:
 class SurfacePatch:
     """A spline map from a two-dimensional parameter box into space."""
 
-    _cpp_object: _cpp.SurfacePatch
+    _cpp_object: _cpp.SurfacePatch | _cpp.NURBSSurfacePatch
 
-    def __init__(self, patch: _cpp.SurfacePatch) -> None:
+    def __init__(self,
+                 patch: _cpp.SurfacePatch | _cpp.NURBSSurfacePatch) -> None:
         """Initialize the patch from a C++ patch.
 
         Args:
@@ -135,6 +160,19 @@ class SurfacePatch:
         They are numbered with the first direction running fastest.
         """
         return self._cpp_object.coefficients
+
+    @property
+    def weights(self) -> npt.NDArray[np.float64]:
+        """Weight of each control point, of shape `(num_control_points,)`.
+
+        A B-spline surface has unit weights.
+        """
+        basis = self._cpp_object.basis
+
+        if isinstance(basis, _cpp.BivariateNURBS):
+            return basis.weights
+
+        return np.ones(len(self.control_points))
 
     def isocurves(self) -> list[CurvePatch]:
         """Isocurves of the patch along all of its knot lines.
@@ -186,6 +224,14 @@ class VolumePatch:
         long as the patch does.
         """
         return self._cpp_object.coefficients
+
+    @property
+    def weights(self) -> npt.NDArray[np.float64]:
+        """Weight of each control point, of shape `(num_control_points,)`.
+
+        Volume patches are B-spline patches, so their weights are ones.
+        """
+        return np.ones(len(self.control_points))
 
     def isosurfaces(self) -> list[SurfacePatch]:
         """Isosurfaces of the patch along all of its knot planes.
@@ -321,8 +367,10 @@ def create_curve(
     degree: int,
     knots: npt.ArrayLike,
     control_points: npt.ArrayLike,
+    weights: npt.ArrayLike | None = None,
 ) -> CurvePatch:
-    """Create the patch of a B-spline curve from its control points.
+    """Create the patch of a B-spline or NURBS curve from its control
+    points.
 
     The curve lies in the plane or in space, as its control points have two
     or three coordinates.
@@ -332,6 +380,8 @@ def create_curve(
         knots: Full, non-decreasing knot vector.
         control_points: Control points, of shape `(num_control_points, 2)`
             in the plane or `(num_control_points, 3)` in space.
+        weights: Positive weight of each control point, which makes the
+            curve a NURBS curve. Without them it is a B-spline curve.
 
     Returns:
         The patch of the curve.
@@ -339,7 +389,8 @@ def create_curve(
     Raises:
         ValueError: If the control points do not have two or three
             coordinates, if the knot vector is invalid for the degree, or if
-            there is not one control point per basis function.
+            there is not one control point, and one positive weight when
+            given, per basis function.
     """
     points = np.asarray(control_points, float)
 
@@ -351,20 +402,25 @@ def create_curve(
         axes=[_cpp.BSpline(degree=degree,
                            knots=np.asarray(knots, float).tolist())])
 
-    if points.shape[1] == 2:
-        curve = _cpp.PlanarCurvePatch(basis=basis, coefficients=points)
+    if weights is None:
+        planar, spatial = _cpp.PlanarCurvePatch, _cpp.CurvePatch
     else:
-        curve = _cpp.CurvePatch(basis=basis, coefficients=points)
+        basis = _cpp.UnivariateNURBS(bspline=basis,
+                                     weights=np.asarray(weights, float))
+        planar, spatial = _cpp.NURBSPlanarCurvePatch, _cpp.NURBSCurvePatch
 
-    return CurvePatch(curve)
+    curve = planar if points.shape[1] == 2 else spatial
+
+    return CurvePatch(curve(basis=basis, coefficients=points))
 
 
 def create_surface(
     degrees: Sequence[int],
     knots: Sequence[npt.ArrayLike],
     control_points: npt.ArrayLike,
+    weights: npt.ArrayLike | None = None,
 ) -> SurfacePatch:
-    """Create the patch of a B-spline surface from its control net.
+    """Create the patch of a B-spline or NURBS surface from its control net.
 
     Args:
         degrees: Polynomial degree of each parametric direction.
@@ -372,6 +428,9 @@ def create_surface(
         control_points: Control points, of shape
             `(num_control_points, 3)`, numbered with the first direction
             running fastest.
+        weights: Positive weight of each control point, in the same
+            numbering, which makes the surface a NURBS surface. Without
+            them it is a B-spline surface.
 
     Returns:
         The patch of the surface.
@@ -379,7 +438,8 @@ def create_surface(
     Raises:
         ValueError: If there are not two degrees and two knot vectors, if
             a knot vector is invalid for its degree, or if there is not
-            one control point per basis function.
+            one control point, and one positive weight when given, per
+            basis function.
     """
     if len(degrees) != 2 or len(knots) != 2:
         raise ValueError('there must be two degrees and two knot vectors, '
@@ -392,4 +452,11 @@ def create_surface(
 
     points = np.asarray(control_points, float).reshape(-1, 3)
 
-    return SurfacePatch(_cpp.SurfacePatch(basis=basis, coefficients=points))
+    if weights is None:
+        surface = _cpp.SurfacePatch
+    else:
+        basis = _cpp.BivariateNURBS(bspline=basis,
+                                    weights=np.asarray(weights, float))
+        surface = _cpp.NURBSSurfacePatch
+
+    return SurfacePatch(surface(basis=basis, coefficients=points))
