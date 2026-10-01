@@ -20,12 +20,12 @@ namespace iguana::bindings
 namespace
 {
 
-using FunctionSpace2d = FunctionSpace<double, 2>;
-using FunctionSpace3d = FunctionSpace<double, 3>;
+using FunctionSpace2d = FunctionSpace<TensorBSpline<double, 2>>;
+using FunctionSpace3d = FunctionSpace<TensorBSpline<double, 3>>;
 
 /// @brief Number of degrees of freedom, read from the map of the space
 template<std::size_t d>
-int num_dofs(const FunctionSpace<double, d>& space)
+int num_dofs(const FunctionSpace<TensorBSpline<double, d>>& space)
 {
     return space.dof_map().num_dofs();
 }
@@ -33,7 +33,8 @@ int num_dofs(const FunctionSpace<double, d>& space)
 /// @brief Basis function of each degree of freedom, which ties it to a
 ///        control point of the patch
 template<std::size_t d>
-Eigen::VectorXi functions(const FunctionSpace<double, d>& space)
+Eigen::VectorXi functions(
+    const FunctionSpace<TensorBSpline<double, d>>& space)
 {
     const DofMap& dof_map = space.dof_map();
     Eigen::VectorXi result(dof_map.num_dofs());

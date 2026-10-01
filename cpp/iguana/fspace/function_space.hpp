@@ -6,10 +6,10 @@
 #ifndef IGUANA_FSPACE_FUNCTION_SPACE_HPP
 #define IGUANA_FSPACE_FUNCTION_SPACE_HPP
 
-#include <concepts>
 #include <cstddef>
 
 #include "iguana/basis/tensor_bspline.hpp"
+#include "iguana/basis/tensor_nurbs.hpp"
 #include "iguana/embedding/embedding.hpp"
 #include "iguana/fspace/dof_map.hpp"
 
@@ -23,23 +23,26 @@ namespace iguana
  * A function active on a cell that is not outside the physical domain gets
  * a degree of freedom, numbered in increasing function index, and one
  * supported on outside cells alone gets none. On a cell that is not
- * outside, the k-th degree of freedom belongs to the k-th function of
- * TensorBSpline::active_on_element(), so that the basis values pair with
- * them directly. Outside cells list no degrees of freedom
+ * outside, the k-th degree of freedom belongs to the k-th function of the
+ * active_on_element() of the basis, so that the basis values pair with them
+ * directly. Outside cells list no degrees of freedom
  *
  * The space covers the cells its embedding does not mark outside, so a
  * method integrating a smaller region, such as the inside cells alone,
  * passes the embedding of that region
  *
- * @tparam T Floating-point type
- * @tparam d Number of parametric directions
+ * @tparam Basis Basis whose functions span the space, TensorBSpline or
+ *         TensorNURBS
  */
-template<std::floating_point T, std::size_t d>
+template<typename Basis>
 class FunctionSpace
 {
 public:
+    /// @brief Floating-point type of the basis
+    using Scalar = typename Basis::Scalar;
+
     /// @brief Number of parametric directions
-    static constexpr std::size_t dimension = d;
+    static constexpr std::size_t dimension = Basis::dimension;
 
     /**
      * @brief Constructs the space of a basis on the physical domain that an
@@ -53,11 +56,10 @@ public:
      * @throws std::invalid_argument If the embedding does not have one cell
      *         type per element
      */
-    FunctionSpace(TensorBSpline<T, d> basis,
-                  const Embedding<T, d>& embedding);
+    FunctionSpace(Basis basis, const Embedding<Scalar, dimension>& embedding);
 
     /// @brief Basis whose functions span the space
-    constexpr const TensorBSpline<T, d>& basis() const noexcept
+    constexpr const Basis& basis() const noexcept
     { return basis_; }
 
     /// @brief Degrees of freedom of each element of the basis domain
@@ -66,7 +68,7 @@ public:
 
 private:
     /// @brief Basis whose functions span the space
-    TensorBSpline<T, d> basis_;
+    Basis basis_;
 
     /// @brief Degrees of freedom of each element, built from the basis
     DofMap dof_map_;

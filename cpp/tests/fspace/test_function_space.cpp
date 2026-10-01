@@ -21,7 +21,7 @@ using iguana::KnotVector;
 using iguana::TensorBSpline;
 using iguana::TensorDomain;
 
-using Space = iguana::FunctionSpace<double, 2>;
+using Space = iguana::FunctionSpace<TensorBSpline<double, 2>>;
 
 /// @brief Basis over uneven knot spans, with three elements along the first
 ///        direction and two along the second
