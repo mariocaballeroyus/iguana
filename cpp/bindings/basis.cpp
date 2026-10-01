@@ -27,6 +27,7 @@ void basis(py::module_& module)
         });
 
     py::class_<TensorBSpline<double, 1>>(module, "UnivariateBSpline")
+        .def(py::init<std::array<BSpline<double>, 1>>(), py::arg("axes"))
         .def("axis", &TensorBSpline<double, 1>::axis);
 
     py::class_<TensorBSpline<double, 2>>(module, "BivariateBSpline")

@@ -161,6 +161,8 @@ std::vector<Patch<TensorBSpline<double, d - 1>, n>> isopatches(
 void patch(py::module_& module)
 {
     py::class_<PlanarCurvePatch>(module, "PlanarCurvePatch")
+        .def(py::init<TensorBSpline<double, 1>, PointMatrix<double, 2>>(),
+             py::arg("basis"), py::arg("coefficients"))
         .def_property_readonly("basis", &PlanarCurvePatch::basis)
         .def_property_readonly("coefficients",
                                &PlanarCurvePatch::coefficients);
@@ -173,6 +175,8 @@ void patch(py::module_& module)
         .def("isocurves", &isopatches<2, 2>);
 
     py::class_<CurvePatch>(module, "CurvePatch")
+        .def(py::init<TensorBSpline<double, 1>, PointMatrix<double, 3>>(),
+             py::arg("basis"), py::arg("coefficients"))
         .def_property_readonly("basis", &CurvePatch::basis)
         .def_property_readonly("coefficients", &CurvePatch::coefficients);
 
