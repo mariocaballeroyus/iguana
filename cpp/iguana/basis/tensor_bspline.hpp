@@ -92,6 +92,21 @@ public:
     void active_on_element(int element, Eigen::VectorXi& actives) const;
 
     /**
+     * @brief Functions that are non-zero on the element with the given first
+     *        active functions
+     *
+     * The indices follow the order of the overload taking the element index
+     *
+     * @param first_active First active function in each direction
+     * @param actives Output vector of num_active() function indices. It is
+     *        resized when necessary
+     *
+     * @pre @p first_active belongs to an existing element
+     */
+    void active_on_element(const std::array<int, d>& first_active,
+                           Eigen::VectorXi& actives) const;
+
+    /**
      * @brief Evaluates the non-zero functions on an element
      *
      * Each value is the product of one univariate value per direction

@@ -61,17 +61,28 @@ void TensorBSpline<T, d>::active_on_element(
 {
     // Decode the flat element index, with the first direction fastest
     std::array<int, d> first_active{};
-    std::array<int, d> active_counts{};
-    std::array<int, d> function_counts{};
 
     for (std::size_t direction = 0; direction < d; ++direction) {
         const BSpline<T>& axis = axes_[direction];
         const int axis_element = element % axis.knots().num_elements();
 
         first_active[direction] = axis.first_active(axis_element);
-        active_counts[direction] = axis.num_active();
-        function_counts[direction] = axis.num_functions();
         element /= axis.knots().num_elements();
+    }
+
+    active_on_element(first_active, actives);
+}
+
+template<std::floating_point T, std::size_t d>
+void TensorBSpline<T, d>::active_on_element(
+    const std::array<int, d>& first_active, Eigen::VectorXi& actives) const
+{
+    std::array<int, d> active_counts{};
+    std::array<int, d> function_counts{};
+
+    for (std::size_t direction = 0; direction < d; ++direction) {
+        active_counts[direction] = axes_[direction].num_active();
+        function_counts[direction] = axes_[direction].num_functions();
     }
 
     actives.resize(num_active_);
