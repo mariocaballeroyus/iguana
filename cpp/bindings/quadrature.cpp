@@ -85,13 +85,14 @@ int element_holding(const KnotVector<double>& knots, double parameter)
  *         have the knots of the patch, or if an element of the quadrature
  *         lies outside the domain
  */
-template<std::size_t d, std::size_t n>
+template<typename Basis, std::size_t n>
 PointMatrix<double, n> positions(
-    const DomainQuadrature<double, d>& quadrature,
-    const Patch<TensorBSpline<double, d>, n>& patch,
-    const HierarchicalDomain<double, d>& domain)
+    const DomainQuadrature<double, Basis::dimension>& quadrature,
+    const Patch<Basis, n>& patch,
+    const HierarchicalDomain<double, Basis::dimension>& domain)
 {
-    const TensorBSpline<double, d>& basis = patch.basis();
+    constexpr std::size_t d = Basis::dimension;
+    const Basis& basis = patch.basis();
 
     for (std::size_t direction = 0; direction < d; ++direction) {
         const KnotVector<double>& coarse = domain.level(0).knots(direction);
@@ -184,10 +185,12 @@ void quadrature(py::module_& module)
                                &SurfaceQuadrature::num_elements)
         .def_property_readonly("num_points", &SurfaceQuadrature::num_points)
         .def_property_readonly("weights", &SurfaceQuadrature::weights, copy)
-        .def("positions", &positions<2, 2>, py::arg("patch"),
-             py::arg("domain"))
-        .def("positions", &positions<2, 3>, py::arg("patch"),
-             py::arg("domain"));
+        .def("positions", &positions<TensorBSpline<double, 2>, 2>,
+             py::arg("patch"), py::arg("domain"))
+        .def("positions", &positions<TensorBSpline<double, 2>, 3>,
+             py::arg("patch"), py::arg("domain"))
+        .def("positions", &positions<TensorNURBS<double, 2>, 3>,
+             py::arg("patch"), py::arg("domain"));
 
     py::class_<VolumeQuadrature>(module, "VolumeQuadrature")
         .def(py::init<>())
@@ -201,8 +204,8 @@ void quadrature(py::module_& module)
                                &VolumeQuadrature::num_elements)
         .def_property_readonly("num_points", &VolumeQuadrature::num_points)
         .def_property_readonly("weights", &VolumeQuadrature::weights, copy)
-        .def("positions", &positions<3, 3>, py::arg("patch"),
-             py::arg("domain"));
+        .def("positions", &positions<TensorBSpline<double, 3>, 3>,
+             py::arg("patch"), py::arg("domain"));
 }
 
 } // namespace iguana::bindings
