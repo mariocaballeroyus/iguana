@@ -39,8 +39,8 @@ class CurvePatch:
 
     @property
     def control_points(self) -> npt.NDArray[np.float64]:
-        """Control points, of shape ``(num_control_points, 2)`` in the plane
-        and ``(num_control_points, 3)`` in space."""
+        """Control points, of shape `(num_control_points, 2)` in the plane
+        and `(num_control_points, 3)` in space."""
         return self._cpp_object.coefficients
 
     def __repr__(self) -> str:
@@ -80,7 +80,7 @@ class PlanarPatch:
 
     @property
     def control_points(self) -> npt.NDArray[np.float64]:
-        """Control points, of shape ``(num_control_points, 2)``.
+        """Control points, of shape `(num_control_points, 2)`.
 
         They are numbered with the first direction running fastest.
         """
@@ -130,7 +130,7 @@ class SurfacePatch:
 
     @property
     def control_points(self) -> npt.NDArray[np.float64]:
-        """Control points, of shape ``(num_control_points, 3)``.
+        """Control points, of shape `(num_control_points, 3)`.
 
         They are numbered with the first direction running fastest.
         """
@@ -180,7 +180,7 @@ class VolumePatch:
 
     @property
     def control_points(self) -> npt.NDArray[np.float64]:
-        """Control points, of shape ``(num_control_points, 3)``.
+        """Control points, of shape `(num_control_points, 3)`.
 
         A read-only view of the patch, not a copy. It stays valid for as
         long as the patch does.
@@ -317,6 +317,48 @@ def create_box(
     return VolumePatch(_cpp.VolumePatch(basis=basis, coefficients=points))
 
 
+def create_curve(
+    degree: int,
+    knots: npt.ArrayLike,
+    control_points: npt.ArrayLike,
+) -> CurvePatch:
+    """Create the patch of a B-spline curve from its control points.
+
+    The curve lies in the plane or in space, as its control points have two
+    or three coordinates.
+
+    Args:
+        degree: Polynomial degree of the curve.
+        knots: Full, non-decreasing knot vector.
+        control_points: Control points, of shape `(num_control_points, 2)`
+            in the plane or `(num_control_points, 3)` in space.
+
+    Returns:
+        The patch of the curve.
+
+    Raises:
+        ValueError: If the control points do not have two or three
+            coordinates, if the knot vector is invalid for the degree, or if
+            there is not one control point per basis function.
+    """
+    points = np.asarray(control_points, float)
+
+    if points.ndim != 2 or points.shape[1] not in (2, 3):
+        raise ValueError('the control points must have two or three '
+                         'coordinates')
+
+    basis = _cpp.UnivariateBSpline(
+        axes=[_cpp.BSpline(degree=degree,
+                           knots=np.asarray(knots, float).tolist())])
+
+    if points.shape[1] == 2:
+        curve = _cpp.PlanarCurvePatch(basis=basis, coefficients=points)
+    else:
+        curve = _cpp.CurvePatch(basis=basis, coefficients=points)
+
+    return CurvePatch(curve)
+
+
 def create_surface(
     degrees: Sequence[int],
     knots: Sequence[npt.ArrayLike],
@@ -328,7 +370,7 @@ def create_surface(
         degrees: Polynomial degree of each parametric direction.
         knots: Full, non-decreasing knot vector of each direction.
         control_points: Control points, of shape
-            ``(num_control_points, 3)``, numbered with the first direction
+            `(num_control_points, 3)`, numbered with the first direction
             running fastest.
 
     Returns:
