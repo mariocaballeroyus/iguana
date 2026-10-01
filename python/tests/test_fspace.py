@@ -39,6 +39,20 @@ def test_every_cell_inside():
     assert np.array_equal(space.control_points, patch.control_points)
 
 
+def test_nurbs_surface():
+    """A NURBS surface spans its space with its rational functions."""
+    net = [[0., 0., 0.], [1., 0., 1.], [0., 1., 1.], [1., 1., 0.]]
+    surface = iguana.create_surface(degrees=(1, 1),
+                                    knots=([0., 0., 1., 1.],
+                                           [0., 0., 1., 1.]),
+                                    control_points=net,
+                                    weights=[1., 2., 3., 4.])
+    space = FunctionSpace(surface)
+
+    assert space.num_dofs == 4
+    assert np.array_equal(space.control_points, surface.control_points)
+
+
 def test_invalid_arguments():
     with pytest.raises(TypeError):
         FunctionSpace('patch')

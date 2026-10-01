@@ -13,6 +13,7 @@
 #include <Eigen/Core>
 
 #include "iguana/basis/tensor_bspline.hpp"
+#include "iguana/basis/tensor_nurbs.hpp"
 
 namespace iguana
 {
@@ -28,28 +29,33 @@ template<std::floating_point T, std::size_t n>
 using PointMatrix = Eigen::Matrix<T, Eigen::Dynamic, n, Eigen::RowMajor>;
 
 /**
- * @brief Tensor-product B-spline patch, a map from the parameter box into
- *        physical space
+ * @brief Tensor-product B-spline or NURBS patch, a map from the parameter
+ *        box into physical space
  *
  * The patch pairs a basis with one control point per basis function, so that
  * a parameter maps to physical space. A physical space of more dimensions
  * than parametric directions makes the patch a curve or surface in it, such
  * as a shell, and one of as many a domain, such as a planar region
  *
- * @tparam T Floating-point type of the control points
- * @tparam d Number of parametric directions
- * @tparam n Dimension of the physical space, at least d
+ * @tparam Basis Tensor-product basis of the map, TensorBSpline or
+ *         TensorNURBS
+ * @tparam n Dimension of the physical space, at least the number of
+ *         parametric directions
  */
-template<std::floating_point T, std::size_t d, std::size_t n>
+template<typename Basis, std::size_t n>
 class Patch
 {
-    static_assert(d <= n, "Patch: "
-                          "the physical space needs a dimension per "
-                          "parametric direction");
+    static_assert(Basis::dimension <= n,
+                  "Patch: "
+                  "the physical space needs a dimension per parametric "
+                  "direction");
 
 public:
+    /// @brief Floating-point type of the control points
+    using Scalar = typename Basis::Scalar;
+
     /// @brief Number of parametric directions
-    static constexpr std::size_t dim = d;
+    static constexpr std::size_t dim = Basis::dimension;
 
     /**
      * @brief Constructs the patch from a basis and its control points
@@ -61,10 +67,10 @@ public:
      * @throws std::invalid_argument If the rows do not match the number of
      *         basis functions
      */
-    Patch(TensorBSpline<T, d> basis, PointMatrix<T, n> coefficients);
+    Patch(Basis basis, PointMatrix<Scalar, n> coefficients);
 
     /// @brief Basis of the map
-    constexpr const TensorBSpline<T, d>& basis() const noexcept
+    constexpr const Basis& basis() const noexcept
     { return basis_; }
 
     /**
@@ -73,7 +79,7 @@ public:
      * @pre The patch outlives any reference taken to them, which a binding
      *      may expose without copying
      */
-    constexpr const PointMatrix<T, n>& coefficients() const noexcept
+    constexpr const PointMatrix<Scalar, n>& coefficients() const noexcept
     { return coefficients_; }
 
     /**
@@ -94,8 +100,8 @@ public:
      *      checked
      */
     void position_on_element(const Eigen::VectorXi& actives,
-                             const Eigen::MatrixX<T>& values,
-                             PointMatrix<T, n>& positions) const;
+                             const Eigen::MatrixX<Scalar>& values,
+                             PointMatrix<Scalar, n>& positions) const;
 
     /**
      * @brief Tangents of the patch at points of an element, the derivatives
@@ -114,16 +120,17 @@ public:
      * @pre @p actives and @p gradients come from the same element. It is not
      *      checked
      */
-    void tangent_on_element(const Eigen::VectorXi& actives,
-                            const std::array<Eigen::MatrixX<T>, d>& gradients,
-                            std::array<PointMatrix<T, n>, d>& tangents) const;
+    void tangent_on_element(
+        const Eigen::VectorXi& actives,
+        const std::array<Eigen::MatrixX<Scalar>, dim>& gradients,
+        std::array<PointMatrix<Scalar, n>, dim>& tangents) const;
 
 private:
     /// @brief Basis of the map
-    TensorBSpline<T, d> basis_;
+    Basis basis_;
 
     /// @brief Control points, one row per basis function
-    PointMatrix<T, n> coefficients_;
+    PointMatrix<Scalar, n> coefficients_;
 };
 
 } // namespace iguana

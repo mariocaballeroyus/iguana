@@ -20,20 +20,21 @@ namespace iguana::bindings
 namespace
 {
 
-using FunctionSpace2d = FunctionSpace<double, 2>;
-using FunctionSpace3d = FunctionSpace<double, 3>;
+using FunctionSpace2d = FunctionSpace<TensorBSpline<double, 2>>;
+using FunctionSpace3d = FunctionSpace<TensorBSpline<double, 3>>;
+using NURBSFunctionSpace2d = FunctionSpace<TensorNURBS<double, 2>>;
 
 /// @brief Number of degrees of freedom, read from the map of the space
-template<std::size_t d>
-int num_dofs(const FunctionSpace<double, d>& space)
+template<typename Basis>
+int num_dofs(const FunctionSpace<Basis>& space)
 {
     return space.dof_map().num_dofs();
 }
 
 /// @brief Basis function of each degree of freedom, which ties it to a
 ///        control point of the patch
-template<std::size_t d>
-Eigen::VectorXi functions(const FunctionSpace<double, d>& space)
+template<typename Basis>
+Eigen::VectorXi functions(const FunctionSpace<Basis>& space)
 {
     const DofMap& dof_map = space.dof_map();
     Eigen::VectorXi result(dof_map.num_dofs());
@@ -61,14 +62,26 @@ void fspace(py::module_& module)
     py::class_<FunctionSpace2d>(module, "FunctionSpace2d")
         .def(py::init<TensorBSpline<double, 2>, const Embedding<double, 2>&>(),
              py::arg("basis"), py::arg("embedding"))
-        .def_property_readonly("num_dofs", &num_dofs<2>)
-        .def_property_readonly("functions", &functions<2>);
+        .def_property_readonly("num_dofs",
+                               &num_dofs<TensorBSpline<double, 2>>)
+        .def_property_readonly("functions",
+                               &functions<TensorBSpline<double, 2>>);
 
     py::class_<FunctionSpace3d>(module, "FunctionSpace3d")
         .def(py::init<TensorBSpline<double, 3>, const Embedding<double, 3>&>(),
              py::arg("basis"), py::arg("embedding"))
-        .def_property_readonly("num_dofs", &num_dofs<3>)
-        .def_property_readonly("functions", &functions<3>);
+        .def_property_readonly("num_dofs",
+                               &num_dofs<TensorBSpline<double, 3>>)
+        .def_property_readonly("functions",
+                               &functions<TensorBSpline<double, 3>>);
+
+    py::class_<NURBSFunctionSpace2d>(module, "NURBSFunctionSpace2d")
+        .def(py::init<TensorNURBS<double, 2>, const Embedding<double, 2>&>(),
+             py::arg("basis"), py::arg("embedding"))
+        .def_property_readonly("num_dofs",
+                               &num_dofs<TensorNURBS<double, 2>>)
+        .def_property_readonly("functions",
+                               &functions<TensorNURBS<double, 2>>);
 }
 
 } // namespace iguana::bindings

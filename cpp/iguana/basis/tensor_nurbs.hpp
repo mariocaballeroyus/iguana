@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef IGUANA_BASIS_TENSOR_BSPLINE_HPP
-#define IGUANA_BASIS_TENSOR_BSPLINE_HPP
+#ifndef IGUANA_BASIS_TENSOR_NURBS_HPP
+#define IGUANA_BASIS_TENSOR_NURBS_HPP
 
 #include <array>
 #include <concepts>
@@ -12,107 +12,85 @@
 
 #include <Eigen/Core>
 
-#include "bspline.hpp"
+#include "tensor_bspline.hpp"
 #include "iguana/domain/tensor_domain.hpp"
 
 namespace iguana
 {
 
 /**
- * @brief Tensor-product B-spline basis.
+ * @brief Tensor-product NURBS basis, the rational form of a tensor-product
+ *        B-spline basis
  *
- * The basis is the product of one univariate B-spline basis per parametric
- * direction.
+ * Each function is a B-spline scaled by its weight and divided by the weight
+ * function, the sum of all weighted B-splines
  *
- * @tparam T Floating-point type.
- * @tparam d Number of parametric directions.
+ *     R_i = w_i N_i / W,    W = sum_j w_j N_j
+ *
+ * There is one weight per tensor-product function. The weights do not factor
+ * per direction in general, so the basis is not a product of univariate
+ * NURBS bases
+ *
+ * @tparam T Floating-point type
+ * @tparam d Number of parametric directions
  */
 template<std::floating_point T, std::size_t d>
-class TensorBSpline
+class TensorNURBS
 {
-    static_assert(d > 0, "TensorBSpline: "
-                         "the parametric dimension must be positive");
-
 public:
     /// @brief Floating-point type
     using Scalar = T;
 
-    /// @brief Number of parametric directions.
+    /// @brief Number of parametric directions
     static constexpr std::size_t dimension = d;
 
     /**
-     * @brief Constructs the basis on a domain, with one univariate basis on
-     *        the knot vector of each direction
+     * @brief Constructs the rational form of a B-spline basis
      *
-     * @param domain Domain holding the knot vector of each direction
+     * @param bspline B-spline basis that the weights rationalize
+     * @param weights One weight per function, in the numbering of the basis
      *
-     * @throws std::invalid_argument If a degree exceeds BSpline::max_degree
+     * @throws std::invalid_argument If there is not one weight per basis
+     *         function, or if a weight is not positive
      */
-    explicit TensorBSpline(TensorDomain<T, d> domain);
+    TensorNURBS(TensorBSpline<T, d> bspline, Eigen::VectorX<T> weights);
 
-    /**
-     * @brief Constructs a tensor-product B-spline basis.
-     *
-     * @param axes Univariate basis of each parametric direction.
-     */
-    explicit TensorBSpline(std::array<BSpline<T>, d> axes);
+    /// @brief B-spline basis that the weights rationalize
+    constexpr const TensorBSpline<T, d>& bspline() const noexcept
+    { return bspline_; }
+
+    /// @brief Weights, one per basis function
+    constexpr const Eigen::VectorX<T>& weights() const noexcept
+    { return weights_; }
 
     /// @brief Domain, whose elements the basis is defined on
     constexpr const TensorDomain<T, d>& domain() const noexcept
-    { return domain_; }
+    { return bspline_.domain(); }
 
-    /**
-     * @brief Univariate basis of a parametric direction.
-     *
-     * @param direction Direction index.
-     * @return Basis associated with the direction.
-     *
-     * @pre @p direction lies in [0, dimension).
-     */
-    constexpr const BSpline<T>& axis(std::size_t direction) const noexcept
-    { return axes_[direction]; }
-
-    /// @brief Number of tensor-product basis functions.
+    /// @brief Number of basis functions
     constexpr int num_functions() const noexcept
-    { return num_functions_; }
+    { return bspline_.num_functions(); }
 
-    /// @brief Number of functions active on each element.
+    /// @brief Number of functions active on each element
     constexpr int num_active() const noexcept
-    { return num_active_; }
+    { return bspline_.num_active(); }
 
     /**
-     * @brief Functions that are non-zero on an element.
+     * @brief Functions that are non-zero on an element, those of the
+     *        B-spline basis
      *
-     * The returned indices follow the tensor-product numbering, with the
-     * first parametric direction running fastest.
-     *
-     * @param element Element index.
-     * @param actives Output vector of num_active() function indices. It is
-     *        resized when necessary.
-     *
-     * @pre @p element lies in [0, domain().num_elements())
-     */
-    void active_on_element(int element, Eigen::VectorXi& actives) const;
-
-    /**
-     * @brief Functions that are non-zero on the element with the given first
-     *        active functions
-     *
-     * The indices follow the order of the overload taking the element index
-     *
-     * @param first_active First active function in each direction
+     * @param element Element index
      * @param actives Output vector of num_active() function indices. It is
      *        resized when necessary
      *
-     * @pre @p first_active belongs to an existing element
+     * @pre @p element lies in [0, domain().num_elements())
      */
-    void active_on_element(const std::array<int, d>& first_active,
-                           Eigen::VectorXi& actives) const;
+    void active_on_element(int element, Eigen::VectorXi& actives) const
+    { bspline_.active_on_element(element, actives); }
 
     /**
      * @brief Evaluates the non-zero functions on an element
      *
-     * Each value is the product of one univariate value per direction
      * The rows follow the order of active_on_element()
      *
      * @param first_active First active function in each direction
@@ -132,8 +110,10 @@ public:
      * @brief Evaluates the non-zero functions on an element and their
      *        gradients
      *
-     * The derivative along a direction differentiates the univariate factor
-     * of that direction alone
+     * The derivative along a direction a follows from those of the weighted
+     * B-splines and of the weight function
+     *
+     *     d_a R_i = (w_i d_a N_i - R_i d_a W) / W
      *
      * @param first_active First active function in each direction
      * @param points Evaluation points, with size (num_points, dimension)
@@ -155,10 +135,13 @@ public:
      * @brief Evaluates the non-zero functions on an element, their gradients
      *        and their Hessians
      *
-     * A second derivative differentiates the univariate factors of its
-     * directions, twice for a pure one and once each for a mixed one. They
-     * are ordered pure first, then mixed in lexicographic order of their
-     * directions: xx, yy, zz, xy, xz, yz
+     * Differentiating R_i W = w_i N_i along directions a and b gives
+     *
+     *     d_ab R_i = (w_i d_ab N_i - d_a R_i d_b W - d_b R_i d_a W
+     *                 - R_i d_ab W) / W
+     *
+     * They are ordered pure first, then mixed in lexicographic order of
+     * their directions: xx, yy, zz, xy, xz, yz
      *
      * @param first_active First active function in each direction
      * @param points Evaluation points, with size (num_points, dimension)
@@ -178,19 +161,13 @@ public:
         std::array<Eigen::MatrixX<T>, d * (d + 1) / 2>& hessians) const;
 
 private:
-    /// @brief Domain, with the knot vector of each direction
-    TensorDomain<T, d> domain_;
+    /// @brief B-spline basis that the weights rationalize
+    TensorBSpline<T, d> bspline_;
 
-    /// @brief Univariate bases, one per parametric direction.
-    std::array<BSpline<T>, d> axes_;
-
-    /// @brief Product of the univariate function counts.
-    int num_functions_;
-
-    /// @brief Product of the univariate active-function counts.
-    int num_active_;
+    /// @brief Weights, one per basis function
+    Eigen::VectorX<T> weights_;
 };
 
 } // namespace iguana
 
-#endif // IGUANA_BASIS_TENSOR_BSPLINE_HPP
+#endif // IGUANA_BASIS_TENSOR_NURBS_HPP

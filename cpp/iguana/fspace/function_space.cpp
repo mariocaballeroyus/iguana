@@ -17,9 +17,10 @@ namespace
 
 /// @brief Degrees of freedom of the functions active on the cells that are
 ///        not outside, numbered in increasing function index
-template<std::floating_point T, std::size_t d>
-DofMap standard_dof_map(const TensorBSpline<T, d>& basis,
-                        const Embedding<T, d>& embedding)
+template<typename Basis>
+DofMap standard_dof_map(
+    const Basis& basis,
+    const Embedding<typename Basis::Scalar, Basis::dimension>& embedding)
 {
     const int num_elements = basis.domain().num_elements();
 
@@ -62,16 +63,19 @@ DofMap standard_dof_map(const TensorBSpline<T, d>& basis,
 
 } // namespace
 
-template<std::floating_point T, std::size_t d>
-FunctionSpace<T, d>::FunctionSpace(TensorBSpline<T, d> basis,
-                                   const Embedding<T, d>& embedding)
+template<typename Basis>
+FunctionSpace<Basis>::FunctionSpace(
+    Basis basis, const Embedding<Scalar, dimension>& embedding)
     : basis_(std::move(basis)),
       dof_map_(standard_dof_map(basis_, embedding))
 {
 }
 
-template class FunctionSpace<double, 1>;
-template class FunctionSpace<double, 2>;
-template class FunctionSpace<double, 3>;
+template class FunctionSpace<TensorBSpline<double, 1>>;
+template class FunctionSpace<TensorBSpline<double, 2>>;
+template class FunctionSpace<TensorBSpline<double, 3>>;
+template class FunctionSpace<TensorNURBS<double, 1>>;
+template class FunctionSpace<TensorNURBS<double, 2>>;
+template class FunctionSpace<TensorNURBS<double, 3>>;
 
 } // namespace iguana

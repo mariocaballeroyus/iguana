@@ -8,6 +8,7 @@
 
 #include "basis/bspline.hpp"
 #include "basis/tensor_bspline.hpp"
+#include "basis/tensor_nurbs.hpp"
 #include "domain/hierarchical_domain.hpp"
 #include "domain/hierarchical_domain_iterator.hpp"
 #include "domain/knot_vector.hpp"
