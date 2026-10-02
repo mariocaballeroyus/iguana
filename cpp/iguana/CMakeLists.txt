@@ -7,7 +7,7 @@ add_library(iguana
     grid/knot_vector.cpp
     grid/tensor_grid.cpp
     grid/tensor_grid_iterator.cpp
-    embedding/embedding.cpp
+    embedding/embedded_domain.cpp
     fspace/dof_map.cpp
     fspace/function_space.cpp
     geometry/patch.cpp

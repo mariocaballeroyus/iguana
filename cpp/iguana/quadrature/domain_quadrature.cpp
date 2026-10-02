@@ -63,13 +63,13 @@ DomainQuadrature<T, d>::DomainQuadrature(Eigen::VectorXi elements,
 template<std::floating_point T, std::size_t d>
 template<typename Grid, typename Rule>
 void DomainQuadrature<T, d>::fill(const Grid& grid,
-                                  const Embedding<T, d>& embedding,
+                                  const EmbeddedDomain<T, d>& domain,
                                   CellType cell_type, const Rule& rule)
 {
-    if (embedding.num_elements() != grid.num_elements())
+    if (domain.num_elements() != grid.num_elements())
         throw std::invalid_argument("DomainQuadrature: "
-                                    "the embedding must have one cell type "
-                                    "per element");
+                                    "the domain must have one cell type per "
+                                    "element");
 
     // Elements already held, which the new cells must not repeat
     std::vector<bool> held(grid.num_elements(), false);
@@ -86,7 +86,7 @@ void DomainQuadrature<T, d>::fill(const Grid& grid,
     int num_cells = 0;
 
     for (int element = 0; element < grid.num_elements(); ++element) {
-        if (embedding.cell_type(element) != cell_type)
+        if (domain.cell_type(element) != cell_type)
             continue;
 
         if (held[element])
@@ -113,7 +113,7 @@ void DomainQuadrature<T, d>::fill(const Grid& grid,
     int cell = 0;
 
     for (const auto& element : grid) {
-        if (embedding.cell_type(element.index()) != cell_type)
+        if (domain.cell_type(element.index()) != cell_type)
             continue;
 
         // Filled on the reference cell, then mapped onto the cell in place
@@ -159,37 +159,37 @@ template class DomainQuadrature<double, 2>;
 template class DomainQuadrature<double, 3>;
 
 template void DomainQuadrature<double, 1>::fill(
-    const TensorGrid<double, 1>&, const Embedding<double, 1>&,
+    const TensorGrid<double, 1>&, const EmbeddedDomain<double, 1>&,
     CellType, const GaussLegendre<double, 1>&);
 template void DomainQuadrature<double, 2>::fill(
-    const TensorGrid<double, 2>&, const Embedding<double, 2>&,
+    const TensorGrid<double, 2>&, const EmbeddedDomain<double, 2>&,
     CellType, const GaussLegendre<double, 2>&);
 template void DomainQuadrature<double, 3>::fill(
-    const TensorGrid<double, 3>&, const Embedding<double, 3>&,
+    const TensorGrid<double, 3>&, const EmbeddedDomain<double, 3>&,
     CellType, const GaussLegendre<double, 3>&);
 
 template void DomainQuadrature<double, 2>::fill(
-    const TensorGrid<double, 2>&, const Embedding<double, 2>&,
+    const TensorGrid<double, 2>&, const EmbeddedDomain<double, 2>&,
     CellType, const MomentFitting<double, 2>&);
 template void DomainQuadrature<double, 3>::fill(
-    const TensorGrid<double, 3>&, const Embedding<double, 3>&,
+    const TensorGrid<double, 3>&, const EmbeddedDomain<double, 3>&,
     CellType, const MomentFitting<double, 3>&);
 
 template void DomainQuadrature<double, 1>::fill(
-    const HierarchicalGrid<double, 1>&, const Embedding<double, 1>&,
+    const HierarchicalGrid<double, 1>&, const EmbeddedDomain<double, 1>&,
     CellType, const GaussLegendre<double, 1>&);
 template void DomainQuadrature<double, 2>::fill(
-    const HierarchicalGrid<double, 2>&, const Embedding<double, 2>&,
+    const HierarchicalGrid<double, 2>&, const EmbeddedDomain<double, 2>&,
     CellType, const GaussLegendre<double, 2>&);
 template void DomainQuadrature<double, 3>::fill(
-    const HierarchicalGrid<double, 3>&, const Embedding<double, 3>&,
+    const HierarchicalGrid<double, 3>&, const EmbeddedDomain<double, 3>&,
     CellType, const GaussLegendre<double, 3>&);
 
 template void DomainQuadrature<double, 2>::fill(
-    const HierarchicalGrid<double, 2>&, const Embedding<double, 2>&,
+    const HierarchicalGrid<double, 2>&, const EmbeddedDomain<double, 2>&,
     CellType, const MomentFitting<double, 2>&);
 template void DomainQuadrature<double, 3>::fill(
-    const HierarchicalGrid<double, 3>&, const Embedding<double, 3>&,
+    const HierarchicalGrid<double, 3>&, const EmbeddedDomain<double, 3>&,
     CellType, const MomentFitting<double, 3>&);
 
 } // namespace iguana

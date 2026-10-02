@@ -16,7 +16,7 @@ namespace
 
 using Catch::Matchers::WithinRel;
 using iguana::CellType;
-using iguana::Embedding;
+using iguana::EmbeddedDomain;
 using iguana::KnotVector;
 using iguana::TensorBSpline;
 using iguana::TensorGrid;
@@ -34,9 +34,9 @@ TensorBSpline<double, 2> uneven()
 
 /// @brief Inside cells, except those of the last column along the first
 ///        direction, which take the given type
-Embedding<double, 2> with_last_column(CellType type)
+EmbeddedDomain<double, 2> with_last_column(CellType type)
 {
-    return Embedding<double, 2>({CellType::inside, CellType::inside, type,
+    return EmbeddedDomain<double, 2>({CellType::inside, CellType::inside, type,
                                  CellType::inside, CellType::inside, type});
 }
 
@@ -52,13 +52,13 @@ double integral(const KnotVector<double>& knot_vector, int function)
 /// @brief Integral of the function of each degree of freedom over the
 ///        inside cells, assembled through the map of the space
 Eigen::VectorXd integrals(const Space& space,
-                          const Embedding<double, 2>& embedding)
+                          const EmbeddedDomain<double, 2>& domain)
 {
     const TensorBSpline<double, 2>& basis = space.basis();
 
     // Two points per direction integrate the quadratic functions exactly
     iguana::DomainQuadrature<double, 2> quadrature;
-    quadrature.fill(basis.grid(), embedding, CellType::inside,
+    quadrature.fill(basis.grid(), domain, CellType::inside,
                     iguana::GaussLegendre<double, 2>(2));
 
     Eigen::VectorXd result =
@@ -67,7 +67,7 @@ Eigen::VectorXd integrals(const Space& space,
     int held = 0;
 
     for (const auto& element : basis.grid()) {
-        if (embedding.cell_type(element.index()) != CellType::inside)
+        if (domain.cell_type(element.index()) != CellType::inside)
             continue;
 
         const int first = quadrature.offsets()(held);
@@ -90,11 +90,11 @@ Eigen::VectorXd integrals(const Space& space,
 TEST_CASE("Integrating through the degrees of freedom gives the integral "
           "of every function", "[fspace]")
 {
-    const Embedding<double, 2> embedding = with_last_column(CellType::inside);
-    const Space space(uneven(), embedding);
+    const EmbeddedDomain<double, 2> domain = with_last_column(CellType::inside);
+    const Space space(uneven(), domain);
     const TensorBSpline<double, 2>& basis = space.basis();
 
-    const Eigen::VectorXd computed = integrals(space, embedding);
+    const Eigen::VectorXd computed = integrals(space, domain);
     const int count = basis.axis(0).num_functions();
 
     REQUIRE(computed.size() == basis.num_functions());
@@ -112,8 +112,9 @@ TEST_CASE("Integrating through the degrees of freedom gives the integral "
 TEST_CASE("Functions supported on outside cells alone get no degree of "
           "freedom", "[fspace]")
 {
-    const Embedding<double, 2> embedding = with_last_column(CellType::outside);
-    const Space space(uneven(), embedding);
+    const EmbeddedDomain<double, 2> domain =
+        with_last_column(CellType::outside);
+    const Space space(uneven(), domain);
     const iguana::DofMap& dof_map = space.dof_map();
 
     // The last function along the first direction lives on the last column
@@ -121,13 +122,13 @@ TEST_CASE("Functions supported on outside cells alone get no degree of "
     REQUIRE(dof_map.num_dofs() == space.basis().num_functions() - 3);
 
     for (int element = 0; element < dof_map.num_elements(); ++element) {
-        if (embedding.cell_type(element) == CellType::outside)
+        if (domain.cell_type(element) == CellType::outside)
             REQUIRE(dof_map.dofs_on_element(element).empty());
     }
 
     // Every degree of freedom is non-zero inside, and the functions sum to
     // one over the inside cells, the parameters [0, 2] x [0, 4]
-    const Eigen::VectorXd computed = integrals(space, embedding);
+    const Eigen::VectorXd computed = integrals(space, domain);
 
     REQUIRE((computed.array() > 0.).all());
     REQUIRE_THAT(computed.sum(), WithinRel(8., 1e-12));
@@ -135,6 +136,7 @@ TEST_CASE("Functions supported on outside cells alone get no degree of "
 
 TEST_CASE("A space needs one cell type per element", "[fspace]")
 {
-    REQUIRE_THROWS_AS(Space(uneven(), Embedding<double, 2>({CellType::inside})),
-                      std::invalid_argument);
+    REQUIRE_THROWS_AS(
+        Space(uneven(), EmbeddedDomain<double, 2>({CellType::inside})),
+        std::invalid_argument);
 }

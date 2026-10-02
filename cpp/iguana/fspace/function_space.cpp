@@ -20,14 +20,14 @@ namespace
 template<typename Basis>
 DofMap standard_dof_map(
     const Basis& basis,
-    const Embedding<typename Basis::Scalar, Basis::dimension>& embedding)
+    const EmbeddedDomain<typename Basis::Scalar, Basis::dimension>& domain)
 {
     const int num_elements = basis.grid().num_elements();
 
-    if (embedding.num_elements() != num_elements)
+    if (domain.num_elements() != num_elements)
         throw std::invalid_argument("FunctionSpace: "
-                                    "the embedding must have one cell type "
-                                    "per element");
+                                    "the domain must have one cell type per "
+                                    "element");
 
     // Each cell that is not outside lists its active functions, an outside
     // cell none
@@ -36,7 +36,7 @@ DofMap standard_dof_map(
     Eigen::VectorXi actives;
 
     for (int element = 0; element < num_elements; ++element) {
-        if (embedding.cell_type(element) != CellType::outside) {
+        if (domain.cell_type(element) != CellType::outside) {
             basis.active_on_element(element, actives);
             functions.insert(functions.end(), actives.begin(), actives.end());
         }
@@ -65,9 +65,9 @@ DofMap standard_dof_map(
 
 template<typename Basis>
 FunctionSpace<Basis>::FunctionSpace(
-    Basis basis, const Embedding<Scalar, dimension>& embedding)
+    Basis basis, const EmbeddedDomain<Scalar, dimension>& domain)
     : basis_(std::move(basis)),
-      dof_map_(standard_dof_map(basis_, embedding))
+      dof_map_(standard_dof_map(basis_, domain))
 {
 }
 

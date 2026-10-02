@@ -14,7 +14,7 @@
 #include "grid/knot_vector.hpp"
 #include "grid/tensor_grid.hpp"
 #include "grid/tensor_grid_iterator.hpp"
-#include "embedding/embedding.hpp"
+#include "embedding/embedded_domain.hpp"
 #include "fspace/dof_map.hpp"
 #include "fspace/function_space.hpp"
 #include "geometry/patch.hpp"
