@@ -17,6 +17,7 @@
 #include "embedding/embedded_domain.hpp"
 #include "fspace/dof_map.hpp"
 #include "fspace/function_space.hpp"
+#include "geometry/boundary.hpp"
 #include "geometry/patch.hpp"
 #include "quadrature/box_rule.hpp"
 #include "quadrature/domain_quadrature.hpp"

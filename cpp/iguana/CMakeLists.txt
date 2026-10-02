@@ -10,6 +10,7 @@ add_library(iguana
     embedding/embedded_domain.cpp
     fspace/dof_map.cpp
     fspace/function_space.cpp
+    geometry/boundary.cpp
     geometry/patch.cpp
     quadrature/box_rule.cpp
     quadrature/domain_quadrature.cpp
