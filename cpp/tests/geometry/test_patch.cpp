@@ -8,8 +8,10 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <numbers>
 #include <stdexcept>
 
+#include <Eigen/LU>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
@@ -90,6 +92,7 @@ void check_affine(const TensorBSpline<double, d>& basis,
     iguana::PointMatrix<double, n> positions;
     std::array<Eigen::MatrixXd, d> gradients;
     std::array<iguana::PointMatrix<double, n>, d> tangents;
+    Eigen::VectorXd measures;
 
     for (int element = 0; element < basis.grid().num_elements();
          ++element) {
@@ -143,7 +146,57 @@ void check_affine(const TensorBSpline<double, d>& basis,
                     REQUIRE_THAT(tangents[dir](pt, c),
                                  WithinAbs(map(c, column), 1e-12));
         }
+
+        // Its measure is that of its linear part, the same at every point
+        double measure = 0.;
+
+        if constexpr (d == n)
+            measure = std::abs(map.determinant());
+        else if constexpr (d < n)
+            measure = std::sqrt((map.transpose() * map).determinant());
+
+        Patch<TensorBSpline<double, d>, n>::measure_on_element(tangents,
+                                                               measures);
+
+        for (Eigen::Index pt = 0; pt < points.rows(); ++pt)
+            REQUIRE_THAT(measures(pt), WithinAbs(measure, 1e-12));
     }
+}
+
+/// @brief Half annulus of radii 1 and 2 around the origin, the angle along
+///        the first direction and the radius along the second
+Patch<TensorNURBS<double, 2>, 2> half_annulus()
+{
+    // Two quarter circles of unit radius joined at a double knot, swept
+    // along a radius running linearly from 1 to 2
+    const TensorBSpline<double, 2> bspline(
+        {BSpline<double>(2, {0., 0., 0., .5, .5, 1., 1., 1.}),
+         BSpline<double>(1, {0., 0., 1., 1.})});
+
+    Eigen::Matrix<double, 5, 2> circle;
+    circle << 1., 0.,
+              1., 1.,
+              0., 1.,
+             -1., 1.,
+             -1., 0.;
+
+    const double corner = std::sqrt(.5);
+    Eigen::Vector<double, 5> circle_weights;
+    circle_weights << 1., corner, 1., corner, 1.;
+
+    // The weights vary along the first direction alone, so that a weight
+    // gathered along the wrong direction breaks the circle
+    Eigen::VectorXd weights(bspline.num_functions());
+    iguana::PointMatrix<double, 2> coefficients(bspline.num_functions(), 2);
+
+    for (int ring = 0; ring < 2; ++ring) {
+        for (int arc = 0; arc < 5; ++arc) {
+            weights(arc + 5 * ring) = circle_weights(arc);
+            coefficients.row(arc + 5 * ring) = (1. + ring) * circle.row(arc);
+        }
+    }
+
+    return {TensorNURBS<double, 2>(bspline, weights), coefficients};
 }
 
 } // namespace
@@ -203,37 +256,7 @@ TEST_CASE("Patch reproduces affine maps exactly", "[patch]")
 
 TEST_CASE("NURBS patch reproduces a half annulus exactly", "[patch]")
 {
-    // Two quarter circles of unit radius joined at a double knot, swept
-    // along a radius running linearly from 1 to 2
-    const TensorBSpline<double, 2> bspline(
-        {BSpline<double>(2, {0., 0., 0., .5, .5, 1., 1., 1.}),
-         BSpline<double>(1, {0., 0., 1., 1.})});
-
-    Eigen::Matrix<double, 5, 2> circle;
-    circle << 1., 0.,
-              1., 1.,
-              0., 1.,
-             -1., 1.,
-             -1., 0.;
-
-    const double corner = std::sqrt(.5);
-    Eigen::Vector<double, 5> circle_weights;
-    circle_weights << 1., corner, 1., corner, 1.;
-
-    // The weights vary along the first direction alone, so that a weight
-    // gathered along the wrong direction breaks the circle
-    Eigen::VectorXd weights(bspline.num_functions());
-    iguana::PointMatrix<double, 2> coefficients(bspline.num_functions(), 2);
-
-    for (int ring = 0; ring < 2; ++ring) {
-        for (int arc = 0; arc < 5; ++arc) {
-            weights(arc + 5 * ring) = circle_weights(arc);
-            coefficients.row(arc + 5 * ring) = (1. + ring) * circle.row(arc);
-        }
-    }
-
-    const Patch<TensorNURBS<double, 2>, 2> patch(
-        TensorNURBS<double, 2>(bspline, weights), coefficients);
+    const Patch<TensorNURBS<double, 2>, 2> patch = half_annulus();
     const TensorNURBS<double, 2>& basis = patch.basis();
 
     Eigen::MatrixXd values;
@@ -277,4 +300,62 @@ TEST_CASE("NURBS patch reproduces a half annulus exactly", "[patch]")
                              WithinAbs(position[c] / radius, 1e-13));
         }
     }
+}
+
+TEST_CASE("NURBS patch measures its area and maps gradients to physical "
+          "ones", "[patch]")
+{
+    const Patch<TensorNURBS<double, 2>, 2> patch = half_annulus();
+    const TensorNURBS<double, 2>& basis = patch.basis();
+    const iguana::GaussLegendre<double, 2> rule({8, 8});
+
+    Eigen::MatrixXd points;
+    Eigen::VectorXd weights;
+    Eigen::MatrixXd values;
+    Eigen::VectorXi actives;
+    Eigen::VectorXd measures;
+    std::array<Eigen::MatrixXd, 2> gradients;
+    std::array<Eigen::MatrixXd, 2> physical_gradients;
+    std::array<iguana::PointMatrix<double, 2>, 2> tangents;
+    double area = 0.;
+
+    for (const auto& element : basis.grid()) {
+        INFO("element " << element.index());
+
+        rule.fill_to_reference_space(element.start(), element.end(), points,
+                                     weights);
+        iguana::BoxRule<double, 2>::map_to_parameter_space(
+            element.start(), element.end(), points, weights);
+
+        basis.active_on_element(element.index(), actives);
+        basis.grad_on_element(element.first_active(), points, values,
+                              gradients);
+        patch.tangent_on_element(actives, gradients, tangents);
+        Patch<TensorNURBS<double, 2>, 2>::measure_on_element(tangents,
+                                                             measures);
+        Patch<TensorNURBS<double, 2>, 2>::physical_grad_on_element(
+            tangents, gradients, physical_gradients);
+
+        area += weights.dot(measures);
+
+        // The map is the sum of the control points times their functions,
+        // so its physical gradient, the identity, is that of the functions
+        const iguana::PointMatrix<double, 2> net =
+            patch.coefficients()(actives, Eigen::placeholders::all);
+
+        for (Eigen::Index pt = 0; pt < points.rows(); ++pt) {
+            INFO("point " << pt);
+            Eigen::Matrix2d identity;
+
+            for (Eigen::Index c = 0; c < 2; ++c)
+                identity.col(c) =
+                    net.transpose() * physical_gradients[c].col(pt);
+
+            REQUIRE((identity - Eigen::Matrix2d::Identity())
+                        .cwiseAbs().maxCoeff() < 1e-13);
+        }
+    }
+
+    // A rational map is integrated to the convergence of the Gauss rule
+    REQUIRE_THAT(area, WithinAbs(1.5 * std::numbers::pi, 1e-9));
 }

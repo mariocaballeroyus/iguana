@@ -125,6 +125,47 @@ public:
         const std::array<Eigen::MatrixX<Scalar>, dim>& gradients,
         std::array<PointMatrix<Scalar, n>, dim>& tangents) const;
 
+    /**
+     * @brief Measure of the patch at points of an element, the factor that
+     *        turns a parametric measure into a physical one
+     *
+     * It is |det J| when the patch has as many directions as its space, and
+     * sqrt(det(J^T J)) otherwise: the length of the tangent along a curve
+     * and the area its tangents span on a surface
+     *
+     * @param tangents Tangents at the points, one buffer of size
+     *        (num_points,n) per direction, as given by tangent_on_element()
+     * @param measures Output vector of size num_points, resized if its size
+     *        changes
+     */
+    static void measure_on_element(
+        const std::array<PointMatrix<Scalar, n>, dim>& tangents,
+        Eigen::VectorX<Scalar>& measures);
+
+    /**
+     * @brief Gradients in physical space of the active functions at points
+     *        of an element, from their parametric gradients
+     *
+     * By the chain rule, the physical gradient is J^-T times the parametric
+     * one, so that the gradients of all active functions at a point share
+     * one inverse
+     *
+     * @param tangents Tangents at the points, one buffer of size
+     *        (num_points,n) per direction, as given by tangent_on_element()
+     * @param gradients Derivatives of the active functions along each
+     *        direction, each of size (num_active,num_points), as given by
+     *        grad_on_element()
+     * @param physical_gradients Output with one matrix per coordinate of the
+     *        space, each of the size of the gradients, resized when necessary
+     *
+     * @pre J is invertible at every point
+     */
+    static void physical_grad_on_element(
+        const std::array<PointMatrix<Scalar, n>, dim>& tangents,
+        const std::array<Eigen::MatrixX<Scalar>, dim>& gradients,
+        std::array<Eigen::MatrixX<Scalar>, n>& physical_gradients)
+        requires (dim == n);
+
 private:
     /// @brief Basis of the map
     Basis basis_;

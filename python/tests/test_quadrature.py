@@ -121,10 +121,13 @@ def test_hierarchical_grid():
     quadrature.fill_gauss_legendre(CellType.inside, (2, 1, 1))
 
     # A B-spline integrates to (t[i + p + 1] - t[i]) / (p + 1), and the
-    # control points run with the first direction fastest
+    # control points run with the first direction fastest. The bend shears
+    # z along x, which keeps the measure at 8, the volume of the block over
+    # its unit cube of parameters
     integrals = [(knots[degree + 1:] - knots[:-degree - 1]) / (degree + 1)
                  for degree, knots in zip(patch.degrees, patch.knots)]
-    exact = np.kron(integrals[2], np.kron(integrals[1], integrals[0])) @ net
+    exact = 8. * np.kron(integrals[2],
+                         np.kron(integrals[1], integrals[0])) @ net
 
     assert quadrature.num_elements == 29
     np.testing.assert_allclose(quadrature.weights @ quadrature.positions,
@@ -142,9 +145,8 @@ def test_moment_fitting():
     quadrature.fill_gauss_legendre(CellType.inside, 2)
     quadrature.fill_moment_fitting(CellType.cut, *solid())
 
-    # The part inside, 1.5 by 2 by 1, out of the block, 4 by 2 by 1, whose
-    # parameters span the unit cube
-    np.testing.assert_allclose(quadrature.weights.sum(), 1.5 * 2 / 8)
+    # The part inside, 1.5 by 2 by 1
+    np.testing.assert_allclose(quadrature.weights.sum(), 1.5 * 2 * 1)
     assert (quadrature.positions[:, 0] <= ORIGIN[0] + 1.5).all()
 
 
@@ -176,7 +178,8 @@ def test_planar():
 
 
 def test_nurbs_surface():
-    """The points on a NURBS quarter cylinder lie at its radius."""
+    """The points on a NURBS quarter cylinder lie at its radius, and their
+    weights add up to its area."""
     # Quadratic around, with the weights of a circular arc, and linear
     # along, with weights that change along it too
     corner = np.sqrt(.5)
@@ -190,11 +193,16 @@ def test_nurbs_surface():
                                             [0., 0., 1., 1.]),
                                      control_points=net, weights=weights)
     quadrature = DomainQuadrature(cylinder)
-    quadrature.fill_gauss_legendre(CellType.inside, 3)
+    quadrature.fill_gauss_legendre(CellType.inside, 8)
     positions = quadrature.positions
 
     np.testing.assert_allclose(np.hypot(positions[:, 0], positions[:, 1]),
                                2.)
+
+    # A quarter of the circumference times the height, to the convergence of
+    # the Gauss rule on the rational map
+    np.testing.assert_allclose(quadrature.weights.sum(), 3. * np.pi,
+                               rtol=1e-8)
 
 
 def test_trimmed_surface():
@@ -233,8 +241,7 @@ def test_planar_region():
     quadrature.fill_gauss_legendre(CellType.inside, 3)
     quadrature.fill_moment_fitting(CellType.cut, corners, segments)
 
-    # Weights in parameter space, times the area of the rectangle
-    weights = quadrature.weights * 8.
+    weights = quadrature.weights
     positions = quadrature.positions
 
     np.testing.assert_allclose(weights.sum(), 4.)

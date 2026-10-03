@@ -75,21 +75,24 @@ int element_holding(const KnotVector<double>& knots, double parameter)
 }
 
 /**
- * @brief Positions of the points in physical space, the only form Python
- *        needs, as it draws them
+ * @brief Walks the elements a quadrature holds, giving each the element of
+ *        the patch holding it and the range of its points
  *
  * Every element of the grid lies inside an element of the patch, the one
- * holding the parameters at which it starts, whose functions map its points
+ * holding the parameters at which it starts, whose functions map its
+ * points. The visit receives the first active function of that element of
+ * the patch in each direction, its index, and the first point and the
+ * number of points of the element of the grid
  *
  * @throws std::invalid_argument If the coarse level of the grid does not
  *         have the knots of the patch, or if an element of the quadrature
  *         lies outside the grid
  */
-template<typename Basis, std::size_t n>
-PointMatrix<double, n> positions(
+template<typename Basis, std::size_t n, typename Visit>
+void walk_held_elements(
     const DomainQuadrature<double, Basis::dimension>& quadrature,
     const Patch<Basis, n>& patch,
-    const HierarchicalGrid<double, Basis::dimension>& grid)
+    const HierarchicalGrid<double, Basis::dimension>& grid, Visit&& visit)
 {
     constexpr std::size_t d = Basis::dimension;
     const Basis& basis = patch.basis();
@@ -120,14 +123,6 @@ PointMatrix<double, n> positions(
         held[element] = position;
     }
 
-    PointMatrix<double, n> result(quadrature.num_points(), n);
-
-    // Buffers reused over the elements
-    Eigen::MatrixXd parameters;
-    Eigen::MatrixXd values;
-    Eigen::VectorXi actives;
-    PointMatrix<double, n> element_positions;
-
     for (const HierarchicalGridIterator<double, d>& element : grid) {
         const int position = held[element.index()];
 
@@ -154,13 +149,82 @@ PointMatrix<double, n> positions(
         const int first = offsets(position);
         const int count = offsets(position + 1) - first;
 
-        parameters = quadrature.points().middleRows(first, count);
-        basis.eval_on_element(first_active, parameters, values);
-        basis.active_on_element(coarse_element, actives);
-        patch.position_on_element(actives, values, element_positions);
-
-        result.middleRows(first, count) = element_positions;
+        visit(first_active, coarse_element, first, count);
     }
+}
+
+/**
+ * @brief Positions of the points in physical space, the only form Python
+ *        needs, as it draws them
+ *
+ * @throws std::invalid_argument As walk_held_elements() does
+ */
+template<typename Basis, std::size_t n>
+PointMatrix<double, n> positions(
+    const DomainQuadrature<double, Basis::dimension>& quadrature,
+    const Patch<Basis, n>& patch,
+    const HierarchicalGrid<double, Basis::dimension>& grid)
+{
+    constexpr std::size_t d = Basis::dimension;
+    PointMatrix<double, n> result(quadrature.num_points(), n);
+
+    // Buffers reused over the elements
+    Eigen::MatrixXd parameters;
+    Eigen::MatrixXd values;
+    Eigen::VectorXi actives;
+    PointMatrix<double, n> element_positions;
+
+    walk_held_elements(
+        quadrature, patch, grid,
+        [&](const std::array<int, d>& first_active, int element, int first,
+            int count) {
+            parameters = quadrature.points().middleRows(first, count);
+            patch.basis().eval_on_element(first_active, parameters, values);
+            patch.basis().active_on_element(element, actives);
+            patch.position_on_element(actives, values, element_positions);
+
+            result.middleRows(first, count) = element_positions;
+        });
+
+    return result;
+}
+
+/**
+ * @brief Weights of the points in physical space, each parametric weight
+ *        times the measure of the patch at its point
+ *
+ * @throws std::invalid_argument As walk_held_elements() does
+ */
+template<typename Basis, std::size_t n>
+Eigen::VectorXd physical_weights(
+    const DomainQuadrature<double, Basis::dimension>& quadrature,
+    const Patch<Basis, n>& patch,
+    const HierarchicalGrid<double, Basis::dimension>& grid)
+{
+    constexpr std::size_t d = Basis::dimension;
+    Eigen::VectorXd result = quadrature.weights();
+
+    // Buffers reused over the elements
+    Eigen::MatrixXd parameters;
+    Eigen::MatrixXd values;
+    Eigen::VectorXi actives;
+    Eigen::VectorXd measures;
+    std::array<Eigen::MatrixXd, d> gradients;
+    std::array<PointMatrix<double, n>, d> tangents;
+
+    walk_held_elements(
+        quadrature, patch, grid,
+        [&](const std::array<int, d>& first_active, int element, int first,
+            int count) {
+            parameters = quadrature.points().middleRows(first, count);
+            patch.basis().grad_on_element(first_active, parameters, values,
+                                          gradients);
+            patch.basis().active_on_element(element, actives);
+            patch.tangent_on_element(actives, gradients, tangents);
+            Patch<Basis, n>::measure_on_element(tangents, measures);
+
+            result.segment(first, count).array() *= measures.array();
+        });
 
     return result;
 }
@@ -189,6 +253,12 @@ void quadrature(py::module_& module)
         .def("positions", &positions<TensorBSpline<double, 2>, 3>,
              py::arg("patch"), py::arg("grid"))
         .def("positions", &positions<TensorNURBS<double, 2>, 3>,
+             py::arg("patch"), py::arg("grid"))
+        .def("physical_weights", &physical_weights<TensorBSpline<double, 2>, 2>,
+             py::arg("patch"), py::arg("grid"))
+        .def("physical_weights", &physical_weights<TensorBSpline<double, 2>, 3>,
+             py::arg("patch"), py::arg("grid"))
+        .def("physical_weights", &physical_weights<TensorNURBS<double, 2>, 3>,
              py::arg("patch"), py::arg("grid"));
 
     py::class_<DomainQuadrature3d>(module, "DomainQuadrature3d")
@@ -204,6 +274,8 @@ void quadrature(py::module_& module)
         .def_property_readonly("num_points", &DomainQuadrature3d::num_points)
         .def_property_readonly("weights", &DomainQuadrature3d::weights, copy)
         .def("positions", &positions<TensorBSpline<double, 3>, 3>,
+             py::arg("patch"), py::arg("grid"))
+        .def("physical_weights", &physical_weights<TensorBSpline<double, 3>, 3>,
              py::arg("patch"), py::arg("grid"));
 }
 

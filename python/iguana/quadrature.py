@@ -120,9 +120,16 @@ class DomainQuadrature:
 
     @property
     def weights(self) -> npt.NDArray[np.float64]:
-        """Weights of the points in parameter space, of shape
-        `(num_points,)`."""
-        return self._cpp_object.weights
+        """Weights of the points in physical space, of shape
+        `(num_points,)`.
+
+        Each is the weight in parameter space times the measure of the
+        patch at its point, so that they integrate over the cells as they
+        lie in space: by area on planar and surface patches and by volume
+        on volume patches.
+        """
+        return self._cpp_object.physical_weights(self._patch._cpp_object,
+                                                 self._grid._cpp_object)
 
     def fill_gauss_legendre(self, cell_type: CellType,
                             num_points: int | Sequence[int]) -> None:
