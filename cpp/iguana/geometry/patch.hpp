@@ -142,6 +142,30 @@ public:
         const std::array<PointMatrix<Scalar, n>, dim>& tangents,
         Eigen::VectorX<Scalar>& measures);
 
+    /**
+     * @brief Gradients in physical space of the active functions at points
+     *        of an element, from their parametric gradients
+     *
+     * By the chain rule, the physical gradient is J^-T times the parametric
+     * one, so that the gradients of all active functions at a point share
+     * one inverse
+     *
+     * @param tangents Tangents at the points, one buffer of size
+     *        (num_points,n) per direction, as given by tangent_on_element()
+     * @param gradients Derivatives of the active functions along each
+     *        direction, each of size (num_active,num_points), as given by
+     *        grad_on_element()
+     * @param physical_gradients Output with one matrix per coordinate of the
+     *        space, each of the size of the gradients, resized when necessary
+     *
+     * @pre J is invertible at every point
+     */
+    static void physical_grad_on_element(
+        const std::array<PointMatrix<Scalar, n>, dim>& tangents,
+        const std::array<Eigen::MatrixX<Scalar>, dim>& gradients,
+        std::array<Eigen::MatrixX<Scalar>, n>& physical_gradients)
+        requires (dim == n);
+
 private:
     /// @brief Basis of the map
     Basis basis_;

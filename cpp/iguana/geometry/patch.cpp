@@ -93,6 +93,35 @@ void Patch<Basis, n>::measure_on_element(
     }
 }
 
+template<typename Basis, std::size_t n>
+void Patch<Basis, n>::physical_grad_on_element(
+    const std::array<PointMatrix<Scalar, n>, dim>& tangents,
+    const std::array<Eigen::MatrixX<Scalar>, dim>& gradients,
+    std::array<Eigen::MatrixX<Scalar>, n>& physical_gradients)
+    requires (dim == n)
+{
+    const Eigen::Index num_active = gradients[0].rows();
+    const Eigen::Index num_points = gradients[0].cols();
+
+    for (Eigen::MatrixX<Scalar>& physical : physical_gradients)
+        physical.resize(num_active, num_points);
+
+    for (Eigen::Index point = 0; point < num_points; ++point) {
+        // Component j of J^-T grad_xi is the sum of (J^-1)_kj d/dxi_k
+        const Eigen::Matrix<Scalar, n, n> inverse =
+            jacobian_at<Scalar, n, dim>(tangents, point).inverse();
+
+        for (std::size_t component = 0; component < n; ++component) {
+            physical_gradients[component].col(point).setZero();
+
+            for (std::size_t direction = 0; direction < dim; ++direction)
+                physical_gradients[component].col(point) +=
+                    inverse(direction, component) *
+                    gradients[direction].col(point);
+        }
+    }
+}
+
 // Curves in the plane and in space, planar regions, surfaces in space and
 // volumes, on B-splines and on NURBS
 template class Patch<TensorBSpline<double, 1>, 2>;
