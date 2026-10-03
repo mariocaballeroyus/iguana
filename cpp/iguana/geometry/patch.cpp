@@ -5,13 +5,36 @@
 
 #include "patch.hpp"
 
+#include <cmath>
 #include <stdexcept>
 #include <utility>
+
+#include <Eigen/LU>
 
 namespace iguana
 {
 
 using Eigen::placeholders::all;
+
+namespace
+{
+
+/// @brief Jacobian of a patch at a point, with one column per parametric
+///        direction
+template<typename Scalar, std::size_t n, std::size_t d>
+Eigen::Matrix<Scalar, n, d> jacobian_at(
+    const std::array<PointMatrix<Scalar, n>, d>& tangents,
+    Eigen::Index point)
+{
+    Eigen::Matrix<Scalar, n, d> jacobian;
+
+    for (std::size_t direction = 0; direction < d; ++direction)
+        jacobian.col(direction) = tangents[direction].row(point).transpose();
+
+    return jacobian;
+}
+
+} // namespace
 
 template<typename Basis, std::size_t n>
 Patch<Basis, n>::Patch(Basis basis, PointMatrix<Scalar, n> coefficients)
@@ -48,6 +71,25 @@ void Patch<Basis, n>::tangent_on_element(
         // derivatives of their functions along the direction
         tangents[direction].noalias() =
             gradients[direction].transpose() * coefficients_(actives, all);
+    }
+}
+
+template<typename Basis, std::size_t n>
+void Patch<Basis, n>::measure_on_element(
+    const std::array<PointMatrix<Scalar, n>, dim>& tangents,
+    Eigen::VectorX<Scalar>& measures)
+{
+    measures.resize(tangents[0].rows());
+
+    for (Eigen::Index point = 0; point < measures.size(); ++point) {
+        const Eigen::Matrix<Scalar, n, dim> jacobian =
+            jacobian_at<Scalar, n, dim>(tangents, point);
+
+        if constexpr (dim == n)
+            measures(point) = std::abs(jacobian.determinant());
+        else if constexpr (dim < n)
+            measures(point) =
+                std::sqrt((jacobian.transpose() * jacobian).determinant());
     }
 }
 

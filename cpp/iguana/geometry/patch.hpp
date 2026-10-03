@@ -125,6 +125,23 @@ public:
         const std::array<Eigen::MatrixX<Scalar>, dim>& gradients,
         std::array<PointMatrix<Scalar, n>, dim>& tangents) const;
 
+    /**
+     * @brief Measure of the patch at points of an element, the factor that
+     *        turns a parametric measure into a physical one
+     *
+     * It is |det J| when the patch has as many directions as its space, and
+     * sqrt(det(J^T J)) otherwise: the length of the tangent along a curve
+     * and the area its tangents span on a surface
+     *
+     * @param tangents Tangents at the points, one buffer of size
+     *        (num_points,n) per direction, as given by tangent_on_element()
+     * @param measures Output vector of size num_points, resized if its size
+     *        changes
+     */
+    static void measure_on_element(
+        const std::array<PointMatrix<Scalar, n>, dim>& tangents,
+        Eigen::VectorX<Scalar>& measures);
+
 private:
     /// @brief Basis of the map
     Basis basis_;
