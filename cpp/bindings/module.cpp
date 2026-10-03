@@ -12,6 +12,7 @@ namespace iguana::bindings
 
 void basis(py::module_& module);
 void patch(py::module_& module);
+void boundary(py::module_& module);
 void grid(py::module_& module);
 void embedding(py::module_& module);
 void fspace(py::module_& module);
@@ -25,6 +26,7 @@ PYBIND11_MODULE(cpp, module)
 
     iguana::bindings::basis(module);
     iguana::bindings::patch(module);
+    iguana::bindings::boundary(module);
     iguana::bindings::grid(module);
     iguana::bindings::embedding(module);
     iguana::bindings::fspace(module);
