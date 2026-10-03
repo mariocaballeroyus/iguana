@@ -178,7 +178,8 @@ def test_planar():
 
 
 def test_nurbs_surface():
-    """The points on a NURBS quarter cylinder lie at its radius."""
+    """The points on a NURBS quarter cylinder lie at its radius, and their
+    weights add up to its area."""
     # Quadratic around, with the weights of a circular arc, and linear
     # along, with weights that change along it too
     corner = np.sqrt(.5)
@@ -192,11 +193,16 @@ def test_nurbs_surface():
                                             [0., 0., 1., 1.]),
                                      control_points=net, weights=weights)
     quadrature = DomainQuadrature(cylinder)
-    quadrature.fill_gauss_legendre(CellType.inside, 3)
+    quadrature.fill_gauss_legendre(CellType.inside, 8)
     positions = quadrature.positions
 
     np.testing.assert_allclose(np.hypot(positions[:, 0], positions[:, 1]),
                                2.)
+
+    # A quarter of the circumference times the height, to the convergence of
+    # the Gauss rule on the rational map
+    np.testing.assert_allclose(quadrature.weights.sum(), 3. * np.pi,
+                               rtol=1e-8)
 
 
 def test_trimmed_surface():
