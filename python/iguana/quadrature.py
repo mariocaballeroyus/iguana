@@ -170,10 +170,9 @@ class DomainQuadrature:
         trims, given in parameter space, where the trimming curves of a
         trimmed surface lie. On a planar patch it is a region a closed
         polygon bounds in the plane, and on a volume patch a solid given
-        in space. The planar or volume patch must then map its parameter
-        box onto an axis-aligned rectangle or block, as create_rectangle
-        and create_box build them, through which the vertices map back to
-        parameters.
+        in space. The planar or volume patch must then have an affine map,
+        such as that of a rectangle or block from create_rectangle or
+        create_box, through which the vertices map back to parameters.
 
         Args:
             cell_type: The type of the cells to fill, usually the cut cells.
@@ -190,16 +189,17 @@ class DomainQuadrature:
             order: Highest polynomial degree of each direction.
 
         Raises:
-            ValueError: If the polygon or mesh is malformed, if the order
-                lies outside [0, 7] on a surface or planar patch or [0, 4]
-                on a volume patch, or if the cells of this type are already
+            ValueError: If the polygon or mesh is malformed, if the map of
+                a planar or volume patch is not affine, if the order lies
+                outside [0, 7] on a surface or planar patch or [0, 4] on a
+                volume patch, or if the cells of this type are already
                 filled.
         """
         # Trimming curves lie in parameter space already
         if isinstance(self._patch, SurfacePatch):
             parameters = np.asarray(vertices, dtype=float)
         else:
-            parameters = _to_parameters(self._patch, vertices)
+            parameters = self._patch.invert_points(vertices)
 
         self._cpp_object.fill_moment_fitting(
             self._grid._cpp_object, self._domain, cell_type,
@@ -208,22 +208,3 @@ class DomainQuadrature:
     def __repr__(self) -> str:
         return (f'DomainQuadrature(num_elements={self.num_elements}, '
                 f'num_points={self.num_points})')
-
-
-def _to_parameters(patch: PlanarPatch | VolumePatch,
-                   points: npt.ArrayLike) -> npt.NDArray[np.float64]:
-    """Parameters of points under the map of an axis-aligned rectangle or
-    block.
-
-    The corners of such a rectangle or block are its extreme control
-    points, so each coordinate scales back onto the knot range of its
-    direction.
-    """
-    points = np.asarray(points, dtype=float)
-    net = patch.control_points
-    low, high = net.min(axis=0), net.max(axis=0)
-
-    first = np.array([knots[0] for knots in patch.knots])
-    last = np.array([knots[-1] for knots in patch.knots])
-
-    return first + (points - low) / (high - low) * (last - first)

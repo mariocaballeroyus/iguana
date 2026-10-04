@@ -227,6 +227,18 @@ auto isopatches(const Patch<Basis, n>& patch)
     return result;
 }
 
+/// @brief Parameters of points in physical space, returned rather than
+///        filled into a buffer
+template<typename Basis, std::size_t n>
+PointMatrix<double, n> invert_points(const Patch<Basis, n>& patch,
+                                     const PointMatrix<double, n>& points)
+{
+    PointMatrix<double, n> parameters;
+    patch.invert_points(points, parameters);
+
+    return parameters;
+}
+
 } // namespace
 
 void patch(py::module_& module)
@@ -243,7 +255,9 @@ void patch(py::module_& module)
              py::arg("basis"), py::arg("coefficients"))
         .def_property_readonly("basis", &PlanarPatch::basis)
         .def_property_readonly("coefficients", &PlanarPatch::coefficients)
-        .def("isocurves", &isopatches<TensorBSpline<double, 2>, 2>);
+        .def("isocurves", &isopatches<TensorBSpline<double, 2>, 2>)
+        .def("invert_points", &invert_points<TensorBSpline<double, 2>, 2>,
+             py::arg("points"));
 
     py::class_<CurvePatch>(module, "CurvePatch")
         .def(py::init<TensorBSpline<double, 1>, PointMatrix<double, 3>>(),
@@ -263,7 +277,9 @@ void patch(py::module_& module)
              py::arg("basis"), py::arg("coefficients"))
         .def_property_readonly("basis", &VolumePatch::basis)
         .def_property_readonly("coefficients", &VolumePatch::coefficients)
-        .def("isosurfaces", &isopatches<TensorBSpline<double, 3>, 3>);
+        .def("isosurfaces", &isopatches<TensorBSpline<double, 3>, 3>)
+        .def("invert_points", &invert_points<TensorBSpline<double, 3>, 3>,
+             py::arg("points"));
 
     py::class_<NURBSPlanarCurvePatch>(module, "NURBSPlanarCurvePatch")
         .def(py::init<TensorNURBS<double, 1>, PointMatrix<double, 2>>(),

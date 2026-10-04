@@ -166,12 +166,53 @@ public:
         std::array<Eigen::MatrixX<Scalar>, n>& physical_gradients)
         requires (dim == n);
 
+    /**
+     * @brief Whether the map is affine, x = a + A xi, decided on
+     *        construction
+     *
+     * B-splines reproduce the identity with their Greville abscissae, so the
+     * map is affine exactly when each control point is the affine image of
+     * its Greville point and, for NURBS, the weights are equal
+     */
+    constexpr bool is_affine() const noexcept
+    { return affine_; }
+
+    /**
+     * @brief Parameters of points in physical space, by inverting the map
+     *
+     * Only affine maps are inverted so far, such as an axis-aligned, rotated
+     * or sheared rectangle or box. Points outside the patch get parameters
+     * outside its box
+     *
+     * @param points Points in physical space, one per row
+     * @param parameters Output buffer of size (num_points,dim), one row of
+     *        parameters per point, resized if its shape changes
+     *
+     * @throws std::invalid_argument If the map is not affine
+     *
+     * @pre The map is invertible, as that of any patch that is not
+     *      collapsed
+     */
+    void invert_points(const PointMatrix<Scalar, n>& points,
+                       PointMatrix<Scalar, dim>& parameters) const
+        requires (dim == n);
+
 private:
     /// @brief Basis of the map
     Basis basis_;
 
     /// @brief Control points, one row per basis function
     PointMatrix<Scalar, n> coefficients_;
+
+    /// @brief Whether the map is affine
+    bool affine_;
+
+    /// @brief Offset a of the map if it is affine, zero otherwise
+    Eigen::Vector<Scalar, n> offset_;
+
+    /// @brief Linear part A of the map if it is affine, one column per
+    ///        direction, zero otherwise
+    Eigen::Matrix<Scalar, n, dim> linear_;
 };
 
 } // namespace iguana
