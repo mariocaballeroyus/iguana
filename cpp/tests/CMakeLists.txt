@@ -17,6 +17,7 @@ add_executable(iguana_tests
     quadrature/moment_fitting/test_moment_fitting.cpp
     quadrature/moment_fitting/test_moments.cpp
     quadrature/xiao_gimbutas/test_xiao_gimbutas.cpp
+    utils/test_bernstein.cpp
     utils/test_legendre.cpp)
 
 target_compile_features(iguana_tests PRIVATE cxx_std_20)
