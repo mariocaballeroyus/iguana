@@ -145,6 +145,26 @@ template<std::floating_point T>
 Eigen::MatrixX<T> refinement_matrix(const KnotVector<T>& coarse,
                                     const KnotVector<T>& fine);
 
+/**
+ * @brief Bezier extraction operators of a clamped knot vector, one per
+ *        element
+ *
+ * The functions active on an element are \f$ N^e = C^e B \f$, with B the
+ * Bernstein polynomials of degree p on the element. The operators come
+ * from refining into the knot vector with every interior knot raised to
+ * multiplicity p
+ *
+ * @param knot_vector Clamped knot vector
+ * @return Matrix C^e of size (p + 1, p + 1) for each element
+ *
+ * @throws std::invalid_argument If the knot vector is not clamped, with
+ *         its first p + 1 knots at the start of the parametric domain and
+ *         its last p + 1 at its end
+ */
+template<std::floating_point T>
+std::vector<Eigen::MatrixX<T>> extraction_operators(
+    const KnotVector<T>& knot_vector);
+
 } // namespace iguana
 
 #endif // IGUANA_GRID_KNOT_VECTOR_HPP

@@ -6,6 +6,8 @@
 #include <iguana/iguana.hpp>
 
 #include <array>
+#include <cmath>
+#include <cstddef>
 #include <span>
 #include <stdexcept>
 #include <vector>
@@ -45,6 +47,21 @@ Eigen::MatrixXd all_values(const BSpline<double>& basis, int element,
         Eigen::MatrixXd::Zero(basis.num_functions(), values.cols());
     result.middleRows(basis.first_active(element), basis.num_active()) =
         values;
+
+    return result;
+}
+
+/// @brief Bernstein polynomials of a degree at a point of [0, 1]
+Eigen::VectorXd bernstein(int degree, double t)
+{
+    Eigen::VectorXd result(degree + 1);
+    double binomial = 1.;
+
+    for (int index = 0; index <= degree; ++index) {
+        result(index) = binomial * std::pow(t, index)
+                        * std::pow(1. - t, degree - index);
+        binomial = binomial * (degree - index) / (index + 1);
+    }
 
     return result;
 }
@@ -164,5 +181,57 @@ TEST_CASE("Refinement rejects knot vectors that do not nest",
     REQUIRE_THROWS_AS(
         iguana::refinement_matrix(
             coarse, KnotVector<double>(2, {0., 0., 0., 1., 2., 2., 2., 2.})),
+        std::invalid_argument);
+}
+
+TEST_CASE("Extraction writes the functions of each element in its Bernstein "
+          "polynomials",
+          "[knot_vector]")
+{
+    // Degrees zero to three, with interior knots repeated below the
+    // degree, up to it and past it
+    const std::vector<KnotVector<double>> vectors{
+        KnotVector<double>(0, {0., 1., 2., 3.}),
+        KnotVector<double>(1, {0., 0., .3, 1., 1.}),
+        KnotVector<double>(2, {0., 0., 0., 1., 2., 3., 4., 4., 4.}),
+        KnotVector<double>(2, {0., 0., 0., .5, .5, 1., 1., 1.}),
+        KnotVector<double>(2, {0., 0., 0., .5, .5, .5, 1., 1., 1.}),
+        KnotVector<double>(3, {0., 0., 0., 0., .2, .2, .7, 1., 1., 1., 1.})
+    };
+
+    for (const KnotVector<double>& knots : vectors) {
+        const BSpline<double> basis(knots);
+        const std::vector<Eigen::MatrixXd> operators =
+            iguana::extraction_operators(knots);
+
+        REQUIRE(static_cast<int>(operators.size()) == knots.num_elements());
+
+        for (int element = 0; element < knots.num_elements(); ++element) {
+            const std::array points = points_on(knots, element);
+            const double start = knots.element_start(element);
+            const double length = knots.element_end(element) - start;
+
+            Eigen::MatrixXd values;
+            basis.eval_on_element(basis.first_active(element), points,
+                                  values);
+
+            for (std::size_t point = 0; point < points.size(); ++point) {
+                const Eigen::VectorXd residual =
+                    values.col(point)
+                    - operators[element]
+                          * bernstein(knots.degree(),
+                                      (points[point] - start) / length);
+
+                REQUIRE_THAT(residual.cwiseAbs().maxCoeff(),
+                             WithinAbs(0., 1e-14));
+            }
+        }
+    }
+
+    // Unclamped, its end elements hold no Bernstein polynomials of a refined
+    // basis
+    REQUIRE_THROWS_AS(
+        iguana::extraction_operators(KnotVector<double>(
+            2, {0., .5, 1., 1.5, 1.5, 2., 3., 3.5})),
         std::invalid_argument);
 }

@@ -145,11 +145,59 @@ Eigen::MatrixX<T> refinement_matrix(const KnotVector<T>& coarse,
     return result;
 }
 
+template<std::floating_point T>
+std::vector<Eigen::MatrixX<T>> extraction_operators(
+    const KnotVector<T>& knot_vector)
+{
+    const std::vector<T>& values = knot_vector.values();
+
+    if (values.front() != knot_vector.domain_start()
+        || values.back() != knot_vector.domain_end())
+        throw std::invalid_argument("extraction_operators: "
+                                    "the knot vector must be clamped");
+
+    const int degree = knot_vector.degree();
+    const int num_elements = knot_vector.num_elements();
+
+    // Raise every interior knot to multiplicity p, so that the functions on
+    // each element of the refined basis are its Bernstein polynomials
+    std::vector<T> added;
+
+    for (int element = 1; element < num_elements; ++element) {
+        const T knot = knot_vector.element_start(element);
+        const int multiplicity =
+            static_cast<int>(std::ranges::count(values, knot));
+
+        added.insert(added.end(), std::max(degree - multiplicity, 0), knot);
+    }
+
+    const KnotVector<T> bezier = insert_knots(knot_vector, added);
+    const Eigen::MatrixX<T> refinement =
+        refinement_matrix(knot_vector, bezier);
+
+    // On each element, the block of the refinement matrix between the
+    // Bernstein polynomials and the active functions, transposed
+    std::vector<Eigen::MatrixX<T>> result;
+
+    for (int element = 0; element < num_elements; ++element) {
+        const int fine = bezier.element_span(element) - degree;
+        const int coarse = knot_vector.element_span(element) - degree;
+
+        result.push_back(
+            refinement.block(fine, coarse, degree + 1, degree + 1)
+                .transpose());
+    }
+
+    return result;
+}
+
 template class KnotVector<double>;
 
 template KnotVector<double> insert_knots(const KnotVector<double>&,
                                          const std::vector<double>&);
 template Eigen::MatrixXd refinement_matrix(const KnotVector<double>&,
                                            const KnotVector<double>&);
+template std::vector<Eigen::MatrixXd> extraction_operators(
+    const KnotVector<double>&);
 
 } // namespace iguana
