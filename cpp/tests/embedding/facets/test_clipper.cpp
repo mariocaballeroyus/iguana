@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-#include <iguana/embedding/clipper.hpp>
-#include <iguana/embedding/slicer.hpp>
+#include <iguana/embedding/facets/clipper.hpp>
+#include <iguana/embedding/facets/slicer.hpp>
 
 #include <algorithm>
 #include <array>

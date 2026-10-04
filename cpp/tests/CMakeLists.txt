@@ -5,9 +5,9 @@ add_executable(iguana_tests
     grid/test_hierarchical_grid.cpp
     grid/test_knot_vector.cpp
     grid/test_tensor_grid_iterator.cpp
-    embedding/test_clipper.cpp
-    embedding/test_inside.cpp
-    embedding/test_slicer.cpp
+    embedding/facets/test_clipper.cpp
+    embedding/facets/test_inside.cpp
+    embedding/facets/test_slicer.cpp
     fspace/test_dof_map.cpp
     fspace/test_function_space.cpp
     geometry/test_boundary.cpp

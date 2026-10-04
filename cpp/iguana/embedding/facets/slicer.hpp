@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef IGUANA_EMBEDDING_SLICER_HPP
-#define IGUANA_EMBEDDING_SLICER_HPP
+#ifndef IGUANA_EMBEDDING_FACETS_SLICER_HPP
+#define IGUANA_EMBEDDING_FACETS_SLICER_HPP
 
 #include <concepts>
 #include <cstddef>
@@ -126,4 +126,4 @@ slice_triangle(const Eigen::Matrix3<T>& triangle,
 
 } // namespace iguana
 
-#endif // IGUANA_EMBEDDING_SLICER_HPP
+#endif // IGUANA_EMBEDDING_FACETS_SLICER_HPP

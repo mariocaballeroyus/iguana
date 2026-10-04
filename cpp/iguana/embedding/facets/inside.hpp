@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef IGUANA_EMBEDDING_INSIDE_HPP
-#define IGUANA_EMBEDDING_INSIDE_HPP
+#ifndef IGUANA_EMBEDDING_FACETS_INSIDE_HPP
+#define IGUANA_EMBEDDING_FACETS_INSIDE_HPP
 
 #include <algorithm>
 #include <concepts>
@@ -15,7 +15,7 @@
 
 #include <Eigen/Core>
 
-#include "iguana/embedding/slicer.hpp"
+#include "iguana/embedding/facets/slicer.hpp"
 
 namespace iguana
 {
@@ -136,4 +136,4 @@ is_inside(const std::vector<Eigen::Matrix<T, d, d>>& facets,
 
 } // namespace iguana
 
-#endif // IGUANA_EMBEDDING_INSIDE_HPP
+#endif // IGUANA_EMBEDDING_FACETS_INSIDE_HPP

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-#include <iguana/embedding/inside.hpp>
+#include <iguana/embedding/facets/inside.hpp>
 
 #include <array>
 #include <cstddef>

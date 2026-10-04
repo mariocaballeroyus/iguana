@@ -15,9 +15,9 @@
 #include <Eigen/Core>
 #include <Eigen/LU>
 
-#include "iguana/embedding/clipper.hpp"
-#include "iguana/embedding/inside.hpp"
-#include "iguana/embedding/slicer.hpp"
+#include "iguana/embedding/facets/clipper.hpp"
+#include "iguana/embedding/facets/inside.hpp"
+#include "iguana/embedding/facets/slicer.hpp"
 #include "iguana/quadrature/gauss_legendre/gauss_legendre.hpp"
 #include "iguana/quadrature/xiao_gimbutas/xiao_gimbutas.hpp"
 #include "iguana/utils/legendre.hpp"
