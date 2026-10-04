@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-#include <iguana/embedding/slicer.hpp>
+#include <iguana/embedding/facets/slicer.hpp>
 
 #include <array>
 #include <cstddef>

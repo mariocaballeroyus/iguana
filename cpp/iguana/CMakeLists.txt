@@ -8,6 +8,7 @@ add_library(iguana
     grid/tensor_grid.cpp
     grid/tensor_grid_iterator.cpp
     embedding/embedded_domain.cpp
+    embedding/nurbs/grid_crossings.cpp
     fspace/dof_map.cpp
     fspace/function_space.cpp
     geometry/boundary.cpp

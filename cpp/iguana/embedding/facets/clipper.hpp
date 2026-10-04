@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef IGUANA_EMBEDDING_CLIPPER_HPP
-#define IGUANA_EMBEDDING_CLIPPER_HPP
+#ifndef IGUANA_EMBEDDING_FACETS_CLIPPER_HPP
+#define IGUANA_EMBEDDING_FACETS_CLIPPER_HPP
 
 #include <algorithm>
 #include <array>
@@ -132,4 +132,4 @@ clip_triangle(const Eigen::Matrix3<T>& triangle,
 
 } // namespace iguana
 
-#endif // IGUANA_EMBEDDING_CLIPPER_HPP
+#endif // IGUANA_EMBEDDING_FACETS_CLIPPER_HPP
