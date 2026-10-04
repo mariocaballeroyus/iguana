@@ -6,7 +6,10 @@
 #ifndef IGUANA_UTILS_BERNSTEIN_HPP
 #define IGUANA_UTILS_BERNSTEIN_HPP
 
+#include <algorithm>
 #include <concepts>
+#include <utility>
+#include <vector>
 
 #include <Eigen/Core>
 
@@ -104,6 +107,122 @@ int sign_changes(const Eigen::VectorX<T>& coefficients)
     }
 
     return changes;
+}
+
+/**
+ * @brief Points of (0, 1) at which a polynomial in Bernstein form changes
+ *        sign, in increasing order
+ *
+ * Intervals are split in halves until each holds at most one sign change
+ * of its coefficients, and one with a single change holds a single root,
+ * which bisection refines. A zero exactly at a split point is a crossing
+ * where the polynomial changes sign there. Below the tolerance width an
+ * interval is not split further, and its middle is a crossing if it holds
+ * an odd number of sign changes, so that roots of even multiplicity, which
+ * only touch zero, are left out. Zeros at 0 and 1 are never reported
+ *
+ * @param coefficients Bernstein coefficients on [0, 1]
+ * @param tolerance Width below which intervals are not split further
+ * @return Crossings in increasing order
+ *
+ * @pre @p coefficients is not empty and @p tolerance is positive
+ */
+template<std::floating_point T>
+std::vector<T> bernstein_crossings(const Eigen::VectorX<T>& coefficients,
+                                   T tolerance)
+{
+    // Sign of the polynomial just inside the start or the end of an
+    // interval, that of its first or last nonzero coefficient
+    const auto start_sign = [](const Eigen::VectorX<T>& part) {
+        for (const T coefficient : part)
+            if (coefficient != T{0})
+                return coefficient > T{0} ? 1 : -1;
+
+        return 0;
+    };
+
+    const auto end_sign = [](const Eigen::VectorX<T>& part) {
+        for (Eigen::Index j = part.size() - 1; j >= 0; --j)
+            if (part(j) != T{0})
+                return part(j) > T{0} ? 1 : -1;
+
+        return 0;
+    };
+
+    // Part of [0, 1] still to examine, with the coefficients of the
+    // polynomial on it
+    struct Interval
+    {
+        T start;
+        T end;
+        Eigen::VectorX<T> coefficients;
+    };
+
+    std::vector<T> crossings;
+    std::vector<Interval> pending{{T{0}, T{1}, coefficients}};
+    Eigen::VectorX<T> left;
+    Eigen::VectorX<T> right;
+
+    while (!pending.empty()) {
+        const Interval interval = std::move(pending.back());
+        pending.pop_back();
+
+        const int changes = sign_changes(interval.coefficients);
+        const T middle = (interval.start + interval.end) / 2;
+
+        if (changes == 0)
+            continue;
+
+        if (changes == 1) {
+            // Bisect the polynomial between the ends of the interval, which
+            // keep their signs just inside it
+            T low = interval.start;
+            T high = interval.end;
+            const int low_sign = start_sign(interval.coefficients);
+
+            for (int step = 0; step < 64; ++step) {
+                const T point = (low + high) / 2;
+
+                if (point <= low || point >= high)
+                    break;
+
+                const T value = de_casteljau(coefficients, point);
+
+                if (value == T{0}) {
+                    low = high = point;
+                    break;
+                }
+
+                if ((value > T{0}) == (low_sign > 0))
+                    low = point;
+                else
+                    high = point;
+            }
+
+            crossings.push_back((low + high) / 2);
+            continue;
+        }
+
+        if (interval.end - interval.start < tolerance) {
+            if (changes % 2 == 1)
+                crossings.push_back(middle);
+
+            continue;
+        }
+
+        de_casteljau_split(interval.coefficients, T{0.5}, left, right);
+
+        // A zero at the split point is a crossing where the sign changes
+        if (right(0) == T{0} && end_sign(left) * start_sign(right) < 0)
+            crossings.push_back(middle);
+
+        pending.push_back({middle, interval.end, right});
+        pending.push_back({interval.start, middle, left});
+    }
+
+    std::ranges::sort(crossings);
+
+    return crossings;
 }
 
 } // namespace iguana
