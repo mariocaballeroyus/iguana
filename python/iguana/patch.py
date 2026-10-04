@@ -118,6 +118,25 @@ class PlanarPatch:
         """
         return [CurvePatch(curve) for curve in self._cpp_object.isocurves()]
 
+    def invert_points(self,
+                      points: npt.ArrayLike) -> npt.NDArray[np.float64]:
+        """Parameters of points in the plane, by inverting the map.
+
+        Only affine maps are inverted so far, such as those of an
+        axis-aligned, rotated or sheared rectangle. Points outside the patch
+        get parameters outside its box.
+
+        Args:
+            points: The points, of shape `(num_points, 2)`.
+
+        Returns:
+            Their parameters, of shape `(num_points, 2)`.
+
+        Raises:
+            ValueError: If the map of the patch is not affine.
+        """
+        return self._cpp_object.invert_points(np.asarray(points, float))
+
     def __repr__(self) -> str:
         return (f'PlanarPatch(degrees={self.degrees}, '
                 f'num_control_points={len(self.control_points)})')
@@ -243,6 +262,25 @@ class VolumePatch:
         """
         return [SurfacePatch(surface)
                 for surface in self._cpp_object.isosurfaces()]
+
+    def invert_points(self,
+                      points: npt.ArrayLike) -> npt.NDArray[np.float64]:
+        """Parameters of points in space, by inverting the map.
+
+        Only affine maps are inverted so far, such as those of an
+        axis-aligned, rotated or sheared box. Points outside the patch get
+        parameters outside its box.
+
+        Args:
+            points: The points, of shape `(num_points, 3)`.
+
+        Returns:
+            Their parameters, of shape `(num_points, 3)`.
+
+        Raises:
+            ValueError: If the map of the patch is not affine.
+        """
+        return self._cpp_object.invert_points(np.asarray(points, float))
 
     def __repr__(self) -> str:
         return (f'VolumePatch(degrees={self.degrees}, '

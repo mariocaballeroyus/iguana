@@ -52,23 +52,19 @@ double greville(const BSpline<double>& axis, int function)
 }
 
 /**
- * @brief Checks that a patch reproduces an affine map and its tangents at
- *        points of every element
- *
- * Sampling an affine map at the Greville abscissae gives control points
- * that reproduce it exactly
+ * @brief Control points of an affine map, sampled at the Greville abscissae,
+ *        which reproduce it exactly
  *
  * @param basis Basis of the patch
  * @param map Linear part of the map, from parameters to physical space
  * @param shift Constant part of the map
  */
 template<std::size_t d, std::size_t n>
-void check_affine(const TensorBSpline<double, d>& basis,
-                  const Eigen::Matrix<double, n, d>& map,
-                  const Eigen::Vector<double, n>& shift)
+iguana::PointMatrix<double, n> affine_coefficients(
+    const TensorBSpline<double, d>& basis,
+    const Eigen::Matrix<double, n, d>& map,
+    const Eigen::Vector<double, n>& shift)
 {
-    INFO("directions " << d << ", dimensions " << n);
-
     iguana::PointMatrix<double, n> coefficients(basis.num_functions(), n);
     Eigen::Vector<double, d> node;
 
@@ -86,7 +82,30 @@ void check_affine(const TensorBSpline<double, d>& basis,
         coefficients.row(fun) = (map * node + shift).transpose();
     }
 
-    const Patch<TensorBSpline<double, d>, n> patch(basis, coefficients);
+    return coefficients;
+}
+
+/**
+ * @brief Checks that a patch reproduces an affine map and its tangents at
+ *        points of every element, knows that its map is affine and, with as
+ *        many directions as dimensions, inverts the points back
+ *
+ * @param basis Basis of the patch
+ * @param map Linear part of the map, from parameters to physical space
+ * @param shift Constant part of the map
+ */
+template<std::size_t d, std::size_t n>
+void check_affine(const TensorBSpline<double, d>& basis,
+                  const Eigen::Matrix<double, n, d>& map,
+                  const Eigen::Vector<double, n>& shift)
+{
+    INFO("directions " << d << ", dimensions " << n);
+
+    const Patch<TensorBSpline<double, d>, n> patch(
+        basis, affine_coefficients<d, n>(basis, map, shift));
+
+    REQUIRE(patch.is_affine());
+
     Eigen::MatrixXd values;
     Eigen::VectorXi actives;
     iguana::PointMatrix<double, n> positions;
@@ -131,6 +150,17 @@ void check_affine(const TensorBSpline<double, d>& basis,
 
             for (Eigen::Index c = 0; c < static_cast<Eigen::Index>(n); ++c)
                 REQUIRE_THAT(positions(pt, c), WithinAbs(exact[c], 1e-13));
+        }
+
+        // A region or a volume maps its positions back to their parameters
+        if constexpr (d == n) {
+            iguana::PointMatrix<double, d> parameters;
+            patch.invert_points(positions, parameters);
+
+            for (Eigen::Index pt = 0; pt < points.rows(); ++pt)
+                for (Eigen::Index c = 0; c < static_cast<Eigen::Index>(d); ++c)
+                    REQUIRE_THAT(parameters(pt, c),
+                                 WithinAbs(points(pt, c), 1e-13));
         }
 
         // The tangents of an affine map are the columns of its linear part
@@ -252,6 +282,52 @@ TEST_CASE("Patch reproduces affine maps exactly", "[patch]")
                        curve.topRows<2>(), shift.head<2>());
     check_affine<2, 2>(TensorBSpline<double, 2>({quadratic(), cubic()}),
                        surface.topRows<2>(), shift.head<2>());
+}
+
+TEST_CASE("Patch tells maps that are not affine and does not invert them",
+          "[patch]")
+{
+    using Region = Patch<TensorBSpline<double, 2>, 2>;
+    using NURBSRegion = Patch<TensorNURBS<double, 2>, 2>;
+
+    Eigen::Matrix2d map;
+    map << 2., .5,
+          -1., 3.;
+
+    const TensorBSpline<double, 2> basis({quadratic(), cubic()});
+    const iguana::PointMatrix<double, 2> affine =
+        affine_coefficients<2, 2>(basis, map, Eigen::Vector2d(1.5, -.25));
+
+    // Equal weights leave the functions B-splines, unequal ones do not
+    Eigen::VectorXd weights = Eigen::VectorXd::Constant(basis.num_functions(),
+                                                        2.);
+    REQUIRE(NURBSRegion(TensorNURBS<double, 2>(basis, weights), affine)
+                .is_affine());
+
+    weights(1) = 3.;
+    REQUIRE_FALSE(NURBSRegion(TensorNURBS<double, 2>(basis, weights), affine)
+                      .is_affine());
+
+    // Constant pieces do not reproduce the identity
+    const TensorBSpline<double, 2> pieces(
+        {BSpline<double>(0, {0., .5, 1.}), cubic()});
+    iguana::PointMatrix<double, 2> steps(pieces.num_functions(), 2);
+
+    for (int function = 0; function < pieces.num_functions(); ++function)
+        steps.row(function) << function, 1.;
+
+    REQUIRE_FALSE(Region(pieces, steps).is_affine());
+
+    // Moving one control point off the affine map bends it
+    iguana::PointMatrix<double, 2> moved = affine;
+    moved(5, 0) += 1e-3;
+
+    const Region bent(basis, moved);
+    iguana::PointMatrix<double, 2> parameters;
+
+    REQUIRE_FALSE(bent.is_affine());
+    REQUIRE_THROWS_AS(bent.invert_points(moved, parameters),
+                      std::invalid_argument);
 }
 
 TEST_CASE("NURBS patch reproduces a half annulus exactly", "[patch]")
