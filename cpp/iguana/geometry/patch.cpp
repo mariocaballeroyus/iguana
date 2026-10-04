@@ -280,6 +280,24 @@ void Patch<Basis, n>::physical_grad_on_element(
     }
 }
 
+template<typename Basis, std::size_t n>
+void Patch<Basis, n>::invert_points(const PointMatrix<Scalar, n>& points,
+                                    PointMatrix<Scalar, dim>& parameters) const
+    requires (dim == n)
+{
+    if (!affine_)
+        throw std::invalid_argument("Patch: "
+                                    "the map must be affine to be inverted");
+
+    // Reuse the output buffer when its shape is unchanged
+    parameters.resize(points.rows(), dim);
+
+    // The product is evaluated before the assignment, so the points may be
+    // inverted in place
+    parameters = (points.rowwise() - offset_.transpose())
+                 * linear_.inverse().transpose();
+}
+
 // Curves in the plane and in space, planar regions, surfaces in space and
 // volumes, on B-splines and on NURBS
 template class Patch<TensorBSpline<double, 1>, 2>;

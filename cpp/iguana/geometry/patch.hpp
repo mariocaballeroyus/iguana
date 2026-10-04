@@ -177,6 +177,26 @@ public:
     constexpr bool is_affine() const noexcept
     { return affine_; }
 
+    /**
+     * @brief Parameters of points in physical space, by inverting the map
+     *
+     * Only affine maps are inverted so far, such as an axis-aligned, rotated
+     * or sheared rectangle or box. Points outside the patch get parameters
+     * outside its box
+     *
+     * @param points Points in physical space, one per row
+     * @param parameters Output buffer of size (num_points,dim), one row of
+     *        parameters per point, resized if its shape changes
+     *
+     * @throws std::invalid_argument If the map is not affine
+     *
+     * @pre The map is invertible, as that of any patch that is not
+     *      collapsed
+     */
+    void invert_points(const PointMatrix<Scalar, n>& points,
+                       PointMatrix<Scalar, dim>& parameters) const
+        requires (dim == n);
+
 private:
     /// @brief Basis of the map
     Basis basis_;
