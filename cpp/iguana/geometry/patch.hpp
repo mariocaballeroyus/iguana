@@ -177,6 +177,12 @@ public:
     constexpr bool is_affine() const noexcept
     { return affine_; }
 
+    /// @brief Linear part A of the map if it is affine, one column per
+    ///        direction, zero otherwise
+    constexpr const Eigen::Matrix<Scalar, n, dim>& linear_part() const
+        noexcept
+    { return linear_; }
+
     /**
      * @brief Parameters of points in physical space, by inverting the map
      *
