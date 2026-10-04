@@ -166,12 +166,33 @@ public:
         std::array<Eigen::MatrixX<Scalar>, n>& physical_gradients)
         requires (dim == n);
 
+    /**
+     * @brief Whether the map is affine, x = a + A xi, decided on
+     *        construction
+     *
+     * B-splines reproduce the identity with their Greville abscissae, so the
+     * map is affine exactly when each control point is the affine image of
+     * its Greville point and, for NURBS, the weights are equal
+     */
+    constexpr bool is_affine() const noexcept
+    { return affine_; }
+
 private:
     /// @brief Basis of the map
     Basis basis_;
 
     /// @brief Control points, one row per basis function
     PointMatrix<Scalar, n> coefficients_;
+
+    /// @brief Whether the map is affine
+    bool affine_;
+
+    /// @brief Offset a of the map if it is affine, zero otherwise
+    Eigen::Vector<Scalar, n> offset_;
+
+    /// @brief Linear part A of the map if it is affine, one column per
+    ///        direction, zero otherwise
+    Eigen::Matrix<Scalar, n, dim> linear_;
 };
 
 } // namespace iguana
