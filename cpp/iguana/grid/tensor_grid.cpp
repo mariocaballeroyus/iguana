@@ -20,6 +20,23 @@ TensorGrid<T, d>::TensorGrid(std::array<KnotVector<T>, d> knots)
 }
 
 template<std::floating_point T, std::size_t d>
+std::array<std::vector<T>, d> TensorGrid<T, d>::lines() const
+{
+    std::array<std::vector<T>, d> result;
+
+    for (std::size_t direction = 0; direction < d; ++direction) {
+        const KnotVector<T>& axis_knots = knots_[direction];
+
+        for (int element = 0; element < axis_knots.num_elements(); ++element)
+            result[direction].push_back(axis_knots.element_start(element));
+
+        result[direction].push_back(axis_knots.domain_end());
+    }
+
+    return result;
+}
+
+template<std::floating_point T, std::size_t d>
 TensorGridIterator<T, d> TensorGrid<T, d>::begin() const noexcept
 {
     return TensorGridIterator<T, d>(*this);
