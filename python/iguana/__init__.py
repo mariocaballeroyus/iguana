@@ -15,11 +15,11 @@ from iguana.grid import HierarchicalGrid
 from iguana.patch import (CurvePatch, PlanarPatch, SurfacePatch, VolumePatch,
                           create_box, create_curve, create_rectangle,
                           create_surface)
-from iguana.quadrature import DomainQuadrature
+from iguana.quadrature import BoundaryQuadrature, DomainQuadrature
 
 __version__ = cpp.__version__
 
-__all__ = ['Boundary', 'CellType', 'CurvePatch', 'DomainQuadrature',
-           'FunctionSpace', 'HierarchicalGrid', 'PlanarPatch', 'SurfacePatch',
-           'VolumePatch', 'create_box', 'create_curve', 'create_rectangle',
-           'create_surface']
+__all__ = ['Boundary', 'BoundaryQuadrature', 'CellType', 'CurvePatch',
+           'DomainQuadrature', 'FunctionSpace', 'HierarchicalGrid',
+           'PlanarPatch', 'SurfacePatch', 'VolumePatch', 'create_box',
+           'create_curve', 'create_rectangle', 'create_surface']
