@@ -7,6 +7,7 @@
 
 #include <array>
 #include <cstddef>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -102,4 +103,29 @@ TEST_CASE("The walk reaches every element once, in order", "[grid]")
         REQUIRE(element.index() == again++);
 
     REQUIRE(again == grid.num_elements());
+}
+
+TEST_CASE("The lines of a grid bound the elements of the walk", "[grid]")
+{
+    const TensorGrid<double, 3> grid = mixed();
+    const std::array<std::vector<double>, 3> lines = grid.lines();
+
+    // One line more than elements along each direction, with none for the
+    // repeated knot or the knots outside the unclamped domain
+    for (std::size_t direction = 0; direction < 3; ++direction)
+        REQUIRE(static_cast<int>(lines[direction].size())
+                == grid.knots(direction).num_elements() + 1);
+
+    for (const auto& element : grid) {
+        const std::array<int, 3> indices =
+            element_of(grid, element.index());
+
+        for (std::size_t direction = 0; direction < 3; ++direction) {
+            const std::size_t index =
+                static_cast<std::size_t>(indices[direction]);
+
+            REQUIRE(element.start()[direction] == lines[direction][index]);
+            REQUIRE(element.end()[direction] == lines[direction][index + 1]);
+        }
+    }
 }

@@ -10,6 +10,7 @@
 #include <concepts>
 #include <cstddef>
 #include <iterator>
+#include <vector>
 
 #include "iguana/grid/knot_vector.hpp"
 #include "iguana/grid/tensor_grid_iterator.hpp"
@@ -53,6 +54,16 @@ public:
     /// @brief Number of elements, the product of those of each direction
     constexpr int num_elements() const noexcept
     { return num_elements_; }
+
+    /**
+     * @brief Coordinates of the knot lines, or planes, of each direction,
+     *        the boundaries of its elements in increasing order
+     *
+     * Element e of a direction spans [lines[e], lines[e + 1]], so that a
+     * repeated knot gives one line and the knots outside the domain of an
+     * unclamped knot vector none
+     */
+    std::array<std::vector<T>, d> lines() const;
 
     /// @brief Iterator at the first element
     TensorGridIterator<T, d> begin() const noexcept;

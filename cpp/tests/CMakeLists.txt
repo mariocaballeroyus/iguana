@@ -10,6 +10,7 @@ add_executable(iguana_tests
     embedding/facets/test_slicer.cpp
     embedding/nurbs/test_axis_crossings.cpp
     embedding/nurbs/test_grid_crossings.cpp
+    embedding/test_embedded_boundary.cpp
     fspace/test_dof_map.cpp
     fspace/test_function_space.cpp
     geometry/test_boundary.cpp
