@@ -71,6 +71,24 @@ Region patch_of(const std::vector<double>& first,
     return {basis, points};
 }
 
+/// @brief Patch with the basis of another and its control points mapped
+///        linearly
+Region mapped(const Region& patch, const Eigen::Matrix2d& linear)
+{
+    return {patch.basis(), patch.coefficients() * linear.transpose()};
+}
+
+/// @brief Straight face up along x = coordinate, from y = 1/20 to 2/25
+Face upward(double coordinate)
+{
+    PointMatrix<double, 2> points(3, 2);
+    points << coordinate, .05,
+              coordinate, .065,
+              coordinate, .08;
+
+    return curve({0., 0., 0., 1., 1., 1.}, points, Eigen::Vector3d::Ones());
+}
+
 } // namespace
 
 TEST_CASE("Pieces of a circle cover it, ending exactly at its knots",
@@ -208,6 +226,67 @@ TEST_CASE("A face on a knot line goes to the elements opposite its normal",
         REQUIRE(pieces.size() == 1);
         REQUIRE(pieces[0].face == faces[static_cast<std::size_t>(element)]);
     }
+}
+
+TEST_CASE("A face drawn along a knot line in the plane lies on it exactly",
+          "[embedded_boundary]")
+{
+    // Seven elements over a width of 7/10, so that x = 3/10 is the knot
+    // line 3/7, which inverting the map misses by rounding
+    std::vector<double> breaks;
+
+    for (int line = 0; line <= 7; ++line)
+        breaks.push_back(line / 7.);
+
+    const Region square =
+        mapped(patch_of(breaks, breaks), .7 * Eigen::Matrix2d::Identity());
+    const Embedded embedded(
+        square, Boundary<double, 2>({upward(.3), upward(.3)}, {1, -1}));
+
+    const double knot = square.basis().grid().lines()[0][3];
+
+    REQUIRE((embedded.boundary().face(0).coefficients().col(0).array()
+             == knot)
+                .all());
+
+    // The normal points to +x with sign 1 and to -x with sign -1, and each
+    // face goes to the element opposite it
+    REQUIRE(embedded.pieces_on_element(2).size() == 1);
+    REQUIRE(embedded.pieces_on_element(2)[0].face == 0);
+    REQUIRE(embedded.pieces_on_element(3).size() == 1);
+    REQUIRE(embedded.pieces_on_element(3)[0].face == 1);
+}
+
+TEST_CASE("A mirrored patch keeps the side of the normal",
+          "[embedded_boundary]")
+{
+    // x runs from 0 to -1 over two elements, so that the element of
+    // parameters [1/2, 1] lies at x < -1/2
+    const Region mirrored =
+        mapped(patch_of({0., .5, 1.}, {0., .5, 1.}),
+               Eigen::Vector2d(-1., 1.).asDiagonal().toDenseMatrix());
+    const Embedded embedded(mirrored,
+                            Boundary<double, 2>({upward(-.5)}, {1}));
+
+    // The normal points to +x, so the face goes to the element at x < -1/2,
+    // whose normal in parameters points the other way
+    REQUIRE(embedded.boundary().sign(0) == -1);
+    REQUIRE(embedded.pieces_on_element(1).size() == 1);
+    REQUIRE(embedded.pieces_on_element(0).empty());
+}
+
+TEST_CASE("An embedded boundary rejects a patch that is not affine",
+          "[embedded_boundary]")
+{
+    PointMatrix<double, 2> bent = patch_of({0., .5, 1.}, {0., 1.})
+                                      .coefficients();
+    bent(1, 1) += .1;
+
+    const Region patch(patch_of({0., .5, 1.}, {0., 1.}).basis(), bent);
+
+    // Even without faces to pull back
+    REQUIRE_THROWS_AS(Embedded(patch, Boundary<double, 2>({}, {})),
+                      std::invalid_argument);
 }
 
 TEST_CASE("An embedded boundary rejects faces that are not clamped",
