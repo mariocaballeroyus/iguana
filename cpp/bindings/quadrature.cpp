@@ -4,16 +4,19 @@
  */
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <stdexcept>
 #include <vector>
 
 #include <Eigen/Core>
+#include <Eigen/LU>
 #include <pybind11/eigen.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
 #include "iguana/iguana.hpp"
+#include "iguana/utils/multi_index.hpp"
 
 namespace py = pybind11;
 
@@ -25,6 +28,8 @@ namespace
 
 using DomainQuadrature2d = DomainQuadrature<double, 2>;
 using DomainQuadrature3d = DomainQuadrature<double, 3>;
+using BoundaryQuadrature2d = BoundaryQuadrature<double, 2>;
+using PlanarPatch = Patch<TensorBSpline<double, 2>, 2>;
 
 /// @brief Fills the cells of one type with a Gauss-Legendre rule, which
 ///        Python never handles itself
@@ -229,6 +234,158 @@ Eigen::VectorXd physical_weights(
     return result;
 }
 
+/// @brief Places a Gauss-Legendre rule on every piece of an embedded
+///        boundary, a rule Python never handles itself
+BoundaryQuadrature2d boundary_gauss_legendre(
+    const EmbeddedBoundary<double, 2>& boundary, int num_points)
+{
+    return {boundary, GaussLegendre<double, 1>(num_points)};
+}
+
+/**
+ * @brief Walks the elements a boundary quadrature holds, giving each the
+ *        first active function of the patch in each direction, its index,
+ *        and its first point and number of points
+ *
+ * @throws std::invalid_argument If an element of the quadrature lies
+ *         outside the grid of the patch
+ *
+ * @pre The boundary of the quadrature was divided over the grid of the
+ *      patch
+ */
+template<typename Visit>
+void walk_held_elements(const BoundaryQuadrature2d& quadrature,
+                        const PlanarPatch& patch, Visit&& visit)
+{
+    const TensorBSpline<double, 2>& basis = patch.basis();
+    const TensorGrid<double, 2>& grid = basis.grid();
+    const std::array<int, 2> counts{grid.knots(0).num_elements(),
+                                    grid.knots(1).num_elements()};
+    const Eigen::VectorXi& offsets = quadrature.offsets();
+
+    for (int position = 0; position < quadrature.num_elements(); ++position) {
+        const int element = quadrature.elements()(position);
+
+        if (element < 0 || element >= grid.num_elements())
+            throw std::invalid_argument("BoundaryQuadrature: "
+                                        "the elements must lie in the grid "
+                                        "of the patch");
+
+        const std::array<int, 2> axis_elements = unflatten(element, counts);
+        const std::array<int, 2> first_active{
+            basis.axis(0).first_active(axis_elements[0]),
+            basis.axis(1).first_active(axis_elements[1])};
+
+        const int first = offsets(position);
+        const int count = offsets(position + 1) - first;
+
+        visit(first_active, element, first, count);
+    }
+}
+
+/**
+ * @brief Positions of the points of a boundary quadrature in the plane
+ *
+ * @throws std::invalid_argument As walk_held_elements() does
+ */
+PointMatrix<double, 2> boundary_positions(
+    const BoundaryQuadrature2d& quadrature, const PlanarPatch& patch)
+{
+    PointMatrix<double, 2> result(quadrature.num_points(), 2);
+
+    // Buffers reused over the elements
+    Eigen::MatrixXd parameters;
+    Eigen::MatrixXd values;
+    Eigen::VectorXi actives;
+    PointMatrix<double, 2> element_positions;
+
+    walk_held_elements(
+        quadrature, patch,
+        [&](const std::array<int, 2>& first_active, int element, int first,
+            int count) {
+            parameters = quadrature.points().middleRows(first, count);
+            patch.basis().eval_on_element(first_active, parameters, values);
+            patch.basis().active_on_element(element, actives);
+            patch.position_on_element(actives, values, element_positions);
+
+            result.middleRows(first, count) = element_positions;
+        });
+
+    return result;
+}
+
+/**
+ * @brief Physical normal of each point of a boundary quadrature scaled by
+ *        its physical weight, by Nanson's formula |det J| J^-T m w
+ *
+ * @throws std::invalid_argument As walk_held_elements() does
+ */
+PointMatrix<double, 2> scaled_normals(const BoundaryQuadrature2d& quadrature,
+                                      const PlanarPatch& patch)
+{
+    PointMatrix<double, 2> result(quadrature.num_points(), 2);
+
+    // Buffers reused over the elements
+    Eigen::MatrixXd parameters;
+    Eigen::MatrixXd values;
+    Eigen::VectorXi actives;
+    std::array<Eigen::MatrixXd, 2> gradients;
+    std::array<PointMatrix<double, 2>, 2> tangents;
+
+    walk_held_elements(
+        quadrature, patch,
+        [&](const std::array<int, 2>& first_active, int element, int first,
+            int count) {
+            parameters = quadrature.points().middleRows(first, count);
+            patch.basis().grad_on_element(first_active, parameters, values,
+                                          gradients);
+            patch.basis().active_on_element(element, actives);
+            patch.tangent_on_element(actives, gradients, tangents);
+
+            for (int point = 0; point < count; ++point) {
+                const int row = first + point;
+
+                // The tangents are the columns of the Jacobian
+                Eigen::Matrix2d jacobian;
+                jacobian << tangents[0].row(point).transpose(),
+                            tangents[1].row(point).transpose();
+
+                result.row(row) =
+                    std::abs(jacobian.determinant()) *
+                    quadrature.weights()(row) *
+                    (jacobian.inverse().transpose() *
+                     quadrature.normals().row(row).transpose())
+                        .transpose();
+            }
+        });
+
+    return result;
+}
+
+/**
+ * @brief Weights of the points of a boundary quadrature in the plane, the
+ *        lengths of their scaled normals
+ *
+ * @throws std::invalid_argument As walk_held_elements() does
+ */
+Eigen::VectorXd physical_boundary_weights(
+    const BoundaryQuadrature2d& quadrature, const PlanarPatch& patch)
+{
+    return scaled_normals(quadrature, patch).rowwise().norm();
+}
+
+/**
+ * @brief Unit normals of the points of a boundary quadrature in the plane,
+ *        pointing out of the domain, the directions of their scaled normals
+ *
+ * @throws std::invalid_argument As walk_held_elements() does
+ */
+PointMatrix<double, 2> physical_boundary_normals(
+    const BoundaryQuadrature2d& quadrature, const PlanarPatch& patch)
+{
+    return scaled_normals(quadrature, patch).rowwise().normalized();
+}
+
 } // namespace
 
 void quadrature(py::module_& module)
@@ -277,6 +434,18 @@ void quadrature(py::module_& module)
              py::arg("patch"), py::arg("grid"))
         .def("physical_weights", &physical_weights<TensorBSpline<double, 3>, 3>,
              py::arg("patch"), py::arg("grid"));
+
+    py::class_<BoundaryQuadrature2d>(module, "BoundaryQuadrature2d")
+        .def(py::init(&boundary_gauss_legendre), py::arg("boundary"),
+             py::arg("num_points"))
+        .def_property_readonly("num_elements",
+                               &BoundaryQuadrature2d::num_elements)
+        .def_property_readonly("num_points", &BoundaryQuadrature2d::num_points)
+        .def_property_readonly("faces", &BoundaryQuadrature2d::faces)
+        .def("positions", &boundary_positions, py::arg("patch"))
+        .def("physical_weights", &physical_boundary_weights, py::arg("patch"))
+        .def("physical_normals", &physical_boundary_normals,
+             py::arg("patch"));
 }
 
 } // namespace iguana::bindings
