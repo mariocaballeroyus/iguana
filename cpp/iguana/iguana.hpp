@@ -20,6 +20,7 @@
 #include "fspace/function_space.hpp"
 #include "geometry/boundary.hpp"
 #include "geometry/patch.hpp"
+#include "quadrature/boundary_quadrature.hpp"
 #include "quadrature/box_rule.hpp"
 #include "quadrature/domain_quadrature.hpp"
 #include "quadrature/gauss_legendre/gauss_legendre.hpp"
