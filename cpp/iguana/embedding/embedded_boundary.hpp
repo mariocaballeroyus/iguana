@@ -15,19 +15,22 @@
 #include <Eigen/Core>
 
 #include "iguana/geometry/boundary.hpp"
+#include "iguana/geometry/patch.hpp"
 #include "iguana/grid/tensor_grid.hpp"
 
 namespace iguana
 {
 
 /**
- * @brief Boundary divided exactly over the elements of a background grid
+ * @brief Boundary given in physical space, divided exactly over the
+ *        elements of the grid of a patch
  *
- * Each element of a face, in the parameter space of the grid, is split
- * where it crosses a knot line, so that each piece lies in one element of
- * its face and one of the grid. A piece lying on a knot line goes to the
- * element opposite its normal, and parts outside the grid are left out.
- * The pieces refer to the faces by index, and no geometry is held
+ * The faces are pulled back into the parameter space of the patch, where
+ * each element of a face is split where it crosses a knot line, so that
+ * each piece lies in one element of its face and one of the grid. A piece
+ * lying on a knot line goes to the element opposite its normal, and parts
+ * outside the grid are left out. The faces pulled back keep the parameters
+ * of those given, so that a piece is the same stretch of either
  *
  * @tparam T Floating-point type
  * @tparam d Number of parametric directions, two
@@ -64,21 +67,32 @@ public:
     };
 
     /**
-     * @brief Divides the faces of a boundary over the elements of a grid
+     * @brief Divides the faces of a boundary over the elements of the grid
+     *        of a patch
      *
-     * @param grid Grid whose elements divide the boundary
-     * @param boundary Boundary whose faces lie in the parameter space of
-     *        the grid
+     * The control points of each face map through the inverse of the
+     * patch, and a coordinate within rounding of a knot line is set onto
+     * it, so that a face lying along a knot line in physical space lies on
+     * it exactly. A map that reverses orientation flips the sign of each
+     * face, so that its normal keeps pointing to the same side
      *
-     * @throws std::invalid_argument If the knot vector of a face is not
-     *         clamped
+     * @param patch Patch whose grid divides the boundary
+     * @param boundary Boundary in the physical space of the patch
      *
-     * @pre A face lying on a knot line has exactly the coordinate of the
-     *      line at its control points, and no face runs back and forth
-     *      along it
+     * @throws std::invalid_argument If the map of the patch is not affine,
+     *         or if the knot vector of a face is not clamped
+     *
+     * @pre No face runs back and forth along a knot line
      */
-    EmbeddedBoundary(const TensorGrid<T, d>& grid,
+    template<typename Basis>
+        requires (Basis::dimension == d)
+    EmbeddedBoundary(const Patch<Basis, d>& patch,
                      const Boundary<T, d>& boundary);
+
+    /// @brief Boundary in the parameter space of the grid, whose faces the
+    ///        pieces refer to by index and parameter
+    constexpr const Boundary<T, d>& boundary() const noexcept
+    { return boundary_; }
 
     /// @brief Number of elements of the grid
     constexpr int num_elements() const noexcept
@@ -105,6 +119,9 @@ public:
     }
 
 private:
+    /// @brief Boundary in the parameter space of the grid
+    Boundary<T, d> boundary_;
+
     /// @brief First piece of each element, followed by the number of pieces
     Eigen::VectorXi offsets_;
 

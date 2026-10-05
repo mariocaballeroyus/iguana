@@ -32,6 +32,7 @@ using iguana::TensorNURBS;
 using Embedded = iguana::EmbeddedBoundary<double, 2>;
 using Face = Boundary<double, 2>::Face;
 using Piece = Embedded::Piece;
+using Region = iguana::Patch<TensorBSpline<double, 2>, 2>;
 
 /// @brief Quadratic NURBS curve
 Face curve(std::vector<double> knots, const PointMatrix<double, 2>& points,
@@ -43,9 +44,10 @@ Face curve(std::vector<double> knots, const PointMatrix<double, 2>& points,
     return {TensorNURBS<double, 1>(bspline, weights), points};
 }
 
-/// @brief Grid of linear elements between breaks in each direction
-TensorGrid<double, 2> grid_of(const std::vector<double>& first,
-                              const std::vector<double>& second)
+/// @brief Patch of linear elements between breaks in each direction,
+///        mapped onto itself so that its parameters are its coordinates
+Region patch_of(const std::vector<double>& first,
+                const std::vector<double>& second)
 {
     const auto knots = [](const std::vector<double>& breaks) {
         std::vector<double> values{breaks.front()};
@@ -55,7 +57,18 @@ TensorGrid<double, 2> grid_of(const std::vector<double>& first,
         return KnotVector<double>(1, values);
     };
 
-    return TensorGrid<double, 2>({knots(first), knots(second)});
+    const TensorBSpline<double, 2> basis(
+        TensorGrid<double, 2>({knots(first), knots(second)}));
+
+    // The control points of linear functions lie at the breaks
+    PointMatrix<double, 2> points(basis.num_functions(), 2);
+
+    for (std::size_t row = 0; row < second.size(); ++row)
+        for (std::size_t column = 0; column < first.size(); ++column)
+            points.row(static_cast<Eigen::Index>(
+                column + first.size() * row)) << first[column], second[row];
+
+    return {basis, points};
 }
 
 } // namespace
@@ -86,10 +99,10 @@ TEST_CASE("Pieces of a circle cover it, ending exactly at its knots",
     const std::array<double, 5> breaks{0., .3, .9, .95, 1.};
     const std::vector<double> knots{0., 0., 0., .3, .3, .9, .9, .95, .95,
                                     1., 1., 1.};
-    const TensorGrid<double, 2> grid =
-        grid_of({-3., -1., 1., 3.}, {-3., -1., 1., 3.});
+    const Region square = patch_of({-3., -1., 1., 3.}, {-3., -1., 1., 3.});
+    const TensorGrid<double, 2>& grid = square.basis().grid();
     const Embedded embedded(
-        grid, Boundary<double, 2>({curve(knots, points, weights)}, {1}));
+        square, Boundary<double, 2>({curve(knots, points, weights)}, {1}));
 
     // One piece in each corner element and two in each edge element, none
     // in the middle one
@@ -148,7 +161,7 @@ TEST_CASE("Pieces in an element follow their faces, elements and "
          curve({0., 0., 0., .5, 1., 1., 1.}, inside,
                Eigen::Vector4d::Ones())},
         {1, 1});
-    const Embedded embedded(grid_of({0., 1., 2.}, {0., 1.}), boundary);
+    const Embedded embedded(patch_of({0., 1., 2.}, {0., 1.}), boundary);
 
     const std::span<const Piece> left = embedded.pieces_on_element(0);
     const std::span<const Piece> right = embedded.pieces_on_element(1);
@@ -182,7 +195,7 @@ TEST_CASE("A face on a knot line goes to the elements opposite its normal",
 
     const Face line =
         curve({0., 0., 0., 1., 1., 1.}, points, Eigen::Vector3d(1., 2., 1.));
-    const Embedded embedded(grid_of({0., .5, 1.}, {0., .5, 1.}),
+    const Embedded embedded(patch_of({0., .5, 1.}, {0., .5, 1.}),
                             Boundary<double, 2>({line, line}, {1, -1}));
 
     // Elements 0 and 2 lie left of the line, 1 and 3 right of it
@@ -209,6 +222,6 @@ TEST_CASE("An embedded boundary rejects faces that are not clamped",
         {curve({0., .5, 1., 1.5, 2., 2.5}, points, Eigen::Vector3d::Ones())},
         {1});
 
-    REQUIRE_THROWS_AS(Embedded(grid_of({0., 1.}, {0., 1.}), boundary),
+    REQUIRE_THROWS_AS(Embedded(patch_of({0., 1.}, {0., 1.}), boundary),
                       std::invalid_argument);
 }
