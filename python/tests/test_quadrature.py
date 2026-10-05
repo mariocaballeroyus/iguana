@@ -1,13 +1,14 @@
 # Copyright (c) 2026 Mario Caballero
 # SPDX-License-Identifier: MIT
 
-"""Tests of the quadrature over the cells of a patch"""
+"""Tests of the quadratures over the cells of a patch and along boundaries"""
 
 import numpy as np
 import pytest
 
 import iguana
-from iguana import CellType, DomainQuadrature, HierarchicalGrid
+from iguana import (Boundary, BoundaryQuadrature, CellType, DomainQuadrature,
+                    HierarchicalGrid)
 
 ORIGIN = np.array([1., 0., -1.])
 
@@ -250,6 +251,32 @@ def test_planar_region():
     assert (weights > 0.).all()
     assert ((positions - ORIGIN[:2]) @ [1 / 4, 1 / 2] <= 1. + 1e-12).all()
 
+
+def test_boundary_circle():
+    """The points of a circle in the plane of a rectangle lie on it, with
+    normals pointing away from its centre and weights adding up to its
+    length, although the map stretches the parameters unevenly."""
+    corner = np.sqrt(.5)
+    middle = np.array([5., 2.5])
+    points = np.array([[1., 0.], [1., 1.], [0., 1.], [-1., 1.], [-1., 0.],
+                       [-1., -1.], [0., -1.], [1., -1.], [1., 0.]])
+
+    # Radius 2, as four quadratic arcs joined at double knots
+    circle = iguana.create_curve(
+        degree=2, knots=[0., 0., 0., .25, .25, .5, .5, .75, .75, 1., 1., 1.],
+        control_points=middle + 2. * points,
+        weights=[1., corner, 1., corner, 1., corner, 1., corner, 1.])
+
+    # The unit parameter box maps onto six by four, away from the origin,
+    # where the circle is an ellipse
+    rectangle = iguana.create_rectangle(lengths=(6., 4.), elements=(3, 4),
+                                        degrees=(1, 1), origin=(2., .5))
+    quadrature = BoundaryQuadrature(rectangle, Boundary([circle]), 8)
+
+    radial = (quadrature.positions - middle) / 2.
+
+    np.testing.assert_allclose(quadrature.normals, radial, atol=1e-15)
+    np.testing.assert_allclose(quadrature.weights.sum(), 4. * np.pi)
 
 def test_invalid_arguments():
     """Invalid arguments raise and leave the quadrature unchanged."""
