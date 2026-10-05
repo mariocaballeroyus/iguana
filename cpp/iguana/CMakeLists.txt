@@ -14,6 +14,7 @@ add_library(iguana
     fspace/function_space.cpp
     geometry/boundary.cpp
     geometry/patch.cpp
+    quadrature/boundary_quadrature.cpp
     quadrature/box_rule.cpp
     quadrature/domain_quadrature.cpp
     quadrature/gauss_legendre/gauss_legendre.cpp

@@ -1,10 +1,12 @@
 # Copyright (c) 2026 Mario Caballero
 # SPDX-License-Identifier: MIT
 
-"""Quadratures, the points integrating over the cells of a patch
+"""Quadratures, the points integrating over a patch or along a boundary
 
-A quadrature is filled one cell type at a time, each with a rule of its
-own, such as Gauss-Legendre on the inside cells.
+A domain quadrature is filled one cell type at a time, each with a rule of
+its own, such as Gauss-Legendre on the inside cells. A boundary quadrature
+places one rule on every piece of a boundary that the knot lines of the
+patch divide.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ import numpy as np
 import numpy.typing as npt
 
 from iguana import cpp as _cpp
+from iguana.boundary import Boundary
 from iguana.grid import HierarchicalGrid
 from iguana.embedding import CellType
 from iguana.patch import PlanarPatch, SurfacePatch, VolumePatch
@@ -207,4 +210,103 @@ class DomainQuadrature:
 
     def __repr__(self) -> str:
         return (f'DomainQuadrature(num_elements={self.num_elements}, '
+                f'num_points={self.num_points})')
+
+
+class BoundaryQuadrature:
+    """The quadrature points along a boundary in the plane of a patch."""
+
+    _cpp_object: _cpp.BoundaryQuadrature2d
+
+    def __init__(self, patch: PlanarPatch, boundary: Boundary,
+                 num_points: int) -> None:
+        """Initialize the quadrature of a boundary in the plane of a patch.
+
+        The faces of the boundary are divided exactly where they cross the
+        knot lines of the patch, and each piece carries a Gauss-Legendre
+        rule of its own along its face, so that the points follow the
+        curves as they are.
+
+        Args:
+            patch: The background patch, a planar patch whose map is
+                affine, such as a rectangle from `create_rectangle`.
+            boundary: The boundary, made of curves in the plane of the
+                patch.
+            num_points: Number of points on each piece.
+
+        Raises:
+            TypeError: If the patch is not a planar patch, or if the
+                boundary is not made of curves in the plane.
+            ValueError: If the map of the patch is not affine, if the knot
+                vector of a face is not clamped, or if the number of points
+                lies outside [1, 8].
+        """
+        if not isinstance(patch, PlanarPatch):
+            raise TypeError('the patch must be a planar patch')
+
+        if not (isinstance(boundary, Boundary)
+                and isinstance(boundary._cpp_object, _cpp.Boundary2d)):
+            raise TypeError('the boundary must be made of curves in the '
+                            'plane')
+
+        # The boundary divided over the elements, which the quadrature
+        # needs only to be built
+        embedded = _cpp.EmbeddedBoundary2d(patch=patch._cpp_object,
+                                           boundary=boundary._cpp_object)
+
+        self._cpp_object = _cpp.BoundaryQuadrature2d(boundary=embedded,
+                                                     num_points=num_points)
+        self._patch = patch
+        self._boundary = boundary
+
+    @property
+    def patch(self) -> PlanarPatch:
+        """The background patch, which places the points in the plane."""
+        return self._patch
+
+    @property
+    def boundary(self) -> Boundary:
+        """The boundary the points lie on."""
+        return self._boundary
+
+    @property
+    def num_elements(self) -> int:
+        """Number of elements of the patch holding a piece of the
+        boundary."""
+        return self._cpp_object.num_elements
+
+    @property
+    def num_points(self) -> int:
+        """Number of points over all elements."""
+        return self._cpp_object.num_points
+
+    @property
+    def faces(self) -> npt.NDArray[np.int32]:
+        """Face of the boundary holding each point, of shape
+        `(num_points,)`."""
+        return np.array(self._cpp_object.faces)
+
+    @property
+    def positions(self) -> npt.NDArray[np.float64]:
+        """Positions of the points in the plane, of shape
+        `(num_points, 2)`."""
+        return self._cpp_object.positions(self._patch._cpp_object)
+
+    @property
+    def weights(self) -> npt.NDArray[np.float64]:
+        """Weights of the points in the plane, of shape `(num_points,)`.
+
+        They integrate along the boundary by length, so that the weights
+        of a face add up to the length of its part over the patch.
+        """
+        return self._cpp_object.physical_weights(self._patch._cpp_object)
+
+    @property
+    def normals(self) -> npt.NDArray[np.float64]:
+        """Unit normals at the points, pointing out of the domain, of shape
+        `(num_points, 2)`."""
+        return self._cpp_object.physical_normals(self._patch._cpp_object)
+
+    def __repr__(self) -> str:
+        return (f'BoundaryQuadrature(num_elements={self.num_elements}, '
                 f'num_points={self.num_points})')
