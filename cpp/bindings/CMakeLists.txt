@@ -2,7 +2,7 @@ set(IGUANA_PYTHON_DIR ${PROJECT_BINARY_DIR}/python/iguana)
 
 pybind11_add_module(iguana_python module.cpp basis.cpp patch.cpp
                     boundary.cpp grid.cpp embedding.cpp fspace.cpp
-                    quadrature.cpp)
+                    quadrature.cpp assembly.cpp)
 
 set_target_properties(iguana_python PROPERTIES
     OUTPUT_NAME cpp
