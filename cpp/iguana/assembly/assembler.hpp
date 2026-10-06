@@ -111,6 +111,22 @@ public:
     { return load_; }
 
 private:
+    /**
+     * @brief Adds a local stiffness at the degrees of freedom of a cell, the
+     *        only place where the stiffness is written
+     *
+     * @pre The rows of @p local follow the degrees of freedom of the cell
+     */
+    void add_to_stiffness(int cell, const Eigen::MatrixX<Scalar>& local);
+
+    /**
+     * @brief Adds a local load at the degrees of freedom of a cell, the only
+     *        place where the load is written
+     *
+     * @pre The rows of @p local follow the degrees of freedom of the cell
+     */
+    void add_to_load(int cell, const Eigen::VectorX<Scalar>& local);
+
     /// @brief Space whose degrees of freedom number the system
     const FunctionSpace<Basis>& space_;
 
