@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "iguana/assembly/element_values.hpp"
+#include "iguana/condition/penalty_condition.hpp"
 #include "iguana/element/poisson/poisson_element.hpp"
 
 namespace iguana
@@ -104,6 +105,79 @@ void Assembler<Basis, n>::assemble_load(
 }
 
 template<typename Basis, std::size_t n>
+template<std::derived_from<Condition<Basis, n>> C>
+void Assembler<Basis, n>::assemble_stiffness(
+    const C& condition, const BoundaryQuadrature<Scalar, dim>& quadrature)
+{
+    ElementValues<Basis, n> values(patch_, condition.flags());
+    Eigen::MatrixX<Scalar> points;
+    Eigen::MatrixX<Scalar> normals;
+    Eigen::VectorX<Scalar> measures;
+    Eigen::VectorX<Scalar> weights;
+    Eigen::MatrixX<Scalar> local;
+
+    for (int held = 0; held < quadrature.num_elements(); ++held) {
+        const int cell = quadrature.elements()(held);
+        const int first = quadrature.offsets()(held);
+        const int count = quadrature.offsets()(held + 1) - first;
+
+        points = quadrature.points().middleRows(first, count);
+        values.reinit(cell, points);
+
+        // Boundary weights, the quadrature weights times the measure of the
+        // boundary through the map, from its normals in parameter space
+        normals = quadrature.normals().middleRows(first, count);
+        Patch<Basis, n>::boundary_measure_on_element(values.tangents(),
+                                                     normals, measures);
+        weights = quadrature.weights().segment(first, count);
+        weights = weights.cwiseProduct(measures);
+
+        condition.local_stiffness(values, weights, local);
+        add_to_stiffness(cell, local);
+    }
+}
+
+template<typename Basis, std::size_t n>
+template<std::derived_from<Condition<Basis, n>> C>
+void Assembler<Basis, n>::assemble_load(
+    const C& condition, const BoundaryQuadrature<Scalar, dim>& quadrature,
+    const Eigen::VectorX<Scalar>& data)
+{
+    if (data.size() != quadrature.num_points())
+        throw std::invalid_argument("Assembler: "
+                                    "the data must have one value per point");
+
+    ElementValues<Basis, n> values(patch_, condition.flags());
+    Eigen::MatrixX<Scalar> points;
+    Eigen::MatrixX<Scalar> normals;
+    Eigen::VectorX<Scalar> measures;
+    Eigen::VectorX<Scalar> weights;
+    Eigen::VectorX<Scalar> imposed;
+    Eigen::VectorX<Scalar> local;
+
+    for (int held = 0; held < quadrature.num_elements(); ++held) {
+        const int cell = quadrature.elements()(held);
+        const int first = quadrature.offsets()(held);
+        const int count = quadrature.offsets()(held + 1) - first;
+
+        points = quadrature.points().middleRows(first, count);
+        values.reinit(cell, points);
+
+        // Boundary weights, the quadrature weights times the measure of the
+        // boundary through the map, from its normals in parameter space
+        normals = quadrature.normals().middleRows(first, count);
+        Patch<Basis, n>::boundary_measure_on_element(values.tangents(),
+                                                     normals, measures);
+        weights = quadrature.weights().segment(first, count);
+        weights = weights.cwiseProduct(measures);
+
+        imposed = data.segment(first, count);
+        condition.local_load(values, weights, imposed, local);
+        add_to_load(cell, local);
+    }
+}
+
+template<typename Basis, std::size_t n>
 void Assembler<Basis, n>::add_to_stiffness(int cell,
                                            const Eigen::MatrixX<Scalar>& local)
 {
@@ -165,5 +239,19 @@ template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
 template void Assembler<TensorNURBS<double, 3>, 3>::assemble_load(
     const PoissonElement<TensorNURBS<double, 3>, 3>&,
     const DomainQuadrature<double, 3>&, const Eigen::VectorX<double>&);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_stiffness(
+    const PenaltyCondition<TensorBSpline<double, 2>, 2>&,
+    const BoundaryQuadrature<double, 2>&);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_stiffness(
+    const PenaltyCondition<TensorNURBS<double, 2>, 2>&,
+    const BoundaryQuadrature<double, 2>&);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
+    const PenaltyCondition<TensorBSpline<double, 2>, 2>&,
+    const BoundaryQuadrature<double, 2>&, const Eigen::VectorX<double>&);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
+    const PenaltyCondition<TensorNURBS<double, 2>, 2>&,
+    const BoundaryQuadrature<double, 2>&, const Eigen::VectorX<double>&);
 
 } // namespace iguana

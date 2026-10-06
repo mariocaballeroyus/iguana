@@ -12,9 +12,11 @@
 #include <Eigen/Core>
 #include <Eigen/SparseCore>
 
+#include "iguana/condition/condition.hpp"
 #include "iguana/element/element.hpp"
 #include "iguana/fspace/function_space.hpp"
 #include "iguana/geometry/patch.hpp"
+#include "iguana/quadrature/boundary_quadrature.hpp"
 #include "iguana/quadrature/domain_quadrature.hpp"
 
 namespace iguana
@@ -97,6 +99,49 @@ public:
     void assemble_load(const E& element,
                        const DomainQuadrature<Scalar, dim>& quadrature,
                        const Eigen::VectorX<Scalar>& source);
+
+    /**
+     * @brief Adds the stiffness of a condition along the points of a
+     *        boundary quadrature
+     *
+     * The patch maps the weights of the quadrature, which measure the
+     * boundary in parameter space, into the boundary weights the condition
+     * takes, through the normals of the boundary
+     *
+     * @tparam C Condition, a final class derived from Condition
+     *
+     * @param condition Condition whose local stiffness is added
+     * @param quadrature Quadrature of a boundary embedded in the grid of the
+     *        basis
+     *
+     * @pre @p quadrature is built on the grid of the basis, and every element
+     *      it holds has its degrees of freedom in the space
+     */
+    template<std::derived_from<Condition<Basis, n>> C>
+    void assemble_stiffness(const C& condition,
+                            const BoundaryQuadrature<Scalar, dim>& quadrature);
+
+    /**
+     * @brief Adds the load of a condition along the points of a boundary
+     *        quadrature, from data given at them
+     *
+     * @tparam C Condition, a final class derived from Condition
+     *
+     * @param condition Condition whose local load is added
+     * @param quadrature Quadrature of a boundary embedded in the grid of the
+     *        basis
+     * @param data Value the condition imposes at each point of the
+     *        quadrature, in its order
+     *
+     * @throws std::invalid_argument If @p data does not have one value per
+     *         point of @p quadrature
+     *
+     * @pre @p quadrature is built as for the stiffness of a condition
+     */
+    template<std::derived_from<Condition<Basis, n>> C>
+    void assemble_load(const C& condition,
+                       const BoundaryQuadrature<Scalar, dim>& quadrature,
+                       const Eigen::VectorX<Scalar>& data);
 
     /// @brief Zeroes the stiffness and load, keeping the pattern
     void clear();
