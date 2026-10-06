@@ -27,6 +27,7 @@
 #include "quadrature/moment_fitting/moment_fitting.hpp"
 #include "quadrature/moment_fitting/moments.hpp"
 #include "quadrature/xiao_gimbutas/xiao_gimbutas.hpp"
+#include "assembly/assembler.hpp"
 #include "assembly/element_values.hpp"
 #include "element/element.hpp"
 #include "element/poisson_element.hpp"
