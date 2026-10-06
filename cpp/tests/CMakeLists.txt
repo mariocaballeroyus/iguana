@@ -24,6 +24,7 @@ add_executable(iguana_tests
     assembly/test_assembler.cpp
     assembly/test_element_values.cpp
     element/poisson/test_poisson_element.cpp
+    element/poisson/test_poisson_traces.cpp
     utils/test_bernstein.cpp
     utils/test_legendre.cpp)
 
