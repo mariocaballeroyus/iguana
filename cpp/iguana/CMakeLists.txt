@@ -26,7 +26,8 @@ add_library(iguana
     assembly/assembler.cpp
     assembly/element_values.cpp
     element/poisson/poisson_element.cpp
-    condition/penalty_condition.cpp)
+    condition/penalty_condition.cpp
+    condition/neumann_condition.cpp)
 
 add_library(IGUANA::iguana ALIAS iguana)
 

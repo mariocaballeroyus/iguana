@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "iguana/assembly/element_values.hpp"
+#include "iguana/condition/neumann_condition.hpp"
 #include "iguana/condition/penalty_condition.hpp"
 #include "iguana/element/poisson/poisson_element.hpp"
 
@@ -252,6 +253,20 @@ template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
     const BoundaryQuadrature<double, 2>&, const Eigen::VectorX<double>&);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
     const PenaltyCondition<TensorNURBS<double, 2>, 2>&,
+    const BoundaryQuadrature<double, 2>&, const Eigen::VectorX<double>&);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_stiffness(
+    const NeumannCondition<TensorBSpline<double, 2>, 2>&,
+    const BoundaryQuadrature<double, 2>&);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_stiffness(
+    const NeumannCondition<TensorNURBS<double, 2>, 2>&,
+    const BoundaryQuadrature<double, 2>&);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
+    const NeumannCondition<TensorBSpline<double, 2>, 2>&,
+    const BoundaryQuadrature<double, 2>&, const Eigen::VectorX<double>&);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
+    const NeumannCondition<TensorNURBS<double, 2>, 2>&,
     const BoundaryQuadrature<double, 2>&, const Eigen::VectorX<double>&);
 
 } // namespace iguana
