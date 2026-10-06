@@ -172,6 +172,30 @@ public:
         Eigen::VectorX<Scalar>& measures);
 
     /**
+     * @brief Unit normals in physical space of a boundary at points of an
+     *        element, from its unit normals in parameter space
+     *
+     * By Nanson's formula with the metric G = J^T J, the physical normal
+     * points along J G^-1 m. On a domain it is J^-T m normalized, on a
+     * surface the co-normal, tangent to the surface and normal to the
+     * boundary curve, and on a curve the tangent at an end. It keeps the
+     * side m points to
+     *
+     * @param tangents Tangents at the points, one buffer of size
+     *        (num_points,n) per direction, as given by tangent_on_element()
+     * @param normals Unit normals of the boundary in parameter space, of
+     *        size (num_points,dim), as a boundary quadrature gives them
+     * @param physical_normals Output unit normals in physical space, of size
+     *        (num_points,n), resized if its shape changes
+     *
+     * @pre The tangents are linearly independent at every point
+     */
+    static void physical_normal_on_element(
+        const std::array<PointMatrix<Scalar, n>, dim>& tangents,
+        const Eigen::MatrixX<Scalar>& normals,
+        PointMatrix<Scalar, n>& physical_normals);
+
+    /**
      * @brief Gradients in physical space of the active functions at points
      *        of an element, from their parametric gradients
      *
