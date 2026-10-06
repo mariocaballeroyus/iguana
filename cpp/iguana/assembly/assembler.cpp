@@ -10,7 +10,7 @@
 #include <vector>
 
 #include "iguana/assembly/element_values.hpp"
-#include "iguana/element/poisson_element.hpp"
+#include "iguana/element/poisson/poisson_element.hpp"
 
 namespace iguana
 {

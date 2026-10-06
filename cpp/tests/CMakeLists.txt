@@ -23,7 +23,7 @@ add_executable(iguana_tests
     quadrature/xiao_gimbutas/test_xiao_gimbutas.cpp
     assembly/test_assembler.cpp
     assembly/test_element_values.cpp
-    element/test_poisson_element.cpp
+    element/poisson/test_poisson_element.cpp
     utils/test_bernstein.cpp
     utils/test_legendre.cpp)
 
