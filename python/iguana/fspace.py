@@ -91,5 +91,26 @@ class FunctionSpace:
         otherwise."""
         return self._patch.control_points[self._cpp_object.functions]
 
+    @property
+    def boundary_dofs(self) -> npt.NDArray[np.int64]:
+        """Degrees of freedom of the functions that do not vanish on the
+        boundary of the patch, in increasing order. With open knot vectors,
+        as those of `create_rectangle` and `create_box`, they are the
+        functions first or last along some direction."""
+        counts = [len(knots) - degree - 1
+                  for degree, knots in zip(self._patch.degrees,
+                                           self._patch.knots)]
+
+        # Index of the function of each degree of freedom along each
+        # direction, the first running fastest
+        indices = np.unravel_index(self._cpp_object.functions, counts,
+                                   order='F')
+        on_boundary = np.zeros(self.num_dofs, dtype=bool)
+
+        for index, count in zip(indices, counts):
+            on_boundary |= (index == 0) | (index == count - 1)
+
+        return np.flatnonzero(on_boundary)
+
     def __repr__(self) -> str:
         return f'FunctionSpace(num_dofs={self.num_dofs})'

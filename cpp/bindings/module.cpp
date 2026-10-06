@@ -17,6 +17,7 @@ void grid(py::module_& module);
 void embedding(py::module_& module);
 void fspace(py::module_& module);
 void quadrature(py::module_& module);
+void assembly(py::module_& module);
 
 } // namespace iguana::bindings
 
@@ -31,4 +32,5 @@ PYBIND11_MODULE(cpp, module)
     iguana::bindings::embedding(module);
     iguana::bindings::fspace(module);
     iguana::bindings::quadrature(module);
+    iguana::bindings::assembly(module);
 }
