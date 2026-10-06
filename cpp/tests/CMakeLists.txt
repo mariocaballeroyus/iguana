@@ -21,6 +21,7 @@ add_executable(iguana_tests
     quadrature/moment_fitting/test_moment_fitting.cpp
     quadrature/moment_fitting/test_moments.cpp
     quadrature/xiao_gimbutas/test_xiao_gimbutas.cpp
+    assembly/test_assembler.cpp
     assembly/test_element_values.cpp
     element/test_poisson_element.cpp
     utils/test_bernstein.cpp
