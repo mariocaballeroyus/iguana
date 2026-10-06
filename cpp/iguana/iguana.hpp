@@ -28,5 +28,7 @@
 #include "quadrature/moment_fitting/moments.hpp"
 #include "quadrature/xiao_gimbutas/xiao_gimbutas.hpp"
 #include "assembly/element_values.hpp"
+#include "element/element.hpp"
+#include "element/poisson_element.hpp"
 
 #endif // IGUANA_IGUANA_HPP

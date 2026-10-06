@@ -23,7 +23,8 @@ add_library(iguana
     quadrature/moment_fitting/moments.cpp
     quadrature/xiao_gimbutas/xiao_gimbutas.cpp
     quadrature/xiao_gimbutas/xiao_gimbutas_tables.cpp
-    assembly/element_values.cpp)
+    assembly/element_values.cpp
+    element/poisson_element.cpp)
 
 add_library(IGUANA::iguana ALIAS iguana)
 
