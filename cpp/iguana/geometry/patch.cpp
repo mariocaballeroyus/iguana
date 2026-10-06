@@ -252,6 +252,50 @@ void Patch<Basis, n>::measure_on_element(
 }
 
 template<typename Basis, std::size_t n>
+void Patch<Basis, n>::boundary_measure_on_element(
+    const std::array<PointMatrix<Scalar, n>, dim>& tangents,
+    const Eigen::MatrixX<Scalar>& normals,
+    Eigen::VectorX<Scalar>& measures)
+{
+    measures.resize(normals.rows());
+
+    for (Eigen::Index point = 0; point < measures.size(); ++point) {
+        const Eigen::Matrix<Scalar, n, dim> jacobian =
+            jacobian_at<Scalar, n, dim>(tangents, point);
+        const Eigen::Matrix<Scalar, dim, dim> metric =
+            jacobian.transpose() * jacobian;
+
+        // ds = sqrt(det G) |J G^-1 m| dŝ, Nanson's formula with the metric
+        const Eigen::Vector<Scalar, n> scaled =
+            jacobian * metric.inverse() * normals.row(point).transpose();
+
+        measures(point) = std::sqrt(metric.determinant()) * scaled.norm();
+    }
+}
+
+template<typename Basis, std::size_t n>
+void Patch<Basis, n>::physical_normal_on_element(
+    const std::array<PointMatrix<Scalar, n>, dim>& tangents,
+    const Eigen::MatrixX<Scalar>& normals,
+    PointMatrix<Scalar, n>& physical_normals)
+{
+    physical_normals.resize(normals.rows(), n);
+
+    for (Eigen::Index point = 0; point < normals.rows(); ++point) {
+        const Eigen::Matrix<Scalar, n, dim> jacobian =
+            jacobian_at<Scalar, n, dim>(tangents, point);
+        const Eigen::Matrix<Scalar, dim, dim> metric =
+            jacobian.transpose() * jacobian;
+
+        // n ds = sqrt(det G) J G^-1 m dŝ, so the normal points along J G^-1 m
+        const Eigen::Vector<Scalar, n> scaled =
+            jacobian * metric.inverse() * normals.row(point).transpose();
+
+        physical_normals.row(point) = scaled.normalized().transpose();
+    }
+}
+
+template<typename Basis, std::size_t n>
 void Patch<Basis, n>::physical_grad_on_element(
     const std::array<PointMatrix<Scalar, n>, dim>& tangents,
     const std::array<Eigen::MatrixX<Scalar>, dim>& gradients,

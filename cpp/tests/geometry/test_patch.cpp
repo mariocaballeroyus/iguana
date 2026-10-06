@@ -11,6 +11,7 @@
 #include <numbers>
 #include <stdexcept>
 
+#include <Eigen/Geometry>
 #include <Eigen/LU>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -434,4 +435,106 @@ TEST_CASE("NURBS patch measures its area and maps gradients to physical "
 
     // A rational map is integrated to the convergence of the Gauss rule
     REQUIRE_THAT(area, WithinAbs(1.5 * std::numbers::pi, 1e-9));
+}
+
+TEST_CASE("Patch measures a boundary and maps its normals", "[patch]")
+{
+    using Region = Patch<TensorNURBS<double, 2>, 2>;
+    using Surface = Patch<TensorNURBS<double, 2>, 3>;
+
+    const Region region = half_annulus();
+    const TensorNURBS<double, 2>& basis = region.basis();
+
+    // The same half annulus lifted into space by a rotation, a shell
+    const Eigen::Matrix3d rotation =
+        Eigen::AngleAxisd(.7, Eigen::Vector3d(1., 2., 3.).normalized())
+            .toRotationMatrix();
+    Points lifted = Points::Zero(basis.num_functions(), 3);
+    lifted.leftCols<2>() = region.coefficients();
+    const Points rotated = lifted * rotation.transpose();
+    const Surface surface(basis, rotated);
+
+    // Points of the second element, and the normals of a circle and of a
+    // ray through them
+    Eigen::MatrixXd points(2, 2);
+    points << .6, .3,
+              .85, .7;
+    const Eigen::MatrixXd circle = Eigen::RowVector2d(0., 1.).replicate(2, 1);
+    const Eigen::MatrixXd ray = Eigen::RowVector2d(1., 0.).replicate(2, 1);
+    const Eigen::MatrixXd oblique =
+        Eigen::RowVector2d(.6, .8).replicate(2, 1);
+
+    Eigen::MatrixXd values;
+    Eigen::VectorXi actives;
+    std::array<Eigen::MatrixXd, 2> gradients;
+    iguana::PointMatrix<double, 2> positions;
+    std::array<iguana::PointMatrix<double, 2>, 2> tangents;
+    std::array<Points, 2> surface_tangents;
+
+    basis.active_on_element(1, actives);
+    basis.grad_on_element({2, 0}, points, values, gradients);
+    region.position_on_element(actives, values, positions);
+    region.tangent_on_element(actives, gradients, tangents);
+    surface.tangent_on_element(actives, gradients, surface_tangents);
+
+    Eigen::VectorXd circles;
+    Eigen::VectorXd rays;
+    Eigen::VectorXd surface_circles;
+
+    iguana::PointMatrix<double, 2> circle_normals;
+    iguana::PointMatrix<double, 2> ray_normals;
+    Points surface_circle_normals;
+
+    Region::boundary_measure_on_element(tangents, circle, circles);
+    Region::boundary_measure_on_element(tangents, ray, rays);
+    Surface::boundary_measure_on_element(surface_tangents, circle,
+                                         surface_circles);
+
+    Eigen::VectorXd obliques;
+    iguana::PointMatrix<double, 2> oblique_normals;
+
+    Region::boundary_measure_on_element(tangents, oblique, obliques);
+    Region::physical_normal_on_element(tangents, oblique, oblique_normals);
+    Region::physical_normal_on_element(tangents, circle, circle_normals);
+    Region::physical_normal_on_element(tangents, ray, ray_normals);
+    Surface::physical_normal_on_element(surface_tangents, circle,
+                                        surface_circle_normals);
+
+    for (Eigen::Index pt = 0; pt < points.rows(); ++pt) {
+        INFO("point " << pt);
+        const Eigen::Vector2d radial = positions.row(pt).normalized();
+        const Eigen::Vector2d angular(-radial.y(), radial.x());
+
+        // A circle has the radial normal and is measured by the speed of the
+        // angle along the first direction, and a ray has the angular normal
+        // and the unit speed of the radius
+        REQUIRE((circle_normals.row(pt).transpose() - radial).norm() < 1e-13);
+        REQUIRE_THAT(circles(pt),
+                     WithinAbs(tangents[0].row(pt).norm(), 1e-13));
+        REQUIRE((ray_normals.row(pt).transpose() - angular).norm() < 1e-13);
+        REQUIRE_THAT(rays(pt), WithinAbs(1., 1e-13));
+
+        // An oblique line runs along J t, with t the normal turned a quarter
+        // in parameter space: its normal is orthogonal to J t, on the side of
+        // J m, and its measure is |J t|
+        Eigen::Matrix2d jacobian;
+        jacobian << tangents[0].row(pt).transpose(),
+                    tangents[1].row(pt).transpose();
+        const Eigen::Vector2d along = jacobian * Eigen::Vector2d(-.8, .6);
+        const Eigen::Vector2d across = jacobian * Eigen::Vector2d(.6, .8);
+        const Eigen::Vector2d normal = oblique_normals.row(pt).transpose();
+
+        REQUIRE_THAT(normal.dot(along), WithinAbs(0., 1e-13));
+        REQUIRE(normal.dot(across) > 0.);
+        REQUIRE_THAT(obliques(pt), WithinAbs(along.norm(), 1e-13));
+
+        // On the shell, the co-normal is the planar normal rotated, tangent
+        // to the surface, and the boundary curve measures the same
+        Eigen::Vector3d lifted_radial = Eigen::Vector3d::Zero();
+        lifted_radial.head<2>() = radial;
+
+        REQUIRE((surface_circle_normals.row(pt).transpose()
+                 - rotation * lifted_radial).norm() < 1e-13);
+        REQUIRE_THAT(surface_circles(pt), WithinAbs(circles(pt), 1e-13));
+    }
 }

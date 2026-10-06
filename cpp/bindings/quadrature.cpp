@@ -315,20 +315,22 @@ PointMatrix<double, 2> boundary_positions(
 }
 
 /**
- * @brief Physical normal of each point of a boundary quadrature scaled by
- *        its physical weight, by Nanson's formula |det J| J^-T m w
+ * @brief Weights of the points of a boundary quadrature in the plane, their
+ *        weights in parameter space times the measure of the boundary
  *
  * @throws std::invalid_argument As walk_held_elements() does
  */
-PointMatrix<double, 2> scaled_normals(const BoundaryQuadrature2d& quadrature,
-                                      const PlanarPatch& patch)
+Eigen::VectorXd physical_boundary_weights(
+    const BoundaryQuadrature2d& quadrature, const PlanarPatch& patch)
 {
-    PointMatrix<double, 2> result(quadrature.num_points(), 2);
+    Eigen::VectorXd result(quadrature.num_points());
 
     // Buffers reused over the elements
     Eigen::MatrixXd parameters;
+    Eigen::MatrixXd normals;
     Eigen::MatrixXd values;
     Eigen::VectorXi actives;
+    Eigen::VectorXd measures;
     std::array<Eigen::MatrixXd, 2> gradients;
     std::array<PointMatrix<double, 2>, 2> tangents;
 
@@ -337,53 +339,59 @@ PointMatrix<double, 2> scaled_normals(const BoundaryQuadrature2d& quadrature,
         [&](const std::array<int, 2>& first_active, int element, int first,
             int count) {
             parameters = quadrature.points().middleRows(first, count);
+            normals = quadrature.normals().middleRows(first, count);
             patch.basis().grad_on_element(first_active, parameters, values,
                                           gradients);
             patch.basis().active_on_element(element, actives);
             patch.tangent_on_element(actives, gradients, tangents);
+            PlanarPatch::boundary_measure_on_element(tangents, normals,
+                                                     measures);
 
-            for (int point = 0; point < count; ++point) {
-                const int row = first + point;
-
-                // The tangents are the columns of the Jacobian
-                Eigen::Matrix2d jacobian;
-                jacobian << tangents[0].row(point).transpose(),
-                            tangents[1].row(point).transpose();
-
-                result.row(row) =
-                    std::abs(jacobian.determinant()) *
-                    quadrature.weights()(row) *
-                    (jacobian.inverse().transpose() *
-                     quadrature.normals().row(row).transpose())
-                        .transpose();
-            }
+            result.segment(first, count) =
+                quadrature.weights().segment(first, count).cwiseProduct(
+                    measures);
         });
 
     return result;
 }
 
 /**
- * @brief Weights of the points of a boundary quadrature in the plane, the
- *        lengths of their scaled normals
- *
- * @throws std::invalid_argument As walk_held_elements() does
- */
-Eigen::VectorXd physical_boundary_weights(
-    const BoundaryQuadrature2d& quadrature, const PlanarPatch& patch)
-{
-    return scaled_normals(quadrature, patch).rowwise().norm();
-}
-
-/**
  * @brief Unit normals of the points of a boundary quadrature in the plane,
- *        pointing out of the domain, the directions of their scaled normals
+ *        pointing out of the domain
  *
  * @throws std::invalid_argument As walk_held_elements() does
  */
 PointMatrix<double, 2> physical_boundary_normals(
     const BoundaryQuadrature2d& quadrature, const PlanarPatch& patch)
 {
-    return scaled_normals(quadrature, patch).rowwise().normalized();
+    PointMatrix<double, 2> result(quadrature.num_points(), 2);
+
+    // Buffers reused over the elements
+    Eigen::MatrixXd parameters;
+    Eigen::MatrixXd normals;
+    Eigen::MatrixXd values;
+    Eigen::VectorXi actives;
+    std::array<Eigen::MatrixXd, 2> gradients;
+    std::array<PointMatrix<double, 2>, 2> tangents;
+    PointMatrix<double, 2> physical_normals;
+
+    walk_held_elements(
+        quadrature, patch,
+        [&](const std::array<int, 2>& first_active, int element, int first,
+            int count) {
+            parameters = quadrature.points().middleRows(first, count);
+            normals = quadrature.normals().middleRows(first, count);
+            patch.basis().grad_on_element(first_active, parameters, values,
+                                          gradients);
+            patch.basis().active_on_element(element, actives);
+            patch.tangent_on_element(actives, gradients, tangents);
+            PlanarPatch::physical_normal_on_element(tangents, normals,
+                                                    physical_normals);
+
+            result.middleRows(first, count) = physical_normals;
+        });
+
+    return result;
 }
 
 } // namespace

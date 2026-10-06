@@ -143,6 +143,59 @@ public:
         Eigen::VectorX<Scalar>& measures);
 
     /**
+     * @brief Measure of a boundary at points of an element, the factor that
+     *        turns its weights in parameter space into physical ones
+     *
+     * A boundary with unit normal m and length or area element ds_xi in
+     * parameter space has the element ds = sqrt(det G) |J G^-1 m| ds_xi in
+     * physical space, by Nanson's formula written with the metric
+     * G = J^T J. On a domain the factor reads |det J| |J^-T m|, on a surface
+     * it measures the boundary curve along the surface, and on a curve it
+     * is one at an end
+     *
+     * The points may lie anywhere in the element, as those of a boundary
+     * embedded in the patch do: the normal m alone defines the boundary
+     * through each point
+     *
+     * @param tangents Tangents at the points, one buffer of size
+     *        (num_points,n) per direction, as given by tangent_on_element()
+     * @param normals Unit normals of the boundary in parameter space, of
+     *        size (num_points,dim), as a boundary quadrature gives them
+     * @param measures Output factor of each point, resized if its size
+     *        changes
+     *
+     * @pre The tangents are linearly independent at every point
+     */
+    static void boundary_measure_on_element(
+        const std::array<PointMatrix<Scalar, n>, dim>& tangents,
+        const Eigen::MatrixX<Scalar>& normals,
+        Eigen::VectorX<Scalar>& measures);
+
+    /**
+     * @brief Unit normals in physical space of a boundary at points of an
+     *        element, from its unit normals in parameter space
+     *
+     * By Nanson's formula with the metric G = J^T J, the physical normal
+     * points along J G^-1 m. On a domain it is J^-T m normalized, on a
+     * surface the co-normal, tangent to the surface and normal to the
+     * boundary curve, and on a curve the tangent at an end. It keeps the
+     * side m points to
+     *
+     * @param tangents Tangents at the points, one buffer of size
+     *        (num_points,n) per direction, as given by tangent_on_element()
+     * @param normals Unit normals of the boundary in parameter space, of
+     *        size (num_points,dim), as a boundary quadrature gives them
+     * @param physical_normals Output unit normals in physical space, of size
+     *        (num_points,n), resized if its shape changes
+     *
+     * @pre The tangents are linearly independent at every point
+     */
+    static void physical_normal_on_element(
+        const std::array<PointMatrix<Scalar, n>, dim>& tangents,
+        const Eigen::MatrixX<Scalar>& normals,
+        PointMatrix<Scalar, n>& physical_normals);
+
+    /**
      * @brief Gradients in physical space of the active functions at points
      *        of an element, from their parametric gradients
      *
