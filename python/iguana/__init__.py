@@ -9,6 +9,7 @@ types that hold their C++ instance as _cpp_object
 
 from iguana import cpp
 from iguana.boundary import Boundary
+from iguana.condition import PenaltyCondition
 from iguana.element import PoissonElement
 from iguana.embedding import CellType
 from iguana.fspace import FunctionSpace
@@ -23,6 +24,6 @@ __version__ = cpp.__version__
 
 __all__ = ['Boundary', 'BoundaryQuadrature', 'CellType', 'CurvePatch',
            'DomainQuadrature', 'FunctionSpace', 'HierarchicalGrid',
-           'PlanarPatch', 'PoissonElement', 'SurfacePatch', 'VolumePatch',
-           'create_box', 'create_curve', 'create_rectangle',
-           'create_surface', 'solve']
+           'PenaltyCondition', 'PlanarPatch', 'PoissonElement',
+           'SurfacePatch', 'VolumePatch', 'create_box', 'create_curve',
+           'create_rectangle', 'create_surface', 'solve']

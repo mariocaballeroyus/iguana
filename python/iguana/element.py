@@ -15,7 +15,24 @@ from iguana import cpp as _cpp
 
 class PoissonElement:
     """Element of the Poisson problem, -Δu = f, on a planar or volume
-    patch."""
+    patch. Its only trace is the field u, the flux being natural."""
+
+    class U:
+        """Trace of the field u of the Poisson problem, on which a condition
+        imposes values."""
+
+        def _cpp_trace(self) -> _cpp.PoissonElement2d.U:
+            """The compiled trace, on a planar patch, the only one boundaries
+            lie in so far."""
+            return _cpp.PoissonElement2d.U()
+
+        def __repr__(self) -> str:
+            return 'PoissonElement.U()'
+
+    @property
+    def u(self) -> PoissonElement.U:
+        """Trace of the field u, on which a condition imposes values."""
+        return PoissonElement.U()
 
     def _cpp_element(self, dimension: int) -> (_cpp.PoissonElement2d
                                                | _cpp.PoissonElement3d):
