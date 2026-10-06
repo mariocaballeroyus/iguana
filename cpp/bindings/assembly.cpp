@@ -17,8 +17,10 @@ namespace iguana::bindings
 namespace
 {
 
+using Trace2d = Trace<TensorBSpline<double, 2>, 2>;
 using PoissonElement2d = PoissonElement<TensorBSpline<double, 2>, 2>;
 using PoissonElement3d = PoissonElement<TensorBSpline<double, 3>, 3>;
+using PenaltyCondition2d = PenaltyCondition<TensorBSpline<double, 2>, 2>;
 using Assembler2d = Assembler<TensorBSpline<double, 2>, 2>;
 using Assembler3d = Assembler<TensorBSpline<double, 3>, 3>;
 
@@ -30,11 +32,25 @@ void assembly(py::module_& module)
     // assembly adds into it
     constexpr py::return_value_policy copy = py::return_value_policy::copy;
 
-    py::class_<PoissonElement2d>(module, "PoissonElement2d")
+    // The base of the traces, so that a condition takes the trace of any
+    // element
+    py::class_<Trace2d>(module, "Trace2d");
+
+    py::class_<PoissonElement2d> poisson_element_2d(module,
+                                                    "PoissonElement2d");
+    poisson_element_2d.def(py::init<>());
+
+    py::class_<PoissonElement2d::U, Trace2d>(poisson_element_2d, "U")
         .def(py::init<>());
 
     py::class_<PoissonElement3d>(module, "PoissonElement3d")
         .def(py::init<>());
+
+    // A condition keeps a reference to its trace, which Python keeps alive
+    // with it
+    py::class_<PenaltyCondition2d>(module, "PenaltyCondition2d")
+        .def(py::init<const Trace2d&, double>(), py::arg("trace"),
+             py::arg("penalty"), py::keep_alive<1, 2>());
 
     // An assembler keeps references to its space and patch, which Python
     // keeps alive with it. The wrapper of the solve drives it
@@ -48,6 +64,12 @@ void assembly(py::module_& module)
              py::arg("element"), py::arg("quadrature"))
         .def("assemble_load", &Assembler2d::assemble_load<PoissonElement2d>,
              py::arg("element"), py::arg("quadrature"), py::arg("source"))
+        .def("assemble_stiffness",
+             &Assembler2d::assemble_stiffness<PenaltyCondition2d>,
+             py::arg("condition"), py::arg("quadrature"))
+        .def("assemble_load",
+             &Assembler2d::assemble_load<PenaltyCondition2d>,
+             py::arg("condition"), py::arg("quadrature"), py::arg("data"))
         .def_property_readonly("stiffness", &Assembler2d::stiffness, copy)
         .def_property_readonly("load", &Assembler2d::load, copy);
 

@@ -4,13 +4,13 @@
 """Solver, the solution of a problem on a function space
 
 The solve assembles the stiffness and load of an element over a quadrature,
-in compiled code, holds some degrees of freedom at given values, and solves
-the sparse system for the others.
+and of conditions along boundaries, in compiled code, holds some degrees of
+freedom at given values, and solves the sparse system for the others.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 import numpy as np
 import numpy.typing as npt
@@ -18,6 +18,7 @@ from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import spsolve
 
 from iguana import cpp as _cpp
+from iguana.condition import PenaltyCondition
 from iguana.element import PoissonElement
 from iguana.fspace import FunctionSpace
 from iguana.patch import PlanarPatch, VolumePatch
@@ -32,12 +33,14 @@ def solve(
              | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
     fixed: npt.ArrayLike | None = None,
     values: npt.ArrayLike | None = None,
+    conditions: Sequence[PenaltyCondition] = (),
 ) -> npt.NDArray[np.float64]:
     """Solve the problem of an element on a space.
 
     The free degrees of freedom solve K_ff u_f = F_f - K_fc u_c, with the
-    stiffness K and load F assembled over the quadrature and the fixed
-    degrees of freedom held at their values u_c.
+    stiffness K and load F assembled over the quadrature and along the
+    boundaries of the conditions, and the fixed degrees of freedom held at
+    their values u_c.
 
     Args:
         element: The element stating the problem.
@@ -52,20 +55,26 @@ def solve(
             problem must determine the solution by itself.
         values: Value of each fixed degree of freedom. Without them, the
             fixed ones are held at zero.
+        conditions: Conditions imposing values along boundaries in the
+            patch of the space, such as penalties, which need a planar
+            patch.
 
     Returns:
         The coefficient of each degree of freedom, of shape `(num_dofs,)`.
 
     Raises:
         TypeError: If the element is not a Poisson element, if the space
-            is not a function space on a planar or volume patch, or if the
-            quadrature is not a domain quadrature.
-        ValueError: If the quadrature does not lie on the elements of the
-            patch of the space, if the source does not give one value per
-            point, if a fixed degree of freedom lies outside the space or
-            repeats, or if there is not one value per fixed one.
+            is not a function space on a planar or volume patch, if the
+            quadrature is not a domain quadrature, or if a condition is not
+            a penalty condition or is given on a volume patch.
+        ValueError: If the quadrature or the boundary of a condition does
+            not lie on the elements of the patch of the space, if the source
+            does not give one value per point, if a fixed degree of freedom
+            lies outside the space or repeats, or if there is not one value
+            per fixed one.
     """
-    stiffness, load = _assemble(element, space, quadrature, source)
+    stiffness, load = _assemble(element, space, quadrature, source,
+                                conditions)
     fixed, values = _fixed(space.num_dofs, fixed, values)
 
     # The fixed degrees of freedom carry their part of the stiffness over to
@@ -86,9 +95,11 @@ def _assemble(
     quadrature: DomainQuadrature,
     source: (npt.ArrayLike
              | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
+    conditions: Sequence[PenaltyCondition],
 ) -> tuple[csr_matrix, npt.NDArray[np.float64]]:
-    """Stiffness and load of an element over a quadrature, in the numbering
-    of the degrees of freedom of a space."""
+    """Stiffness and load of an element over a quadrature, and of
+    conditions along boundaries, in the numbering of the degrees of freedom
+    of a space."""
     if not isinstance(element, PoissonElement):
         raise TypeError('the element must be a Poisson element')
 
@@ -127,6 +138,20 @@ def _assemble(
 
     assembler.assemble_stiffness(cpp_element, quadrature._cpp_object)
     assembler.assemble_load(cpp_element, quadrature._cpp_object, source)
+
+    for condition in conditions:
+        if not isinstance(condition, PenaltyCondition):
+            raise TypeError('the conditions must be penalty conditions')
+
+        # Boundary quadratures lie in the plane
+        if not isinstance(patch, PlanarPatch):
+            raise TypeError('conditions need a planar patch')
+
+        if condition.quadrature.patch is not patch:
+            raise ValueError('the boundary of a condition must lie on the '
+                             'patch of the space')
+
+        condition._assemble(assembler)
 
     return assembler.stiffness, assembler.load
 
