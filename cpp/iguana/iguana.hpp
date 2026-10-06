@@ -33,5 +33,7 @@
 #include "element/poisson/poisson_element.hpp"
 #include "element/poisson/poisson_traces.hpp"
 #include "element/trace.hpp"
+#include "condition/condition.hpp"
+#include "condition/penalty_condition.hpp"
 
 #endif // IGUANA_IGUANA_HPP

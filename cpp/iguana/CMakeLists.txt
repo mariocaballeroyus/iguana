@@ -25,7 +25,8 @@ add_library(iguana
     quadrature/xiao_gimbutas/xiao_gimbutas_tables.cpp
     assembly/assembler.cpp
     assembly/element_values.cpp
-    element/poisson/poisson_element.cpp)
+    element/poisson/poisson_element.cpp
+    condition/penalty_condition.cpp)
 
 add_library(IGUANA::iguana ALIAS iguana)
 
