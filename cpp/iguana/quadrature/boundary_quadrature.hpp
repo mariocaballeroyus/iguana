@@ -34,14 +34,12 @@ namespace iguana
  * physical normal as its direction
  *
  * @tparam T Floating-point type
- * @tparam d Number of parametric directions, two
+ * @tparam d Number of parametric directions, two, as only curves are
+ *         embedded so far, which EmbeddedBoundary asserts
  */
 template<std::floating_point T, std::size_t d>
 class BoundaryQuadrature
 {
-    static_assert(d == 2, "BoundaryQuadrature: "
-                          "the boundary must be made of curves");
-
 public:
     /// @brief Number of parametric directions
     static constexpr std::size_t dimension = d;
