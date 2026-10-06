@@ -5,6 +5,7 @@
 
 #include <iguana/iguana.hpp>
 
+#include <array>
 #include <stdexcept>
 #include <vector>
 
@@ -82,6 +83,20 @@ iguana::DomainQuadrature<double, 2> inside_quadrature(
                     iguana::GaussLegendre<double, 2>(3));
 
     return quadrature;
+}
+
+/// @brief Straight face of a boundary from one point to another
+iguana::Boundary<double, 2>::Face segment(const Eigen::RowVector2d& from,
+                                          const Eigen::RowVector2d& to)
+{
+    iguana::PointMatrix<double, 2> points(2, 2);
+    points << from, to;
+
+    const iguana::TensorBSpline<double, 1> line(
+        {iguana::BSpline<double>(1, {0., 0., 1., 1.})});
+
+    return {iguana::TensorNURBS<double, 1>(line, Eigen::Vector2d::Ones()),
+            points};
 }
 
 } // namespace
@@ -202,5 +217,71 @@ TEST_CASE("An assembler needs one source value per point", "[assembler]")
         Eigen::VectorXd::Ones(quadrature.num_points() - 1);
 
     REQUIRE_THROWS_AS(assembler.assemble_load(element, quadrature, source),
+                      std::invalid_argument);
+}
+
+TEST_CASE("A penalty on an embedded boundary imposes a field of the space",
+          "[assembler]")
+{
+    const Basis basis = uneven();
+    const iguana::Patch<Basis, 2> patch = rectangle(basis);
+    const iguana::FunctionSpace<Basis> space(
+        basis, with_last_column(CellType::inside));
+
+    // A tilted quadrilateral inside the rectangle, counterclockwise, whose
+    // sides cross the knot lines
+    const std::array<Eigen::RowVector2d, 4> vertices{
+        Eigen::RowVector2d(.3, .4), Eigen::RowVector2d(1.7, .6),
+        Eigen::RowVector2d(1.5, 2.6), Eigen::RowVector2d(.4, 2.2)};
+
+    std::vector<iguana::Boundary<double, 2>::Face> faces;
+    double perimeter = 0.;
+
+    for (std::size_t side = 0; side < 4; ++side) {
+        const Eigen::RowVector2d& to = vertices[(side + 1) % 4];
+
+        faces.push_back(segment(vertices[side], to));
+        perimeter += (to - vertices[side]).norm();
+    }
+
+    // Biquadratic functions are of degree four along a line, so five points
+    // integrate their products exactly
+    const iguana::EmbeddedBoundary<double, 2> embedded(
+        patch, iguana::Boundary<double, 2>(faces, {1, 1, 1, 1}));
+    const iguana::BoundaryQuadrature<double, 2> quadrature(
+        embedded, iguana::GaussLegendre<double, 1>(5));
+
+    const iguana::PoissonElement<Basis, 2>::U trace;
+    const double penalty = 10.;
+    const iguana::PenaltyCondition<Basis, 2> condition(trace, penalty);
+
+    // The data of b . x, the points lying in parameter space, where the map
+    // scales each axis by its side
+    const Eigen::Vector2d b(1., -2.);
+    const Eigen::VectorXd data =
+        width * b(0) * quadrature.points().col(0)
+        + height * b(1) * quadrature.points().col(1);
+
+    iguana::Assembler<Basis, 2> assembler(space, patch);
+    assembler.assemble_stiffness(condition, quadrature);
+    assembler.assemble_load(condition, quadrature, data);
+
+    // The functions sum to one, so the penalty on constants is beta times
+    // the perimeter
+    const Eigen::VectorXd constant =
+        Eigen::VectorXd::Ones(space.dof_map().num_dofs());
+
+    REQUIRE_THAT(constant.dot(assembler.stiffness() * constant),
+                 WithinRel(penalty * perimeter, 1e-12));
+
+    // With every cell inside, each function keeps its own index, and the
+    // space holds b . x, which the penalty imposes consistently
+    const Eigen::VectorXd u = patch.coefficients() * b;
+
+    REQUIRE((assembler.stiffness() * u - assembler.load()).cwiseAbs()
+                .maxCoeff() < 1e-12);
+
+    REQUIRE_THROWS_AS(assembler.assemble_load(condition, quadrature,
+                                              data.head(data.size() - 1)),
                       std::invalid_argument);
 }
