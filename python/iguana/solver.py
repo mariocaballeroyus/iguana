@@ -18,7 +18,7 @@ from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import spsolve
 
 from iguana import cpp as _cpp
-from iguana.condition import PenaltyCondition
+from iguana.condition import NeumannCondition, PenaltyCondition
 from iguana.element import PoissonElement
 from iguana.fspace import FunctionSpace
 from iguana.patch import PlanarPatch, VolumePatch
@@ -33,7 +33,7 @@ def solve(
              | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
     fixed: npt.ArrayLike | None = None,
     values: npt.ArrayLike | None = None,
-    conditions: Sequence[PenaltyCondition] = (),
+    conditions: Sequence[PenaltyCondition | NeumannCondition] = (),
 ) -> npt.NDArray[np.float64]:
     """Solve the problem of an element on a space.
 
@@ -55,9 +55,9 @@ def solve(
             problem must determine the solution by itself.
         values: Value of each fixed degree of freedom. Without them, the
             fixed ones are held at zero.
-        conditions: Conditions imposing values along boundaries in the
-            patch of the space, such as penalties, which need a planar
-            patch.
+        conditions: Conditions along boundaries in the patch of the
+            space, penalties imposing values or Neumann conditions loading
+            fluxes, which need a planar patch.
 
     Returns:
         The coefficient of each degree of freedom, of shape `(num_dofs,)`.
@@ -65,8 +65,9 @@ def solve(
     Raises:
         TypeError: If the element is not a Poisson element, if the space
             is not a function space on a planar or volume patch, if the
-            quadrature is not a domain quadrature, or if a condition is not
-            a penalty condition or is given on a volume patch.
+            quadrature is not a domain quadrature, or if a condition is
+            neither a penalty nor a Neumann condition or is given on a
+            volume patch.
         ValueError: If the quadrature or the boundary of a condition does
             not lie on the elements of the patch of the space, if the source
             does not give one value per point, if a fixed degree of freedom
@@ -95,7 +96,7 @@ def _assemble(
     quadrature: DomainQuadrature,
     source: (npt.ArrayLike
              | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
-    conditions: Sequence[PenaltyCondition],
+    conditions: Sequence[PenaltyCondition | NeumannCondition],
 ) -> tuple[csr_matrix, npt.NDArray[np.float64]]:
     """Stiffness and load of an element over a quadrature, and of
     conditions along boundaries, in the numbering of the degrees of freedom
@@ -140,8 +141,9 @@ def _assemble(
     assembler.assemble_load(cpp_element, quadrature._cpp_object, source)
 
     for condition in conditions:
-        if not isinstance(condition, PenaltyCondition):
-            raise TypeError('the conditions must be penalty conditions')
+        if not isinstance(condition, (PenaltyCondition, NeumannCondition)):
+            raise TypeError('the conditions must be penalty or Neumann '
+                            'conditions')
 
         # Boundary quadratures lie in the plane
         if not isinstance(patch, PlanarPatch):

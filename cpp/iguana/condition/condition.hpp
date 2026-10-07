@@ -63,7 +63,8 @@ public:
      *
      * @param values Values at the boundary points in the element
      * @param weights Boundary weights, one per point
-     * @param data Value the condition imposes at each point
+     * @param data Data of the condition at each point, such as the value
+     *        it imposes or a flux
      * @param load Output of size num_active, overwritten. It is resized
      *        when necessary
      *

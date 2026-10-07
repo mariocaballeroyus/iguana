@@ -99,6 +99,32 @@ iguana::Boundary<double, 2>::Face segment(const Eigen::RowVector2d& from,
             points};
 }
 
+/// @brief Corners of a tilted quadrilateral inside the rectangle,
+///        counterclockwise, whose sides cross the knot lines
+std::array<Eigen::RowVector2d, 4> quadrilateral()
+{
+    return {Eigen::RowVector2d(.3, .4), Eigen::RowVector2d(1.7, .6),
+            Eigen::RowVector2d(1.5, 2.6), Eigen::RowVector2d(.4, 2.2)};
+}
+
+/// @brief Quadrature of the boundary of a quadrilateral in a patch, with
+///        five points per piece, as biquadratic functions are of degree four
+///        along a line and their products integrate exactly
+iguana::BoundaryQuadrature<double, 2> boundary_quadrature(
+    const iguana::Patch<Basis, 2>& patch,
+    const std::array<Eigen::RowVector2d, 4>& corners)
+{
+    std::vector<iguana::Boundary<double, 2>::Face> faces;
+
+    for (std::size_t side = 0; side < 4; ++side)
+        faces.push_back(segment(corners[side], corners[(side + 1) % 4]));
+
+    const iguana::EmbeddedBoundary<double, 2> embedded(
+        patch, iguana::Boundary<double, 2>(faces, {1, 1, 1, 1}));
+
+    return {embedded, iguana::GaussLegendre<double, 1>(5)};
+}
+
 } // namespace
 
 TEST_CASE("The Poisson system of a rectangle integrates exactly",
@@ -228,28 +254,13 @@ TEST_CASE("A penalty on an embedded boundary imposes a field of the space",
     const iguana::FunctionSpace<Basis> space(
         basis, with_last_column(CellType::inside));
 
-    // A tilted quadrilateral inside the rectangle, counterclockwise, whose
-    // sides cross the knot lines
-    const std::array<Eigen::RowVector2d, 4> vertices{
-        Eigen::RowVector2d(.3, .4), Eigen::RowVector2d(1.7, .6),
-        Eigen::RowVector2d(1.5, 2.6), Eigen::RowVector2d(.4, 2.2)};
-
-    std::vector<iguana::Boundary<double, 2>::Face> faces;
+    const std::array<Eigen::RowVector2d, 4> corners = quadrilateral();
+    const iguana::BoundaryQuadrature<double, 2> quadrature =
+        boundary_quadrature(patch, corners);
     double perimeter = 0.;
 
-    for (std::size_t side = 0; side < 4; ++side) {
-        const Eigen::RowVector2d& to = vertices[(side + 1) % 4];
-
-        faces.push_back(segment(vertices[side], to));
-        perimeter += (to - vertices[side]).norm();
-    }
-
-    // Biquadratic functions are of degree four along a line, so five points
-    // integrate their products exactly
-    const iguana::EmbeddedBoundary<double, 2> embedded(
-        patch, iguana::Boundary<double, 2>(faces, {1, 1, 1, 1}));
-    const iguana::BoundaryQuadrature<double, 2> quadrature(
-        embedded, iguana::GaussLegendre<double, 1>(5));
+    for (std::size_t side = 0; side < 4; ++side)
+        perimeter += (corners[(side + 1) % 4] - corners[side]).norm();
 
     const iguana::PoissonElement<Basis, 2>::U trace;
     const double penalty = 10.;
@@ -284,4 +295,48 @@ TEST_CASE("A penalty on an embedded boundary imposes a field of the space",
     REQUIRE_THROWS_AS(assembler.assemble_load(condition, quadrature,
                                               data.head(data.size() - 1)),
                       std::invalid_argument);
+}
+
+TEST_CASE("A Neumann condition loads a trace with data along a boundary",
+          "[assembler]")
+{
+    const Basis basis = uneven();
+    const iguana::Patch<Basis, 2> patch = rectangle(basis);
+    const iguana::FunctionSpace<Basis> space(
+        basis, with_last_column(CellType::inside));
+
+    const std::array<Eigen::RowVector2d, 4> corners = quadrilateral();
+    const iguana::BoundaryQuadrature<double, 2> quadrature =
+        boundary_quadrature(patch, corners);
+
+    const iguana::PoissonElement<Basis, 2>::U trace;
+    const iguana::NeumannCondition<Basis, 2> condition(trace);
+
+    // The data h = b . x, the points lying in parameter space, where the map
+    // scales each axis by its side
+    const Eigen::RowVector2d b(1., -2.);
+    const Eigen::VectorXd data =
+        width * b(0) * quadrature.points().col(0)
+        + height * b(1) * quadrature.points().col(1);
+
+    iguana::Assembler<Basis, 2> assembler(space, patch);
+    assembler.assemble_stiffness(condition, quadrature);
+    assembler.assemble_load(condition, quadrature, data);
+
+    // The data is known, so the stiffness stays zero
+    REQUIRE(assembler.stiffness().norm() == 0.);
+
+    // The functions sum to one, so the load sums to the integral of b . x
+    // along the boundary, linear on each side: its length times the value
+    // at its midpoint
+    double integral = 0.;
+
+    for (std::size_t side = 0; side < 4; ++side) {
+        const Eigen::RowVector2d& from = corners[side];
+        const Eigen::RowVector2d& to = corners[(side + 1) % 4];
+
+        integral += (to - from).norm() * (from + to).dot(b) / 2.;
+    }
+
+    REQUIRE_THAT(assembler.load().sum(), WithinRel(integral, 1e-12));
 }

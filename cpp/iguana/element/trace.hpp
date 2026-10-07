@@ -17,14 +17,15 @@ namespace iguana
 
 /**
  * @brief Trace of the field of an element on a boundary, the quantity a
- *        condition imposes values on
+ *        condition imposes values on or loads with natural data
  *
  * A trace is an essential quantity of the weak form of an element: one of
  * its degrees of freedom, or a combination of them such as a rotation.
  * Each element declares its traces as nested classes, such as
  * PoissonElement::U for the field of the Poisson problem. Fluxes are
- * natural, so they have no trace. A trace gives one value per
- * boundary point, linear in the coefficients of the element,
+ * natural, so they have no trace, and a Neumann condition loads the trace
+ * of the test functions they do work on instead. A trace gives one value
+ * per boundary point, linear in the coefficients of the element,
  * T(u)(x_q) = sum over i of B_iq u_i, so that a vector quantity is imposed
  * through one trace per component
  *

@@ -8,8 +8,8 @@ import pytest
 
 import iguana
 from iguana import (Boundary, BoundaryQuadrature, CellType, DomainQuadrature,
-                    FunctionSpace, HierarchicalGrid, PenaltyCondition,
-                    PoissonElement, solve)
+                    FunctionSpace, HierarchicalGrid, NeumannCondition,
+                    PenaltyCondition, PoissonElement, solve)
 
 # Sides of the rectangle, and of the square inside it, whose edges halve
 # the cells they cut, so that no cut is a sliver
@@ -42,14 +42,15 @@ def square_cell_types(patch):
     return cell_types
 
 
-def square_boundary(patch):
-    """Quadrature of the square, counterclockwise, one face per side."""
+def square_boundary(patch, sides=range(4)):
+    """Quadrature of sides of the square, numbered counterclockwise from the
+    bottom one, one face per side."""
     corners = np.array([LOWER, [UPPER[0], LOWER[1]], UPPER,
                         [LOWER[0], UPPER[1]]])
     faces = [iguana.create_curve(degree=1, knots=[0., 0., 1., 1.],
-                                 control_points=[corners[k],
-                                                 corners[(k + 1) % 4]])
-             for k in range(4)]
+                                 control_points=[corners[side],
+                                                 corners[(side + 1) % 4]])
+             for side in sides]
 
     return BoundaryQuadrature(patch, Boundary(faces), 5)
 
@@ -99,6 +100,32 @@ def test_penalty_imposes_a_linear_field():
     assert np.abs(u - exact).max() == pytest.approx(errors[1])
 
 
+def test_neumann_condition_imposes_a_flux():
+    patch, space, quadrature = square_problem()
+    element = PoissonElement()
+    source = np.zeros(quadrature.num_points)
+
+    # The penalty imposes the linear field on the bottom and left sides, and
+    # the Neumann condition its outward flux on the right and top ones. The
+    # flux is exact, so only the error of the penalty remains
+    dirichlet = square_boundary(patch, sides=(0, 3))
+    neumann = square_boundary(patch, sides=(1, 2))
+    flux = NeumannCondition(element.u, neumann, neumann.normals @ GRADIENT)
+
+    exact = space.control_points @ GRADIENT
+    errors = []
+
+    for penalty in (1e3, 1e5):
+        condition = PenaltyCondition(element.u, dirichlet,
+                                     lambda x: x @ GRADIENT, penalty)
+        u = solve(element, space, quadrature, source,
+                  conditions=[condition, flux])
+        errors.append(np.abs(u - exact).max())
+
+    assert errors[1] < 1e-3
+    assert errors[1] / errors[0] == pytest.approx(1e-2, rel=.05)
+
+
 def test_invalid_arguments():
     patch, space, quadrature = square_problem()
     boundary = square_boundary(patch)
@@ -117,6 +144,15 @@ def test_invalid_arguments():
 
     with pytest.raises(ValueError):
         PenaltyCondition(element.u, boundary, values, 0.)
+
+    with pytest.raises(TypeError):
+        NeumannCondition('u', boundary, values)
+
+    with pytest.raises(TypeError):
+        NeumannCondition(element.u, quadrature, values)
+
+    with pytest.raises(ValueError):
+        NeumannCondition(element.u, boundary, values[:-1])
 
     with pytest.raises(TypeError):
         solve(element, space, quadrature, source, conditions=['condition'])
