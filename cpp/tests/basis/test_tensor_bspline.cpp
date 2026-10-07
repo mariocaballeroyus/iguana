@@ -198,6 +198,69 @@ TEST_CASE("Tensor gradients match finite differences of the values",
     }
 }
 
+TEST_CASE("Taylor expansions reach the values at the shifted points",
+          "[tensor_bspline]")
+{
+    const std::array<Basis, 3> bases = test_bases();
+
+    for (const Basis& entry : bases) {
+        std::visit([](const auto& basis) {
+            constexpr std::size_t d =
+                std::decay_t<decltype(basis)>::dimension;
+
+            INFO("dimension " << d);
+
+            // A tensor product of degrees p_k has total degree sum p_k
+            int total_degree = 0;
+
+            for (std::size_t direction = 0; direction < d; ++direction)
+                total_degree += basis.axis(direction).degree();
+
+            Eigen::MatrixXd values;
+            Eigen::MatrixXd shifted_values;
+            Eigen::MatrixXd series;
+            std::array<Eigen::MatrixXd, d> gradients;
+
+            for (int element = 0; element < basis.grid().num_elements();
+                 ++element) {
+                INFO("element " << element);
+                const std::array<int, d> first =
+                    first_active_of(basis, element);
+                const Eigen::MatrixXd points = points_on(basis, element);
+
+                // Halfway to the middle of the element, staying inside it
+                const Eigen::RowVectorXd middle = points.colwise().mean();
+                const Eigen::MatrixXd shifts =
+                    .5 * ((-points).rowwise() + middle);
+
+                basis.grad_on_element(first, points, values, gradients);
+                basis.eval_on_element(first, points + shifts,
+                                      shifted_values);
+
+                // Order zero keeps the values, order one adds the gradients
+                // along the shifts, and the total degree reaches the values
+                // at the shifted points
+                Eigen::MatrixXd linear = values;
+
+                for (std::size_t direction = 0; direction < d; ++direction)
+                    linear += gradients[direction]
+                              * shifts.col(direction).asDiagonal();
+
+                basis.taylor_on_element(first, points, shifts, 0, series);
+                REQUIRE((series - values).cwiseAbs().maxCoeff() < 1e-15);
+
+                basis.taylor_on_element(first, points, shifts, 1, series);
+                REQUIRE((series - linear).cwiseAbs().maxCoeff() < 1e-14);
+
+                basis.taylor_on_element(first, points, shifts, total_degree,
+                                        series);
+                REQUIRE((series - shifted_values).cwiseAbs().maxCoeff()
+                        < 1e-13);
+            }
+        }, entry);
+    }
+}
+
 TEST_CASE("Tensor Hessians match finite differences of the gradients",
           "[tensor_bspline]")
 {

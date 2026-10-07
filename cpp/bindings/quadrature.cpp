@@ -323,6 +323,27 @@ PointMatrix<double, 2> boundary_positions(
 }
 
 /**
+ * @brief Closest points of the points of a boundary quadrature, in the
+ *        plane: their positions moved by their distances, which an affine
+ *        map carries by its linear part, or the positions themselves on a
+ *        quadrature that is not shifted
+ *
+ * @throws std::invalid_argument As walk_held_elements() does
+ *
+ * @pre A shifted quadrature was shifted through @p patch
+ */
+PointMatrix<double, 2> boundary_projections(
+    const BoundaryQuadrature2d& quadrature, const PlanarPatch& patch)
+{
+    PointMatrix<double, 2> result = boundary_positions(quadrature, patch);
+
+    if (quadrature.is_shifted())
+        result += quadrature.distances() * patch.linear_part().transpose();
+
+    return result;
+}
+
+/**
  * @brief Weights of the points of a boundary quadrature in the plane, their
  *        weights in parameter space times the measure of the boundary
  *
@@ -460,7 +481,14 @@ void quadrature(py::module_& module)
                                &BoundaryQuadrature2d::num_elements)
         .def_property_readonly("num_points", &BoundaryQuadrature2d::num_points)
         .def_property_readonly("faces", &BoundaryQuadrature2d::faces)
+        .def("shift", &BoundaryQuadrature2d::shift<TensorBSpline<double, 2>>,
+             py::arg("patch"), py::arg("boundary"), py::arg("order"))
+        .def_property_readonly("is_shifted",
+                               &BoundaryQuadrature2d::is_shifted)
+        .def_property_readonly("distances", &BoundaryQuadrature2d::distances)
+        .def_property_readonly("order", &BoundaryQuadrature2d::order)
         .def("positions", &boundary_positions, py::arg("patch"))
+        .def("projections", &boundary_projections, py::arg("patch"))
         .def("physical_weights", &physical_boundary_weights, py::arg("patch"))
         .def("physical_normals", &physical_boundary_normals,
              py::arg("patch"));

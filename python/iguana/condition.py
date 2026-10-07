@@ -39,14 +39,21 @@ class PenaltyCondition:
         problem. The error decays like one over the penalty, which a larger
         one buys with a worse conditioning.
 
+        On a shifted quadrature, the values are imposed on the Taylor
+        expansion of the trace from each point to its closest point, the
+        shifted penalty. Alone it is not consistent: nothing balances the
+        flux of the field across the surrogate boundary, so the error stays
+        of the order of the cells, whatever the penalty.
+
         Args:
             trace: The trace whose values are imposed, such as
                 `PoissonElement().u`.
             quadrature: The quadrature of the boundary the values are
                 imposed along.
             values: The value imposed at each point of the quadrature, in
-                its order, or a function that takes their positions, of
-                shape `(num_points, 2)`, and returns those values.
+                its order, or a function that takes the points where they
+                apply, `quadrature.projections` of shape `(num_points, 2)`,
+                and returns those values.
             penalty: The penalty, positive.
 
         Raises:
@@ -129,7 +136,7 @@ class NeumannCondition:
             trace: The trace of the test functions the data does work on,
                 such as `PoissonElement().u` for a flux.
             quadrature: The quadrature of the boundary the data is given
-                along.
+                along, not shifted.
             values: The data at each point of the quadrature, in its order,
                 or a function that takes their positions, of shape
                 `(num_points, 2)`, and returns it.
@@ -137,13 +144,18 @@ class NeumannCondition:
         Raises:
             TypeError: If the trace is not the trace of an element, or if
                 the quadrature is not a boundary quadrature.
-            ValueError: If the values are not one per point.
+            ValueError: If the quadrature is shifted, whose flux would need
+                the gradients at the closest points, or if the values are
+                not one per point.
         """
         if not isinstance(trace, PoissonElement.U):
             raise TypeError('the trace must be the trace of an element')
 
         if not isinstance(quadrature, BoundaryQuadrature):
             raise TypeError('the quadrature must be a boundary quadrature')
+
+        if quadrature.order is not None:
+            raise ValueError('the quadrature must not be shifted')
 
         self._trace = trace
         self._quadrature = quadrature
@@ -182,10 +194,10 @@ def _values(
              | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
 ) -> npt.NDArray[np.float64]:
     """Values of a condition at the points of a boundary quadrature, given
-    at them or as a function of their positions, checked to be one per
-    point."""
+    at them or as a function of the points where they apply, their closest
+    points on a shifted quadrature, checked to be one per point."""
     if callable(values):
-        values = values(quadrature.positions)
+        values = values(quadrature.projections)
 
     values = np.asarray(values, dtype=np.float64)
 

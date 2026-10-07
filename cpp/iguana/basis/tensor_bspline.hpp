@@ -177,6 +177,34 @@ public:
         std::array<Eigen::MatrixX<T>, d>& gradients,
         std::array<Eigen::MatrixX<T>, d * (d + 1) / 2>& hessians) const;
 
+    /**
+     * @brief Expands the non-zero functions on an element in Taylor series
+     *        from points along shifts, up to a total order
+     *
+     * Each function becomes the sum, over multi-indices alpha of total order
+     * at most @p order, of its derivative of order alpha at the point times
+     * s^alpha / alpha!, with s the shift of the point. A tensor product of
+     * polynomials of degree p is reproduced at the shifted point from the
+     * order d p, and lower orders truncate the series
+     *
+     * @param first_active First active function in each direction
+     * @param points Points the series start from, with size
+     *        (num_points, dimension)
+     * @param shifts Shift of each point in parameter space, of the size of
+     *        @p points
+     * @param order Highest total order of the derivatives kept
+     * @param values Output of size (num_active(), num_points), with the rows
+     *        of eval_on_element(). It is resized when necessary
+     *
+     * @pre @p first_active belongs to an existing element, @p points has
+     *      dimension columns and every point lies inside that element,
+     *      @p shifts has the size of @p points, and @p order is non-negative
+     */
+    void taylor_on_element(const std::array<int, d>& first_active,
+                           const Eigen::MatrixX<T>& points,
+                           const Eigen::MatrixX<T>& shifts, int order,
+                           Eigen::MatrixX<T>& values) const;
+
 private:
     /// @brief Grid, with the knot vector of each direction
     TensorGrid<T, d> grid_;

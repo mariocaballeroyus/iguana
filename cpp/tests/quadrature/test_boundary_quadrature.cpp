@@ -303,3 +303,56 @@ TEST_CASE("A surrogate boundary carries a rule on each face of its cells",
     // The domain is [0, .7] x [0, 1] without the hole [.1, .4] x [.3, .5]
     REQUIRE_THAT(flux, WithinAbs(2. * (.7 - .06), 1e-14));
 }
+
+TEST_CASE("A shifted quadrature reaches the closest points of a boundary",
+          "[boundary_quadrature]")
+{
+    // The middle element, [-1, .5] x [-1.5, 1] in parameters, is the only
+    // cell inside the circle of radius two around (.3, -.2), both moved by
+    // an offset in physical space
+    const Eigen::RowVector2d offset(10., 5.);
+    const Region parameters = patch_of({-3., -1., .5, 3.},
+                                       {-3., -1.5, 1., 3.});
+    const Region square(parameters.basis(),
+                        parameters.coefficients().rowwise() + offset);
+    std::vector<CellType> cell_types(9, CellType::cut);
+    cell_types[4] = CellType::inside;
+
+    const Surrogate surrogate(square.basis().grid(),
+                              iguana::EmbeddedDomain<double, 2>(cell_types));
+    const Quadrature unshifted(surrogate, Gauss(3));
+
+    const Eigen::RowVector2d center(.3, -.2);
+    const Boundary<double, 2> boundary({circle(center + offset)}, {1});
+
+    Quadrature quadrature = unshifted;
+    quadrature.shift(square, boundary, 2);
+
+    // In parameters, each distance reaches the circle along the radius
+    // through its point
+    for (int point = 0; point < quadrature.num_points(); ++point) {
+        const Eigen::RowVector2d from = quadrature.points().row(point);
+        const Eigen::RowVector2d radial = (from - center).normalized();
+
+        REQUIRE((from + quadrature.distances().row(point)
+                 - (center + 2. * radial)).norm() < 1e-14);
+    }
+
+    // The points, weights and normals stay those of the surrogate boundary
+    REQUIRE(quadrature.is_shifted());
+    REQUIRE(quadrature.order() == 2);
+    REQUIRE_FALSE(unshifted.is_shifted());
+    REQUIRE(quadrature.points() == unshifted.points());
+    REQUIRE(quadrature.weights() == unshifted.weights());
+    REQUIRE(quadrature.normals() == unshifted.normals());
+
+    // A negative order, or a map that is not affine, cannot shift
+    PointMatrix<double, 2> bent = square.coefficients();
+    bent(5, 0) += .1;
+    const Region curved(square.basis(), bent);
+
+    REQUIRE_THROWS_AS(Quadrature(unshifted).shift(square, boundary, -1),
+                      std::invalid_argument);
+    REQUIRE_THROWS_AS(Quadrature(unshifted).shift(curved, boundary, 2),
+                      std::invalid_argument);
+}

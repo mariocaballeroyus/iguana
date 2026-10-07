@@ -7,7 +7,7 @@ A domain quadrature is filled one cell type at a time, each with a rule of
 its own, such as Gauss-Legendre on the inside cells. A boundary quadrature
 places one rule on every piece of a boundary that the knot lines of the
 patch divide, or on every face of the surrogate boundary of the inside
-cells.
+cells, whose points it can shift towards the true boundary.
 """
 
 from __future__ import annotations
@@ -221,7 +221,8 @@ class BoundaryQuadrature:
 
     def __init__(self, patch: PlanarPatch,
                  boundary: Boundary | SurrogateBoundary,
-                 num_points: int) -> None:
+                 num_points: int, shift: Boundary | None = None,
+                 order: int | None = None) -> None:
         """Initialize the quadrature of a boundary in the plane of a patch.
 
         The faces of a boundary of curves are divided exactly where they
@@ -230,22 +231,38 @@ class BoundaryQuadrature:
         follow the curves as they are. The faces of a surrogate boundary
         are whole sides of cells, each carrying the rule.
 
+        A quadrature of a surrogate boundary can be shifted towards the
+        true boundary, as the shifted boundary method does. Each point is
+        mapped to its closest point on the true boundary, where the
+        conditions take their data, and the trace of the field is expanded
+        from the point to it by a Taylor series. The points, weights and
+        normals stay those of the surrogate boundary.
+
         Args:
             patch: The background patch, a planar patch. For a boundary of
-                curves its map must be affine, such as that of a rectangle
-                from `create_rectangle`.
+                curves or a shift its map must be affine, such as that of
+                a rectangle from `create_rectangle`.
             boundary: The boundary, made of curves in the plane of the
                 patch, or the surrogate boundary of its inside cells.
             num_points: Number of points on each piece or face.
+            shift: The true boundary, made of curves in the plane of the
+                patch, to shift the points of a surrogate boundary towards.
+                Without it, the quadrature is not shifted.
+            order: Total order of the Taylor expansion of a shifted
+                quadrature, nonnegative. Without it, the highest degree of
+                the patch.
 
         Raises:
-            TypeError: If the patch is not a planar patch, or if the
-                boundary is neither made of curves in the plane nor a
-                surrogate boundary.
+            TypeError: If the patch is not a planar patch, if the boundary
+                is neither made of curves in the plane nor a surrogate
+                boundary, or if the shift is not made of curves in the
+                plane.
             ValueError: If a surrogate boundary lies on another patch, if
                 the map of the patch is not affine for a boundary of
-                curves, if the knot vector of a face is not clamped, or if
-                the number of points lies outside [1, 8].
+                curves or a shift, if the knot vector of a face is not
+                clamped, if the number of points lies outside [1, 8], if
+                a boundary of curves is shifted, if an order is given
+                without a shift, or if the order is negative.
         """
         if not isinstance(patch, PlanarPatch):
             raise TypeError('the patch must be a planar patch')
@@ -256,8 +273,7 @@ class BoundaryQuadrature:
                                  'patch')
 
             divided = boundary._cpp_object
-        elif (isinstance(boundary, Boundary)
-              and isinstance(boundary._cpp_object, _cpp.Boundary2d)):
+        elif _in_the_plane(boundary):
             # The boundary divided over the elements, which the quadrature
             # needs only to be built
             divided = _cpp.EmbeddedBoundary2d(patch=patch._cpp_object,
@@ -266,10 +282,27 @@ class BoundaryQuadrature:
             raise TypeError('the boundary must be made of curves in the '
                             'plane, or be a surrogate boundary')
 
+        if shift is not None:
+            if not _in_the_plane(shift):
+                raise TypeError('the shift must be made of curves in the '
+                                'plane')
+
+            if not isinstance(boundary, SurrogateBoundary):
+                raise ValueError('only a surrogate boundary is shifted')
+        elif order is not None:
+            raise ValueError('an order needs a shift')
+
         self._cpp_object = _cpp.BoundaryQuadrature2d(boundary=divided,
                                                      num_points=num_points)
         self._patch = patch
         self._boundary = boundary
+
+        if shift is not None:
+            if order is None:
+                order = max(patch.degrees)
+
+            self._cpp_object.shift(patch=patch._cpp_object,
+                                   boundary=shift._cpp_object, order=order)
 
     @property
     def patch(self) -> PlanarPatch:
@@ -305,6 +338,25 @@ class BoundaryQuadrature:
         return self._cpp_object.positions(self._patch._cpp_object)
 
     @property
+    def projections(self) -> npt.NDArray[np.float64]:
+        """Closest points of the points on the true boundary, where the
+        conditions take their data, of shape `(num_points, 2)`.
+
+        On a quadrature that is not shifted, they are the positions
+        themselves.
+        """
+        return self._cpp_object.projections(self._patch._cpp_object)
+
+    @property
+    def order(self) -> int | None:
+        """Total order of the Taylor expansion of a shifted quadrature, or
+        `None` if it is not shifted."""
+        if not self._cpp_object.is_shifted:
+            return None
+
+        return self._cpp_object.order
+
+    @property
     def weights(self) -> npt.NDArray[np.float64]:
         """Weights of the points in the plane, of shape `(num_points,)`.
 
@@ -322,3 +374,9 @@ class BoundaryQuadrature:
     def __repr__(self) -> str:
         return (f'BoundaryQuadrature(num_elements={self.num_elements}, '
                 f'num_points={self.num_points})')
+
+
+def _in_the_plane(boundary: object) -> bool:
+    """Whether a boundary is made of curves in the plane."""
+    return (isinstance(boundary, Boundary)
+            and isinstance(boundary._cpp_object, _cpp.Boundary2d))

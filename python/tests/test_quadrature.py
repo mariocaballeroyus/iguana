@@ -8,9 +8,12 @@ import pytest
 
 import iguana
 from iguana import (Boundary, BoundaryQuadrature, CellType, DomainQuadrature,
-                    HierarchicalGrid)
+                    HierarchicalGrid, SurrogateBoundary)
 
 ORIGIN = np.array([1., 0., -1.])
+
+# Centre of the circle in the plane of the rectangle six by four from (2, 0.5)
+MIDDLE = np.array([5., 2.5])
 
 
 def box():
@@ -73,6 +76,38 @@ def trimmed():
     inside, the two beside it cut, and the far one, which only touches
     it, outside."""
     return [CellType.inside, CellType.cut, CellType.cut, CellType.outside]
+
+
+def circle(radius):
+    """Boundary of the disc about MIDDLE, as four quadratic arcs joined at
+    double knots."""
+    corner = np.sqrt(.5)
+    points = np.array([[1., 0.], [1., 1.], [0., 1.], [-1., 1.], [-1., 0.],
+                       [-1., -1.], [0., -1.], [1., -1.], [1., 0.]])
+
+    return Boundary([iguana.create_curve(
+        degree=2, knots=[0., 0., 0., .25, .25, .5, .5, .75, .75, 1., 1., 1.],
+        control_points=MIDDLE + radius * points,
+        weights=[1., corner, 1., corner, 1., corner, 1., corner, 1.])])
+
+
+def disc():
+    """The rectangle six by four from (2, 0.5), quadratic along x and cubic
+    along y, and the surrogate boundary of its cells inside the disc of
+    radius 1.6 about MIDDLE, which lies off the knot lines."""
+    rectangle = iguana.create_rectangle(lengths=(6., 4.), elements=(6, 8),
+                                        degrees=(2, 3), origin=(2., .5))
+    bounds = HierarchicalGrid(rectangle.degrees, rectangle.knots).bounds
+    corners = [2., .5] + [6., 4.] * np.array([[start, [start[0], end[1]],
+                                               [end[0], start[1]], end]
+                                              for start, end in bounds])
+
+    # A cell lies inside when its four corners do
+    inside = (np.linalg.norm(corners - MIDDLE, axis=2) < 1.6).all(axis=1)
+    cell_types = [CellType.inside if flag else CellType.outside
+                  for flag in inside]
+
+    return rectangle, SurrogateBoundary(rectangle, cell_types)
 
 
 def test_gauss_legendre_positions():
@@ -256,27 +291,39 @@ def test_boundary_circle():
     """The points of a circle in the plane of a rectangle lie on it, with
     normals pointing away from its centre and weights adding up to its
     length, although the map stretches the parameters unevenly."""
-    corner = np.sqrt(.5)
-    middle = np.array([5., 2.5])
-    points = np.array([[1., 0.], [1., 1.], [0., 1.], [-1., 1.], [-1., 0.],
-                       [-1., -1.], [0., -1.], [1., -1.], [1., 0.]])
-
-    # Radius 2, as four quadratic arcs joined at double knots
-    circle = iguana.create_curve(
-        degree=2, knots=[0., 0., 0., .25, .25, .5, .5, .75, .75, 1., 1., 1.],
-        control_points=middle + 2. * points,
-        weights=[1., corner, 1., corner, 1., corner, 1., corner, 1.])
-
     # The unit parameter box maps onto six by four, away from the origin,
-    # where the circle is an ellipse
+    # where the circle of radius 2 is an ellipse
     rectangle = iguana.create_rectangle(lengths=(6., 4.), elements=(3, 4),
                                         degrees=(1, 1), origin=(2., .5))
-    quadrature = BoundaryQuadrature(rectangle, Boundary([circle]), 8)
+    quadrature = BoundaryQuadrature(rectangle, circle(2.), 8)
 
-    radial = (quadrature.positions - middle) / 2.
+    radial = (quadrature.positions - MIDDLE) / 2.
 
     np.testing.assert_allclose(quadrature.normals, radial, atol=1e-15)
     np.testing.assert_allclose(quadrature.weights.sum(), 4. * np.pi)
+
+
+def test_shifted_surrogate_boundary():
+    """The points of a surrogate boundary shifted towards a circle reach
+    their closest points on it, along its radius, with the order of the
+    highest degree of the patch unless given. Without the shift, they stay
+    where they are."""
+    rectangle, surrogate = disc()
+    shifted = BoundaryQuadrature(rectangle, surrogate, 3, shift=circle(1.6))
+    plain = BoundaryQuadrature(rectangle, surrogate, 3)
+
+    radial = shifted.positions - MIDDLE
+    radial /= np.linalg.norm(radial, axis=1)[:, None]
+
+    np.testing.assert_allclose(shifted.projections, MIDDLE + 1.6 * radial,
+                               rtol=0., atol=1e-14)
+    np.testing.assert_array_equal(plain.projections, plain.positions)
+
+    assert shifted.order == 3
+    assert plain.order is None
+    assert BoundaryQuadrature(rectangle, surrogate, 3, shift=circle(1.6),
+                              order=1).order == 1
+
 
 def test_invalid_arguments():
     """Invalid arguments raise and leave the quadrature unchanged."""
@@ -322,3 +369,20 @@ def test_invalid_arguments():
         surface.fill_moment_fitting(CellType.cut, vertices, segments, order=8)
 
     assert surface.num_points == 0
+
+    # Only a surrogate boundary is shifted, towards curves in the plane, and
+    # an order is nonnegative and comes with a shift
+    rectangle, surrogate = disc()
+
+    with pytest.raises(ValueError):
+        BoundaryQuadrature(rectangle, circle(1.6), 3, shift=circle(1.6))
+
+    with pytest.raises(TypeError):
+        BoundaryQuadrature(rectangle, surrogate, 3, shift=surrogate)
+
+    with pytest.raises(ValueError):
+        BoundaryQuadrature(rectangle, surrogate, 3, order=2)
+
+    with pytest.raises(ValueError):
+        BoundaryQuadrature(rectangle, surrogate, 3, shift=circle(1.6),
+                           order=-1)
