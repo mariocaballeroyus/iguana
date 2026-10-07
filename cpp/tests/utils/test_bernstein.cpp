@@ -100,6 +100,45 @@ TEST_CASE("Bernstein forms reproduce a polynomial and its parts",
     REQUIRE(error < 1e-14);
 }
 
+TEST_CASE("Bernstein forms differentiate and multiply polynomials",
+          "[bernstein]")
+{
+    // (t - r0)(t - r1)(t - r2), whose derivative is the sum of the products
+    // of two of its factors
+    const double r0 = .2;
+    const double r1 = .55;
+    const double r2 = 1.3;
+    const Eigen::VectorXd cubic = cubic_with_roots(r0, r1, r2);
+
+    Eigen::VectorXd quartic(5);
+    quartic << 2., -1., .5, 3., -.25;
+
+    const Eigen::VectorXd derivative = iguana::bernstein_derivative(cubic);
+    const Eigen::VectorXd product = iguana::bernstein_product(cubic, quartic);
+
+    double error = 0.;
+
+    for (const double t : std::array{0., .1, .45, .8, 1.}) {
+        const double slope = (t - r1) * (t - r2) + (t - r0) * (t - r2)
+                             + (t - r0) * (t - r1);
+
+        error = std::max(
+            {error, std::abs(bernstein_sum(derivative, t) - slope),
+             std::abs(bernstein_sum(product, t)
+                      - bernstein_sum(cubic, t) * bernstein_sum(quartic, t))});
+    }
+
+    REQUIRE(derivative.size() == 3);
+    REQUIRE(product.size() == 8);
+    REQUIRE(error < 1e-14);
+
+    // A constant has the zero derivative
+    const Eigen::VectorXd constant = Eigen::VectorXd::Constant(1, 3.);
+
+    REQUIRE(iguana::bernstein_derivative(constant)
+            == Eigen::VectorXd::Zero(1));
+}
+
 TEST_CASE("Crossings are the sign changes of a polynomial inside (0, 1)",
           "[bernstein]")
 {
