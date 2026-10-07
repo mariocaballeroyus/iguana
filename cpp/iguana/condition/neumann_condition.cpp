@@ -18,7 +18,8 @@ NeumannCondition<Basis, n>::NeumannCondition(const Trace<Basis, n>& trace)
 
 template<typename Basis, std::size_t n>
 void NeumannCondition<Basis, n>::local_stiffness(
-    const ElementValues<Basis, n>& values, const Eigen::VectorX<Scalar>&,
+    const ElementValues<Basis, n>& values, const ElementValues<Basis, n>&,
+    const Eigen::VectorX<Scalar>&, const PointMatrix<Scalar, n>&,
     Eigen::MatrixX<Scalar>& stiffness) const
 {
     // The data is known, so the condition adds no stiffness
@@ -28,10 +29,9 @@ void NeumannCondition<Basis, n>::local_stiffness(
 
 template<typename Basis, std::size_t n>
 void NeumannCondition<Basis, n>::local_load(
-    const ElementValues<Basis, n>& values,
-    const Eigen::VectorX<Scalar>& weights,
-    const Eigen::VectorX<Scalar>& data,
-    Eigen::VectorX<Scalar>& load) const
+    const ElementValues<Basis, n>& values, const ElementValues<Basis, n>&,
+    const Eigen::VectorX<Scalar>& weights, const PointMatrix<Scalar, n>&,
+    const Eigen::VectorX<Scalar>& data, Eigen::VectorX<Scalar>& load) const
 {
     Eigen::MatrixX<Scalar> trace;
     trace_.local_trace(values, trace);

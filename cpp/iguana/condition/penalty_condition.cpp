@@ -23,12 +23,13 @@ PenaltyCondition<Basis, n>::PenaltyCondition(const Trace<Basis, n>& trace,
 
 template<typename Basis, std::size_t n>
 void PenaltyCondition<Basis, n>::local_stiffness(
-    const ElementValues<Basis, n>& values,
-    const Eigen::VectorX<Scalar>& weights,
+    const ElementValues<Basis, n>&, const ElementValues<Basis, n>& shifted,
+    const Eigen::VectorX<Scalar>& weights, const PointMatrix<Scalar, n>&,
     Eigen::MatrixX<Scalar>& stiffness) const
 {
+    // The values are imposed on the trace where the data is given
     Eigen::MatrixX<Scalar> trace;
-    trace_.local_trace(values, trace);
+    trace_.local_trace(shifted, trace);
 
     // K_ij = β ∫ T(N_i) T(N_j) ds
     //      ≈ Σ_q β w_q B_iq B_jq
@@ -37,13 +38,13 @@ void PenaltyCondition<Basis, n>::local_stiffness(
 
 template<typename Basis, std::size_t n>
 void PenaltyCondition<Basis, n>::local_load(
-    const ElementValues<Basis, n>& values,
-    const Eigen::VectorX<Scalar>& weights,
-    const Eigen::VectorX<Scalar>& data,
-    Eigen::VectorX<Scalar>& load) const
+    const ElementValues<Basis, n>&, const ElementValues<Basis, n>& shifted,
+    const Eigen::VectorX<Scalar>& weights, const PointMatrix<Scalar, n>&,
+    const Eigen::VectorX<Scalar>& data, Eigen::VectorX<Scalar>& load) const
 {
+    // The values are imposed on the trace where the data is given
     Eigen::MatrixX<Scalar> trace;
-    trace_.local_trace(values, trace);
+    trace_.local_trace(shifted, trace);
 
     // F_i = β ∫ g T(N_i) ds
     //     ≈ Σ_q β w_q g(x_q) B_iq
