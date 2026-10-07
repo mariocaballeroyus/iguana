@@ -20,6 +20,7 @@
 #include "fspace/dof_map.hpp"
 #include "fspace/function_space.hpp"
 #include "geometry/boundary.hpp"
+#include "geometry/boundary_projection.hpp"
 #include "geometry/nurbs/bezier_points.hpp"
 #include "geometry/nurbs/curve_projection.hpp"
 #include "geometry/patch.hpp"
