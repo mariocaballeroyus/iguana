@@ -10,6 +10,7 @@ add_library(iguana
     embedding/embedded_boundary.cpp
     embedding/embedded_domain.cpp
     embedding/nurbs/grid_crossings.cpp
+    embedding/surrogate_boundary.cpp
     fspace/dof_map.cpp
     fspace/function_space.cpp
     geometry/boundary.cpp

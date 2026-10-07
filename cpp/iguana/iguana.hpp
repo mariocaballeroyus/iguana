@@ -16,6 +16,7 @@
 #include "grid/tensor_grid_iterator.hpp"
 #include "embedding/embedded_boundary.hpp"
 #include "embedding/embedded_domain.hpp"
+#include "embedding/surrogate_boundary.hpp"
 #include "fspace/dof_map.hpp"
 #include "fspace/function_space.hpp"
 #include "geometry/boundary.hpp"
