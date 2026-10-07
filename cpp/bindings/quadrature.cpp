@@ -242,6 +242,14 @@ BoundaryQuadrature2d boundary_gauss_legendre(
     return {boundary, GaussLegendre<double, 1>(num_points)};
 }
 
+/// @brief Places a Gauss-Legendre rule on every face of a surrogate
+///        boundary, a rule Python never handles itself
+BoundaryQuadrature2d surrogate_gauss_legendre(
+    const SurrogateBoundary<double, 2>& boundary, int num_points)
+{
+    return {boundary, GaussLegendre<double, 1>(num_points)};
+}
+
 /**
  * @brief Walks the elements a boundary quadrature holds, giving each the
  *        first active function of the patch in each direction, its index,
@@ -445,6 +453,8 @@ void quadrature(py::module_& module)
 
     py::class_<BoundaryQuadrature2d>(module, "BoundaryQuadrature2d")
         .def(py::init(&boundary_gauss_legendre), py::arg("boundary"),
+             py::arg("num_points"))
+        .def(py::init(&surrogate_gauss_legendre), py::arg("boundary"),
              py::arg("num_points"))
         .def_property_readonly("num_elements",
                                &BoundaryQuadrature2d::num_elements)
