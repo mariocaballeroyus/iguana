@@ -10,6 +10,7 @@
 #include <optional>
 
 #include "iguana/embedding/nurbs/axis_crossings.hpp"
+#include "iguana/geometry/nurbs/bezier_points.hpp"
 #include "iguana/utils/bernstein.hpp"
 #include "iguana/utils/multi_index.hpp"
 
@@ -169,13 +170,7 @@ std::vector<CurvePiece<T>> divide_curve(
         return {};
 
     // Homogeneous Bezier points (w b, w), one per row
-    const Eigen::VectorX<T> weights =
-        curve.basis().weights().segment(first, count);
-
-    Eigen::MatrixX<T> homogeneous(count, 3);
-    homogeneous << weights.asDiagonal() * local, weights;
-
-    const Eigen::MatrixX<T> points = extraction.transpose() * homogeneous;
+    const Eigen::MatrixX<T> points = bezier_points(curve, element, extraction);
 
     // Coordinate the control points share along each axis, and the line
     // of the grid at it, or -1
