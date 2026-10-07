@@ -34,6 +34,7 @@
 #include "assembly/assembler.hpp"
 #include "assembly/element_values.hpp"
 #include "element/element.hpp"
+#include "element/flux.hpp"
 #include "element/poisson/poisson_element.hpp"
 #include "element/poisson/poisson_traces.hpp"
 #include "element/trace.hpp"
