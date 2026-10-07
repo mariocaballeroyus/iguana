@@ -9,6 +9,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <numbers>
 #include <stdexcept>
 #include <vector>
 
@@ -24,6 +25,8 @@ using iguana::TensorBSpline;
 using iguana::TensorNURBS;
 
 constexpr double radius = 2.;
+
+constexpr double pi = std::numbers::pi;
 
 /// @brief Circle of the radius around the origin, counterclockwise from
 ///        (radius, 0), as four quadratic arcs joined at double knots
@@ -77,6 +80,19 @@ Boundary<double, 3>::Face half_cylinder()
              -radius, 0., 1.;
 
     return {TensorNURBS<double, 2>(bspline, weights), points};
+}
+
+/// @brief Straight face from one point to another, a line of degree one
+Boundary<double, 2>::Face segment(const Eigen::RowVector2d& from,
+                                  const Eigen::RowVector2d& to)
+{
+    PointMatrix<double, 2> points(2, 2);
+    points << from, to;
+
+    const TensorBSpline<double, 1> line(
+        {BSpline<double>(1, {0., 0., 1., 1.})});
+
+    return {TensorNURBS<double, 1>(line, Eigen::Vector2d::Ones()), points};
 }
 
 /**
@@ -162,4 +178,101 @@ TEST_CASE("Normals of a cylinder point radially out of it", "[boundary]")
     const Boundary<double, 3> boundary({half_cylinder()}, {1});
 
     REQUIRE(radial_error(boundary, 0) < 1e-14);
+}
+
+TEST_CASE("Points project onto the closest point of a circle",
+          "[boundary]")
+{
+    // The circle moved far from the origin, where the coordinates are large
+    // against the radius
+    const Eigen::RowVector2d center(1000., -500.);
+    const Boundary<double, 2>::Face around_origin = circle();
+    const Boundary<double, 2> boundary(
+        {{around_origin.basis(),
+          around_origin.coefficients().rowwise() + center}},
+        {1});
+
+    // Points inside and outside, in every quadrant
+    PointMatrix<double, 2> points(12, 2);
+    Eigen::Index row = 0;
+
+    for (const double distance : {.5, 1.7, 3.5})
+        for (const double angle : {.4, 2.2, 4., 5.9})
+            points.row(row++) =
+                center
+                + distance * Eigen::RowVector2d(std::cos(angle),
+                                                std::sin(angle));
+
+    const iguana::BoundaryProjection<double> projection =
+        iguana::project_points(boundary, points);
+
+    for (Eigen::Index point = 0; point < points.rows(); ++point) {
+        const Eigen::RowVector2d radial =
+            (points.row(point) - center).normalized();
+
+        // The arc of each quadrant spans a quarter of the parameters
+        const double angle = std::atan2(radial(1), radial(0));
+        const double turn = angle < 0. ? angle + 2. * pi : angle;
+        const double quadrant = std::floor(turn / (pi / 2.));
+
+        REQUIRE((projection.positions.row(point) - (center + radius * radial))
+                    .norm() < 1e-12);
+        REQUIRE((projection.normals.row(point) - radial).norm() < 1e-12);
+        REQUIRE(projection.faces(point) == 0);
+        REQUIRE(std::floor(4. * projection.parameters(point)) == quadrant);
+    }
+}
+
+TEST_CASE("Points project onto the sides and corners of a square",
+          "[boundary]")
+{
+    using Curves = Boundary<double, 2>;
+
+    // The unit square, counterclockwise from the origin
+    const Curves square(
+        {segment({0., 0.}, {1., 0.}), segment({1., 0.}, {1., 1.}),
+         segment({1., 1.}, {0., 1.}), segment({0., 1.}, {0., 0.})},
+        {1, 1, 1, 1});
+
+    // Off a corner, inside near a side, and outside below another
+    PointMatrix<double, 2> points(3, 2);
+    points << 1.3, 1.2,
+              .4, .9,
+              .25, -.5;
+
+    const iguana::BoundaryProjection<double> projection =
+        iguana::project_points(square, points);
+
+    // The corner is found first at the end of the right side, whose normal
+    // it takes
+    PointMatrix<double, 2> positions(3, 2);
+    positions << 1., 1.,
+                 .4, 1.,
+                 .25, 0.;
+
+    PointMatrix<double, 2> normals(3, 2);
+    normals << 1., 0.,
+               0., 1.,
+               0., -1.;
+
+    REQUIRE((projection.positions - positions).cwiseAbs().maxCoeff() < 1e-15);
+    REQUIRE((projection.normals - normals).cwiseAbs().maxCoeff() < 1e-15);
+    REQUIRE(projection.faces == Eigen::Vector3i(1, 2, 0));
+
+    // A boundary without faces, or with a face whose knots are not clamped,
+    // has nothing to project onto
+    const TensorBSpline<double, 1> unclamped(
+        {BSpline<double>(1, {0., 1., 2., 3.})});
+    PointMatrix<double, 2> ends(2, 2);
+    ends << 0., 0., 1., 0.;
+
+    const Curves open({{TensorNURBS<double, 1>(unclamped,
+                                               Eigen::Vector2d::Ones()),
+                        ends}},
+                      {1});
+
+    REQUIRE_THROWS_AS(iguana::project_points(Curves({}, {}), points),
+                      std::invalid_argument);
+    REQUIRE_THROWS_AS(iguana::project_points(open, points),
+                      std::invalid_argument);
 }

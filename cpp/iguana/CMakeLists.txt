@@ -14,6 +14,7 @@ add_library(iguana
     fspace/dof_map.cpp
     fspace/function_space.cpp
     geometry/boundary.cpp
+    geometry/boundary_projection.cpp
     geometry/patch.cpp
     quadrature/boundary_quadrature.cpp
     quadrature/box_rule.cpp

@@ -7,18 +7,36 @@ A boundary gathers faces of the boundary of a domain as the CAD model gives
 them: curves bounding a region of the plane, or surfaces bounding a volume.
 The sign of each face tells whether the normal of its parametrization
 points out of the domain. A boundary need not hold every face of the
-domain, only those where a condition is imposed.
+domain, only those where a condition is imposed, and it gives the closest
+point of its faces to any point of the plane.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import NamedTuple
 
 import numpy as np
 import numpy.typing as npt
 
 from iguana import cpp as _cpp
 from iguana.patch import CurvePatch, SurfacePatch
+
+
+class Projection(NamedTuple):
+    """Closest points of a boundary to some points, one row or entry per
+    point, unpackable as `positions, normals, faces`.
+
+    Attributes:
+        positions: The closest points, of shape `(num_points, 2)`.
+        normals: Unit normals of the faces at the closest points, pointing
+            out of the domain, of shape `(num_points, 2)`.
+        faces: Face holding each closest point, of shape `(num_points,)`.
+    """
+
+    positions: npt.NDArray[np.float64]
+    normals: npt.NDArray[np.float64]
+    faces: npt.NDArray[np.int32]
 
 
 class Boundary:
@@ -75,6 +93,38 @@ class Boundary:
         """Sign of each face, of shape `(num_faces,)`: 1 where its normal
         points out of the domain and -1 where it points into it."""
         return np.array(self._cpp_object.signs)
+
+    def project_points(self, points: npt.ArrayLike) -> Projection:
+        """Closest points of the boundary to points of the plane.
+
+        Every element of every face is searched, so that each closest
+        point is the global one, found with no initial guess. Of points at
+        one distance the first face wins, so that a vertex takes the normal
+        of the face it is found on first.
+
+        Args:
+            points: The points, of shape `(num_points, 2)`.
+
+        Returns:
+            The closest point to each, with the outward normal of its face
+            there and the face.
+
+        Raises:
+            TypeError: If the boundary is made of surfaces.
+            ValueError: If the points are not of shape `(num_points, 2)`,
+                if the boundary has no face, or if the knot vector of a
+                face is not clamped.
+        """
+        if not isinstance(self._cpp_object, _cpp.Boundary2d):
+            raise TypeError('only a boundary of curves in the plane projects '
+                            'points')
+
+        points = np.asarray(points, dtype=np.float64)
+
+        if points.ndim != 2 or points.shape[1] != 2:
+            raise ValueError('the points must be of shape (num_points, 2)')
+
+        return Projection(*self._cpp_object.project_points(points))
 
     def __repr__(self) -> str:
         return f'Boundary(num_faces={self._cpp_object.num_faces})'
