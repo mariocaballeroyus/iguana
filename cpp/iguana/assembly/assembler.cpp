@@ -5,17 +5,51 @@
 
 #include "assembler.hpp"
 
+#include <concepts>
 #include <span>
 #include <stdexcept>
 #include <vector>
 
 #include "iguana/assembly/element_values.hpp"
+#include "iguana/basis/tensor_bspline.hpp"
+#include "iguana/basis/tensor_nurbs.hpp"
 #include "iguana/condition/neumann_condition.hpp"
 #include "iguana/condition/penalty_condition.hpp"
 #include "iguana/element/poisson/poisson_element.hpp"
 
 namespace iguana
 {
+
+namespace
+{
+
+/**
+ * @brief Expands the values at the points of one element of a shifted
+ *        quadrature towards the boundary it is shifted onto
+ *
+ * @throws std::invalid_argument If the patch is not a B-spline one, whose
+ *         basis alone provides the Taylor series
+ */
+template<typename Basis, std::size_t n, std::size_t dim>
+void shift_values(ElementValues<Basis, n>& values,
+                  const BoundaryQuadrature<typename Basis::Scalar, dim>&
+                      quadrature,
+                  int first, int count)
+{
+    using Scalar = typename Basis::Scalar;
+
+    if constexpr (std::same_as<Basis, TensorBSpline<Scalar, dim>>) {
+        values.shift(quadrature.distances().middleRows(first, count),
+                     quadrature.order());
+    }
+    else if constexpr (std::same_as<Basis, TensorNURBS<Scalar, dim>>) {
+        throw std::invalid_argument("Assembler: "
+                                    "a shifted quadrature needs a B-spline "
+                                    "patch");
+    }
+}
+
+} // namespace
 
 template<typename Basis, std::size_t n>
 Assembler<Basis, n>::Assembler(const FunctionSpace<Basis>& space,
@@ -125,6 +159,11 @@ void Assembler<Basis, n>::assemble_stiffness(
         points = quadrature.points().middleRows(first, count);
         values.reinit(cell, points);
 
+        // A shifted quadrature expands the values towards the boundary it is
+        // shifted onto, its weights staying those of its points
+        if (quadrature.is_shifted())
+            shift_values(values, quadrature, first, count);
+
         // Boundary weights, the quadrature weights times the measure of the
         // boundary through the map, from its normals in parameter space
         normals = quadrature.normals().middleRows(first, count);
@@ -163,6 +202,11 @@ void Assembler<Basis, n>::assemble_load(
 
         points = quadrature.points().middleRows(first, count);
         values.reinit(cell, points);
+
+        // A shifted quadrature expands the values towards the boundary it is
+        // shifted onto, its weights staying those of its points
+        if (quadrature.is_shifted())
+            shift_values(values, quadrature, first, count);
 
         // Boundary weights, the quadrature weights times the measure of the
         // boundary through the map, from its normals in parameter space

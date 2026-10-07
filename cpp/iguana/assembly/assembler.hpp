@@ -106,13 +106,19 @@ public:
      *
      * The patch maps the weights of the quadrature, which measure the
      * boundary in parameter space, into the boundary weights the condition
-     * takes, through the normals of the boundary
+     * takes, through the normals of the boundary. On a shifted quadrature
+     * the values are expanded towards the boundary it is shifted onto, as
+     * the shifted boundary method needs, while the weights stay those of
+     * its points
      *
      * @tparam C Condition, a final class derived from Condition
      *
      * @param condition Condition whose local stiffness is added
      * @param quadrature Quadrature of a boundary embedded in the grid of the
      *        basis
+     *
+     * @throws std::invalid_argument If @p quadrature is shifted and the patch
+     *         is not a B-spline one
      *
      * @pre @p quadrature is built on the grid of the basis, and every element
      *      it holds has its degrees of freedom in the space
@@ -131,10 +137,12 @@ public:
      * @param quadrature Quadrature of a boundary embedded in the grid of the
      *        basis
      * @param data Value the condition imposes at each point of the
-     *        quadrature, in its order
+     *        quadrature, in its order, given at its closest point on a
+     *        shifted quadrature
      *
      * @throws std::invalid_argument If @p data does not have one value per
-     *         point of @p quadrature
+     *         point of @p quadrature, or if @p quadrature is shifted and the
+     *         patch is not a B-spline one
      *
      * @pre @p quadrature is built as for the stiffness of a condition
      */
