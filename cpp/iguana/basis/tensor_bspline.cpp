@@ -300,6 +300,67 @@ void TensorBSpline<T, d>::hess_on_element(
     }
 }
 
+template<std::floating_point T, std::size_t d>
+void TensorBSpline<T, d>::taylor_on_element(
+    const std::array<int, d>& first_active, const Eigen::MatrixX<T>& points,
+    const Eigen::MatrixX<T>& shifts, int order,
+    Eigen::MatrixX<T>& values) const
+{
+    const Eigen::Index num_points = points.rows();
+
+    // Terms of the univariate series of each direction, the derivatives of
+    // order k scaled at each point by s^k / k!
+    std::array<std::vector<Eigen::MatrixX<T>>, d> axis_terms;
+
+    for (std::size_t direction = 0; direction < d; ++direction) {
+        const std::span<const T> coords(points.col(direction).data(),
+                                        num_points);
+
+        axes_[direction].derivs_on_element(first_active[direction], coords,
+                                           order, axis_terms[direction]);
+
+        Eigen::RowVectorX<T> scale = Eigen::RowVectorX<T>::Ones(num_points);
+
+        for (int k = 1; k <= order; ++k) {
+            scale = scale.cwiseProduct(shifts.col(direction).transpose())
+                    / static_cast<T>(k);
+            axis_terms[direction][static_cast<std::size_t>(k)] *=
+                scale.asDiagonal();
+        }
+    }
+
+    // Products of one term per direction whose orders add up to at most the
+    // order, the terms of the multivariate series
+    std::array<int, d> orders{};
+    std::array<int, d> bounds{};
+    bounds.fill(order + 1);
+
+    std::array<const Eigen::MatrixX<T>*, d> factors{};
+    Eigen::MatrixX<T> term(num_active_, num_points);
+    Eigen::MatrixX<T> accumulated;
+    Eigen::MatrixX<T> scratch;
+
+    values.setZero(num_active_, num_points);
+
+    do {
+        int total = 0;
+
+        for (std::size_t direction = 0; direction < d; ++direction) {
+            const int k = orders[direction];
+
+            factors[direction] =
+                &axis_terms[direction][static_cast<std::size_t>(k)];
+            total += k;
+        }
+
+        if (total > order)
+            continue;
+
+        khatri_rao_into(factors, accumulated, scratch, term);
+        values += term;
+    } while (next_lexicographic(orders, bounds));
+}
+
 template class TensorBSpline<double, 1>;
 template class TensorBSpline<double, 2>;
 template class TensorBSpline<double, 3>;
