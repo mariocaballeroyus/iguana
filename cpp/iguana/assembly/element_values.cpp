@@ -35,8 +35,10 @@ void ElementValues<Basis, n>::reinit(int element,
     const Basis& basis = patch_.basis();
 
     // First active function of each direction, from the element of each
-    // direction with the first one running fastest
+    // direction with the first one running fastest, and the volume of the
+    // element in parameter space
     int remaining = element;
+    Scalar volume = 1;
 
     for (std::size_t direction = 0; direction < dim; ++direction) {
         const KnotVector<Scalar>& knots = basis.grid().knots(direction);
@@ -44,6 +46,8 @@ void ElementValues<Basis, n>::reinit(int element,
 
         first_active_[direction] =
             knots.element_span(axis_element) - knots.degree();
+        volume *= knots.element_end(axis_element)
+                  - knots.element_start(axis_element);
         remaining /= knots.num_elements();
     }
 
@@ -56,6 +60,7 @@ void ElementValues<Basis, n>::reinit(int element,
     // The basis that gives the functions also gives the Jacobian of the map
     patch_.tangent_on_element(actives_, gradients_, tangents_);
     Map::measure_on_element(tangents_, measures_);
+    sizes_ = (volume * measures_).array().pow(1 / static_cast<Scalar>(dim));
 
     if constexpr (dim == n) {
         if (flags_.physical_gradients) {
