@@ -74,3 +74,41 @@ TEST_CASE("The field trace of the Poisson element gives the field",
     REQUIRE((b.transpose() * u - positions * gradient).cwiseAbs().maxCoeff()
             < 1e-14);
 }
+
+TEST_CASE("The flux of the Poisson element gives the normal derivative",
+          "[poisson_traces]")
+{
+    using Element = iguana::PoissonElement<Basis, 2>;
+
+    const iguana::Patch<Basis, 2> patch = rectangle();
+    const Element::Q flux;
+    iguana::ElementValues<Basis, 2> values(patch, flux.flags());
+
+    // Points of the second element with oblique unit normals, as a curved
+    // boundary through it would have
+    Eigen::MatrixXd points(3, 2);
+    points << .5, .1,
+              .7, .6,
+              .9, .95;
+    values.reinit(1, points);
+
+    iguana::PointMatrix<double, 2> normals(3, 2);
+    normals << .6, .8,
+               -1., 0.,
+               .28, -.96;
+
+    Eigen::MatrixXd q;
+    flux.local_flux(values, normals, q);
+
+    // The gradient of a linear field is constant, so its flux is the
+    // gradient along each normal
+    Eigen::VectorXi actives;
+    patch.basis().active_on_element(1, actives);
+
+    const Eigen::Vector2d gradient(1., -2.);
+    const Eigen::VectorXd u =
+        patch.coefficients()(actives, Eigen::placeholders::all) * gradient;
+
+    REQUIRE((q.transpose() * u - normals * gradient).cwiseAbs().maxCoeff()
+            < 1e-14);
+}
