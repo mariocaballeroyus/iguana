@@ -36,20 +36,22 @@ void ElementValues<Basis, n>::reinit(int element,
 
     // First active function of each direction, from the element of each
     // direction with the first one running fastest
-    std::array<int, dim> first_active{};
     int remaining = element;
 
     for (std::size_t direction = 0; direction < dim; ++direction) {
         const KnotVector<Scalar>& knots = basis.grid().knots(direction);
         const int axis_element = remaining % knots.num_elements();
 
-        first_active[direction] =
+        first_active_[direction] =
             knots.element_span(axis_element) - knots.degree();
         remaining /= knots.num_elements();
     }
 
+    // The points stay for a later shift
+    points_ = points;
+
     basis.active_on_element(element, actives_);
-    basis.grad_on_element(first_active, points, values_, gradients_);
+    basis.grad_on_element(first_active_, points, values_, gradients_);
 
     // The basis that gives the functions also gives the Jacobian of the map
     patch_.tangent_on_element(actives_, gradients_, tangents_);
@@ -61,6 +63,15 @@ void ElementValues<Basis, n>::reinit(int element,
                                           physical_gradients_);
         }
     }
+}
+
+template<typename Basis, std::size_t n>
+void ElementValues<Basis, n>::shift(const Eigen::MatrixX<Scalar>& shifts,
+                                    int order)
+    requires std::same_as<Basis, TensorBSpline<Scalar, dim>>
+{
+    patch_.basis().taylor_on_element(first_active_, points_, shifts, order,
+                                     values_);
 }
 
 template class ElementValues<TensorBSpline<double, 1>, 2>;

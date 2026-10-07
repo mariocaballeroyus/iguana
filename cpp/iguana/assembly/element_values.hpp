@@ -7,10 +7,12 @@
 #define IGUANA_ASSEMBLY_ELEMENT_VALUES_HPP
 
 #include <array>
+#include <concepts>
 #include <cstddef>
 
 #include <Eigen/Core>
 
+#include "iguana/basis/tensor_bspline.hpp"
 #include "iguana/geometry/patch.hpp"
 
 namespace iguana
@@ -83,6 +85,25 @@ public:
      */
     void reinit(int element, const Eigen::MatrixX<Scalar>& points);
 
+    /**
+     * @brief Replaces the values by their Taylor series from the points of
+     *        the last reinit() along shifts, up to a total order
+     *
+     * This is how the shifted boundary method expands the functions of a
+     * surrogate point towards the true boundary. The gradients, tangents,
+     * measures and physical gradients stay at the points, where the
+     * surrogate boundary is measured
+     *
+     * @param shifts Shift of each point in parameter space, with size
+     *        (num_points, dim)
+     * @param order Highest total order of the derivatives kept
+     *
+     * @pre reinit() was called, @p shifts has one row per point of it, and
+     *      @p order is non-negative
+     */
+    void shift(const Eigen::MatrixX<Scalar>& shifts, int order)
+        requires std::same_as<Basis, TensorBSpline<Scalar, dim>>;
+
     /// @brief Values of the active functions, of size
     ///        (num_active, num_points)
     constexpr const Eigen::MatrixX<Scalar>& values() const noexcept
@@ -127,6 +148,12 @@ private:
 
     /// @brief Optional values to compute
     ValueFlags flags_;
+
+    /// @brief First active function of each direction on the element
+    std::array<int, dim> first_active_{};
+
+    /// @brief Points of the element in parameter space
+    Eigen::MatrixX<Scalar> points_;
 
     /// @brief Functions active on the element
     Eigen::VectorXi actives_;
