@@ -25,7 +25,7 @@ namespace iguana
  * as the normal derivative du/dn with the field u of the Poisson problem.
  * Conditions that keep this term, such as Nitsche's, read the flux, while a
  * Neumann condition replaces it by data. Each element declares its fluxes
- * as nested classes next to its traces, such as PoissonElement::Flux. A
+ * as nested classes next to its traces, such as PoissonElement::Q. A
  * flux gives one value per boundary point, linear in the coefficients of
  * the element, F(u)(x_q) = sum over i of F_iq u_i. Unlike a trace, it
  * needs the normals of the boundary
