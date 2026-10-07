@@ -21,6 +21,7 @@
 #include "fspace/function_space.hpp"
 #include "geometry/boundary.hpp"
 #include "geometry/nurbs/bezier_points.hpp"
+#include "geometry/nurbs/curve_projection.hpp"
 #include "geometry/patch.hpp"
 #include "quadrature/boundary_quadrature.hpp"
 #include "quadrature/box_rule.hpp"
