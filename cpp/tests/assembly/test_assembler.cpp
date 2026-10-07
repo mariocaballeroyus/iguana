@@ -340,3 +340,67 @@ TEST_CASE("A Neumann condition loads a trace with data along a boundary",
 
     REQUIRE_THAT(assembler.load().sum(), WithinRel(integral, 1e-12));
 }
+
+TEST_CASE("A shifted penalty imposes a field of the space from its closest "
+          "points", "[assembler]")
+{
+    const Basis basis = uneven();
+    const iguana::Patch<Basis, 2> patch = rectangle(basis);
+    const iguana::FunctionSpace<Basis> space(
+        basis, with_last_column(CellType::inside));
+
+    // The surrogate domain is the element [.4, 1.2] x [0, 2.1], inside the
+    // rectangle [.3, 1.3] x [-.2, 2.2], whose sides cross no knot line
+    std::vector<CellType> cell_types(6, CellType::outside);
+    cell_types[1] = CellType::inside;
+
+    const iguana::SurrogateBoundary<double, 2> surrogate(
+        basis.grid(), EmbeddedDomain<double, 2>(cell_types));
+
+    const std::array<Eigen::RowVector2d, 4> corners{
+        Eigen::RowVector2d(.3, -.2), Eigen::RowVector2d(1.3, -.2),
+        Eigen::RowVector2d(1.3, 2.2), Eigen::RowVector2d(.3, 2.2)};
+    std::vector<iguana::Boundary<double, 2>::Face> faces;
+
+    for (std::size_t side = 0; side < 4; ++side)
+        faces.push_back(segment(corners[side], corners[(side + 1) % 4]));
+
+    const iguana::Boundary<double, 2> boundary(faces, {1, 1, 1, 1});
+
+    const iguana::BoundaryQuadrature<double, 2> unshifted(
+        surrogate, iguana::GaussLegendre<double, 1>(3));
+    iguana::BoundaryQuadrature<double, 2> shifted = unshifted;
+    shifted.shift(patch, boundary, 2);
+
+    // The data of b . x at the closest points, the points lying in parameter
+    // space, where the map scales each axis by its side
+    const Eigen::Vector2d b(1., -2.);
+    const Eigen::MatrixXd closest = shifted.points() + shifted.distances();
+    const Eigen::VectorXd data = width * b(0) * closest.col(0)
+                                 + height * b(1) * closest.col(1);
+
+    const iguana::PoissonElement<Basis, 2>::U trace;
+    const iguana::PenaltyCondition<Basis, 2> condition(trace, 10.);
+
+    // With every cell inside, each function keeps its own index, and the
+    // coefficients of b . x are b . x_i at the control points
+    const Eigen::VectorXd u = patch.coefficients() * b;
+
+    // The series of b . x from each point reaches the closest point exactly,
+    // so the shifted penalty imposes it consistently
+    iguana::Assembler<Basis, 2> assembler(space, patch);
+    assembler.assemble_stiffness(condition, shifted);
+    assembler.assemble_load(condition, shifted, data);
+
+    REQUIRE((assembler.stiffness() * u - assembler.load()).cwiseAbs()
+                .maxCoeff() < 1e-12);
+
+    // Without the shift, the data is imposed a distance away from where it
+    // belongs
+    assembler.clear();
+    assembler.assemble_stiffness(condition, unshifted);
+    assembler.assemble_load(condition, unshifted, data);
+
+    REQUIRE((assembler.stiffness() * u - assembler.load()).cwiseAbs()
+                .maxCoeff() > 1e-2);
+}
