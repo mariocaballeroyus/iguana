@@ -40,6 +40,7 @@
 #include "element/trace.hpp"
 #include "condition/condition.hpp"
 #include "condition/penalty_condition.hpp"
+#include "condition/nitsche_condition.hpp"
 #include "condition/neumann_condition.hpp"
 
 #endif // IGUANA_IGUANA_HPP
