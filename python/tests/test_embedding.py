@@ -7,7 +7,8 @@ import numpy as np
 import pytest
 
 import iguana
-from iguana import Boundary, cpp
+from iguana import (Boundary, BoundaryQuadrature, CellType, SurrogateBoundary,
+                    cpp)
 
 
 def embed(patch, boundary):
@@ -73,3 +74,52 @@ def test_patch_not_affine():
             patch=cpp.PlanarPatch(basis=patch._cpp_object.basis,
                                   coefficients=bent),
             boundary=Boundary([line])._cpp_object)
+
+
+def test_surrogate_boundary():
+    """The surrogate boundary of two inside cells runs along the six sides
+    of their block, a cut cell beside them included, and the quadrature on
+    it measures the block in the plane."""
+    patch = iguana.create_rectangle(lengths=(2., 3.), elements=(6, 6))
+
+    # Cells 20 and 21 cover [2/3, 4/3] x [1.5, 2], and cell 22 is cut
+    cell_types = [CellType.outside] * 36
+    cell_types[20] = cell_types[21] = CellType.inside
+    cell_types[22] = CellType.cut
+
+    surrogate = SurrogateBoundary(patch, cell_types)
+
+    assert surrogate.num_faces == 6
+    assert np.array_equal(surrogate.elements, [20, 20, 20, 21, 21, 21])
+
+    # The weights give the perimeter, and the flux of the position, whose
+    # divergence is two, twice the area
+    quadrature = BoundaryQuadrature(patch, surrogate, 2)
+    flux = quadrature.weights @ np.sum(quadrature.positions
+                                       * quadrature.normals, axis=1)
+
+    assert quadrature.boundary is surrogate
+    assert quadrature.weights.sum() == pytest.approx(2. * (2. / 3. + .5))
+    assert flux == pytest.approx(2. * (2. / 3.) * .5)
+
+
+def test_invalid_surrogate_boundaries():
+    patch = iguana.create_rectangle(lengths=(2., 3.), elements=(6, 6))
+    cell_types = [CellType.inside] * 36
+
+    with pytest.raises(ValueError):
+        SurrogateBoundary(patch, cell_types[:-1])
+
+    surface = iguana.create_surface(degrees=(1, 1),
+                                    knots=([0., 0., 1., 1.],
+                                           [0., 0., 1., 1.]),
+                                    control_points=np.eye(4, 3))
+
+    with pytest.raises(TypeError):
+        SurrogateBoundary(surface, [CellType.inside])
+
+    # A quadrature takes the surrogate boundary of its own patch only
+    other = iguana.create_rectangle(lengths=(2., 3.), elements=(6, 6))
+
+    with pytest.raises(ValueError):
+        BoundaryQuadrature(other, SurrogateBoundary(patch, cell_types), 2)
