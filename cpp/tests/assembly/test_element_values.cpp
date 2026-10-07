@@ -172,6 +172,46 @@ void check_linear_field()
     REQUIRE_THAT(energy, WithinAbs(b.squaredNorm() * box, 1e-12));
 }
 
+/**
+ * @brief Checks the sizes of the elements of a bent box: h^d is the measure
+ *        times the volume of the element in parameter space, so its mean
+ *        over the element in parameter space is the measure of the element
+ */
+template<std::size_t d>
+void check_sizes()
+{
+    using Basis = TensorBSpline<double, d>;
+
+    const iguana::Patch<Basis, d> patch = bent_box<d>();
+    const iguana::GaussLegendre<double, d> rule(4);
+    iguana::ElementValues<Basis, d> element_values(patch, {});
+
+    Eigen::MatrixXd points;
+    Eigen::VectorXd weights;
+
+    for (const auto& element : patch.basis().grid()) {
+        INFO("element " << element.index());
+
+        rule.fill_to_reference_space(element.start(), element.end(), points,
+                                     weights);
+        iguana::BoxRule<double, d>::map_to_parameter_space(
+            element.start(), element.end(), points, weights);
+        element_values.reinit(element.index(), points);
+
+        double volume = 1.;
+
+        for (std::size_t direction = 0; direction < d; ++direction)
+            volume *= element.end()[direction] - element.start()[direction];
+
+        const Eigen::VectorXd powers =
+            element_values.sizes().array().pow(static_cast<double>(d));
+        const double mean = weights.dot(powers) / volume;
+
+        REQUIRE_THAT(mean, WithinAbs(weights.dot(element_values.measures()),
+                                     1e-12));
+    }
+}
+
 } // namespace
 
 TEST_CASE("Element values integrate the energy of a linear field exactly",
@@ -179,6 +219,13 @@ TEST_CASE("Element values integrate the energy of a linear field exactly",
 {
     check_linear_field<2>();
     check_linear_field<3>();
+}
+
+TEST_CASE("Element sizes average to the measure of each element",
+          "[element_values]")
+{
+    check_sizes<2>();
+    check_sizes<3>();
 }
 
 TEST_CASE("Element values on a shell measure its area",
