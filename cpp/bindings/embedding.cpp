@@ -22,6 +22,7 @@ namespace
 using EmbeddedDomain2d = EmbeddedDomain<double, 2>;
 using EmbeddedDomain3d = EmbeddedDomain<double, 3>;
 using EmbeddedBoundary2d = EmbeddedBoundary<double, 2>;
+using SurrogateBoundary2d = SurrogateBoundary<double, 2>;
 using PlanarPatch = Patch<TensorBSpline<double, 2>, 2>;
 
 /// @brief Element of the grid holding each piece, in the order of the
@@ -71,6 +72,31 @@ Eigen::MatrixXd intervals(const EmbeddedBoundary2d& boundary)
     return result;
 }
 
+/// @brief Surrogate boundary of the inside cells among the elements of a
+///        patch
+SurrogateBoundary2d surrogate_boundary(const PlanarPatch& patch,
+                                       const EmbeddedDomain2d& domain)
+{
+    return {patch.basis().grid(), domain};
+}
+
+/// @brief Element of the grid holding each face, in the order of the faces
+Eigen::VectorXi face_elements(const SurrogateBoundary2d& boundary)
+{
+    Eigen::VectorXi result(boundary.num_faces());
+    int face = 0;
+
+    for (int element = 0; element < boundary.num_elements(); ++element) {
+        const int count =
+            static_cast<int>(boundary.faces_on_element(element).size());
+
+        result.segment(face, count).setConstant(element);
+        face += count;
+    }
+
+    return result;
+}
+
 } // namespace
 
 void embedding(py::module_& module)
@@ -93,6 +119,12 @@ void embedding(py::module_& module)
         .def_property_readonly("elements", &elements)
         .def_property_readonly("faces", &faces)
         .def_property_readonly("intervals", &intervals);
+
+    py::class_<SurrogateBoundary2d>(module, "SurrogateBoundary2d")
+        .def(py::init(&surrogate_boundary), py::arg("patch"),
+             py::arg("domain"))
+        .def_property_readonly("num_faces", &SurrogateBoundary2d::num_faces)
+        .def_property_readonly("elements", &face_elements);
 }
 
 } // namespace iguana::bindings

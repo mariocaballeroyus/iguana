@@ -12,6 +12,7 @@
 #include <Eigen/Core>
 
 #include "iguana/embedding/embedded_boundary.hpp"
+#include "iguana/embedding/surrogate_boundary.hpp"
 #include "iguana/quadrature/gauss_legendre/gauss_legendre.hpp"
 
 namespace iguana
@@ -25,7 +26,8 @@ namespace iguana
  * the face parameter, whose points the face maps into the parameter space
  * of the grid. The points are stored element after element, following the
  * pieces within one, and an offset marks where the points of each element
- * start. Only the elements holding a piece of the boundary are held
+ * start. Only the elements holding a piece of the boundary are held. On a
+ * surrogate boundary, the pieces are whole faces of the inside cells
  *
  * The points, weights and normals lie in the parameter space of the grid,
  * where the weights measure length. The geometry map, with Jacobian J,
@@ -35,7 +37,8 @@ namespace iguana
  *
  * @tparam T Floating-point type
  * @tparam d Number of parametric directions, two, as only curves are
- *         embedded so far, which EmbeddedBoundary asserts
+ *         embedded so far, which EmbeddedBoundary asserts, and the faces of
+ *         a surrogate boundary are then segments
  */
 template<std::floating_point T, std::size_t d>
 class BoundaryQuadrature
@@ -55,6 +58,20 @@ public:
      * @param rule Rule placed on every piece
      */
     BoundaryQuadrature(const EmbeddedBoundary<T, d>& boundary,
+                       const GaussLegendre<T, 1>& rule);
+
+    /**
+     * @brief Places a rule on every face of a surrogate boundary
+     *
+     * The rule maps from [-1, 1] onto the interval each face spans across
+     * its direction, so that the weights measure length in parameter space,
+     * and the normal of a face is its side times the unit vector of its
+     * direction
+     *
+     * @param boundary Surrogate boundary of the inside cells of a grid
+     * @param rule Rule placed on every face
+     */
+    BoundaryQuadrature(const SurrogateBoundary<T, d>& boundary,
                        const GaussLegendre<T, 1>& rule);
 
     /// @brief Number of elements holding a piece of the boundary
@@ -87,7 +104,9 @@ public:
     constexpr const Eigen::MatrixX<T>& normals() const noexcept
     { return normals_; }
 
-    /// @brief Face of the boundary holding each point
+    /// @brief Face of the boundary holding each point, by its index in the
+    ///        embedded boundary, or in the surrogate one, counted element
+    ///        after element
     constexpr const Eigen::VectorXi& faces() const noexcept
     { return faces_; }
 

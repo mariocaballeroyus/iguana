@@ -27,11 +27,13 @@ using iguana::TensorGrid;
 using iguana::TensorGridIterator;
 using iguana::TensorNURBS;
 
+using iguana::CellType;
 using Embedded = iguana::EmbeddedBoundary<double, 2>;
 using Face = Boundary<double, 2>::Face;
 using Gauss = iguana::GaussLegendre<double, 1>;
 using Quadrature = iguana::BoundaryQuadrature<double, 2>;
 using Region = iguana::Patch<TensorBSpline<double, 2>, 2>;
+using Surrogate = iguana::SurrogateBoundary<double, 2>;
 
 /// @brief Patch of linear elements between breaks in each direction,
 ///        mapped onto itself so that its parameters are its coordinates
@@ -225,4 +227,79 @@ TEST_CASE("Points of a circle lie on it, with normals pointing away from "
     // The length element of the arcs varies along them
     REQUIRE_THAT(quadrature.weights().sum(),
                  WithinAbs(4. * std::numbers::pi, 1e-12));
+}
+
+TEST_CASE("A surrogate boundary carries a rule on each face of its cells",
+          "[boundary_quadrature]")
+{
+    // Four by three elements over uneven spans, the last column cut, and
+    // the cell at (1, 1) outside and enclosed by inside cells
+    const TensorGrid<double, 2> grid(
+        {KnotVector<double>(1, {0., 0., .1, .4, .7, 1., 1.}),
+         KnotVector<double>(1, {0., 0., .3, .5, 1., 1.})});
+
+    std::vector<CellType> cell_types(12, CellType::inside);
+
+    for (const int element : {3, 7, 11})
+        cell_types[element] = CellType::cut;
+
+    cell_types[5] = CellType::outside;
+
+    const Surrogate boundary(grid,
+                             iguana::EmbeddedDomain<double, 2>(cell_types));
+    const Quadrature quadrature(boundary, Gauss(2));
+
+    // Corners of each element of the grid
+    std::vector<std::array<double, 2>> starts(12);
+    std::vector<std::array<double, 2>> ends(12);
+
+    for (const TensorGridIterator<double, 2>& element : grid) {
+        starts[static_cast<std::size_t>(element.index())] = element.start();
+        ends[static_cast<std::size_t>(element.index())] = element.end();
+    }
+
+    // Every point lies on the element holding it, the weights of each face
+    // add up to its length, and the flux of the position to twice the area
+    // of the surrogate domain
+    std::vector<double> lengths(
+        static_cast<std::size_t>(boundary.num_faces()), 0.);
+    double flux = 0.;
+
+    for (int position = 0; position < quadrature.num_elements(); ++position) {
+        const std::size_t element =
+            static_cast<std::size_t>(quadrature.elements()(position));
+
+        for (int point = quadrature.offsets()(position);
+             point < quadrature.offsets()(position + 1); ++point) {
+            const double weight = quadrature.weights()(point);
+
+            for (Eigen::Index axis = 0; axis < 2; ++axis) {
+                const double coordinate = quadrature.points()(point, axis);
+                const std::size_t index = static_cast<std::size_t>(axis);
+
+                REQUIRE(coordinate >= starts[element][index]);
+                REQUIRE(coordinate <= ends[element][index]);
+            }
+
+            lengths[static_cast<std::size_t>(quadrature.faces()(point))] +=
+                weight;
+            flux += weight * quadrature.points().row(point).dot(
+                                 quadrature.normals().row(point));
+        }
+    }
+
+    std::size_t index = 0;
+
+    for (int element = 0; element < boundary.num_elements(); ++element) {
+        for (const Surrogate::Face& face :
+             boundary.faces_on_element(element)) {
+            const double length = (face.end[0] - face.start[0])
+                                  + (face.end[1] - face.start[1]);
+
+            REQUIRE_THAT(lengths[index++], WithinAbs(length, 1e-14));
+        }
+    }
+
+    // The domain is [0, .7] x [0, 1] without the hole [.1, .4] x [.3, .5]
+    REQUIRE_THAT(flux, WithinAbs(2. * (.7 - .06), 1e-14));
 }

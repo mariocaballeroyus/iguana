@@ -6,7 +6,8 @@
 A domain quadrature is filled one cell type at a time, each with a rule of
 its own, such as Gauss-Legendre on the inside cells. A boundary quadrature
 places one rule on every piece of a boundary that the knot lines of the
-patch divide.
+patch divide, or on every face of the surrogate boundary of the inside
+cells.
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ import numpy.typing as npt
 from iguana import cpp as _cpp
 from iguana.boundary import Boundary
 from iguana.grid import HierarchicalGrid
-from iguana.embedding import CellType
+from iguana.embedding import CellType, SurrogateBoundary
 from iguana.patch import PlanarPatch, SurfacePatch, VolumePatch
 
 
@@ -218,43 +219,54 @@ class BoundaryQuadrature:
 
     _cpp_object: _cpp.BoundaryQuadrature2d
 
-    def __init__(self, patch: PlanarPatch, boundary: Boundary,
+    def __init__(self, patch: PlanarPatch,
+                 boundary: Boundary | SurrogateBoundary,
                  num_points: int) -> None:
         """Initialize the quadrature of a boundary in the plane of a patch.
 
-        The faces of the boundary are divided exactly where they cross the
-        knot lines of the patch, and each piece carries a Gauss-Legendre
-        rule of its own along its face, so that the points follow the
-        curves as they are.
+        The faces of a boundary of curves are divided exactly where they
+        cross the knot lines of the patch, and each piece carries a
+        Gauss-Legendre rule of its own along its face, so that the points
+        follow the curves as they are. The faces of a surrogate boundary
+        are whole sides of cells, each carrying the rule.
 
         Args:
-            patch: The background patch, a planar patch whose map is
-                affine, such as a rectangle from `create_rectangle`.
+            patch: The background patch, a planar patch. For a boundary of
+                curves its map must be affine, such as that of a rectangle
+                from `create_rectangle`.
             boundary: The boundary, made of curves in the plane of the
-                patch.
-            num_points: Number of points on each piece.
+                patch, or the surrogate boundary of its inside cells.
+            num_points: Number of points on each piece or face.
 
         Raises:
             TypeError: If the patch is not a planar patch, or if the
-                boundary is not made of curves in the plane.
-            ValueError: If the map of the patch is not affine, if the knot
-                vector of a face is not clamped, or if the number of points
-                lies outside [1, 8].
+                boundary is neither made of curves in the plane nor a
+                surrogate boundary.
+            ValueError: If a surrogate boundary lies on another patch, if
+                the map of the patch is not affine for a boundary of
+                curves, if the knot vector of a face is not clamped, or if
+                the number of points lies outside [1, 8].
         """
         if not isinstance(patch, PlanarPatch):
             raise TypeError('the patch must be a planar patch')
 
-        if not (isinstance(boundary, Boundary)
-                and isinstance(boundary._cpp_object, _cpp.Boundary2d)):
+        if isinstance(boundary, SurrogateBoundary):
+            if boundary.patch is not patch:
+                raise ValueError('the surrogate boundary must lie on the '
+                                 'patch')
+
+            divided = boundary._cpp_object
+        elif (isinstance(boundary, Boundary)
+              and isinstance(boundary._cpp_object, _cpp.Boundary2d)):
+            # The boundary divided over the elements, which the quadrature
+            # needs only to be built
+            divided = _cpp.EmbeddedBoundary2d(patch=patch._cpp_object,
+                                              boundary=boundary._cpp_object)
+        else:
             raise TypeError('the boundary must be made of curves in the '
-                            'plane')
+                            'plane, or be a surrogate boundary')
 
-        # The boundary divided over the elements, which the quadrature
-        # needs only to be built
-        embedded = _cpp.EmbeddedBoundary2d(patch=patch._cpp_object,
-                                           boundary=boundary._cpp_object)
-
-        self._cpp_object = _cpp.BoundaryQuadrature2d(boundary=embedded,
+        self._cpp_object = _cpp.BoundaryQuadrature2d(boundary=divided,
                                                      num_points=num_points)
         self._patch = patch
         self._boundary = boundary
@@ -265,13 +277,13 @@ class BoundaryQuadrature:
         return self._patch
 
     @property
-    def boundary(self) -> Boundary:
+    def boundary(self) -> Boundary | SurrogateBoundary:
         """The boundary the points lie on."""
         return self._boundary
 
     @property
     def num_elements(self) -> int:
-        """Number of elements of the patch holding a piece of the
+        """Number of elements of the patch holding a piece or face of the
         boundary."""
         return self._cpp_object.num_elements
 

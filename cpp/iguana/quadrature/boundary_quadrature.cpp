@@ -96,6 +96,72 @@ BoundaryQuadrature<T, d>::BoundaryQuadrature(
     }
 }
 
+template<std::floating_point T, std::size_t d>
+BoundaryQuadrature<T, d>::BoundaryQuadrature(
+    const SurrogateBoundary<T, d>& boundary, const GaussLegendre<T, 1>& rule)
+{
+    using Face = typename SurrogateBoundary<T, d>::Face;
+
+    // Elements holding a face, in increasing order
+    std::vector<int> held;
+
+    for (int element = 0; element < boundary.num_elements(); ++element)
+        if (!boundary.faces_on_element(element).empty())
+            held.push_back(element);
+
+    // Every face carries the whole rule
+    const int count = rule.num_points();
+    const int num_total = boundary.num_faces() * count;
+
+    elements_ = Eigen::Map<const Eigen::VectorXi>(
+        held.data(), static_cast<Eigen::Index>(held.size()));
+    offsets_.resize(num_elements() + 1);
+    points_.resize(num_total, d);
+    weights_.resize(num_total);
+    normals_.setZero(num_total, d);
+    faces_.resize(num_total);
+
+    // Buffers reused over the faces
+    Eigen::MatrixX<T> parameters;
+    Eigen::VectorX<T> weights;
+
+    // First point of the next face, and its index in the boundary
+    int first = 0;
+    int index = 0;
+    offsets_(0) = 0;
+
+    for (int position = 0; position < num_elements(); ++position) {
+        const int element = elements_(position);
+
+        for (const Face& face : boundary.faces_on_element(element)) {
+            // A segment, d being two, runs across its direction
+            const std::size_t direction =
+                static_cast<std::size_t>(face.direction);
+            const std::size_t across = 1 - direction;
+
+            // The rule placed on the interval the face spans
+            parameters = rule.points();
+            weights = rule.weights();
+            BoxRule<T, 1>::map_to_parameter_space({face.start[across]},
+                                                  {face.end[across]},
+                                                  parameters, weights);
+
+            points_.block(first, across, count, 1) = parameters;
+            points_.block(first, direction, count, 1)
+                .setConstant(face.start[direction]);
+            weights_.segment(first, count) = weights;
+            normals_.block(first, direction, count, 1)
+                .setConstant(static_cast<T>(face.side));
+            faces_.segment(first, count).setConstant(index);
+
+            first += count;
+            ++index;
+        }
+
+        offsets_(position + 1) = first;
+    }
+}
+
 template class BoundaryQuadrature<double, 2>;
 
 } // namespace iguana
