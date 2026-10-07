@@ -9,7 +9,8 @@ import pytest
 import iguana
 from iguana import (Boundary, BoundaryQuadrature, CellType, DomainQuadrature,
                     FunctionSpace, HierarchicalGrid, NeumannCondition,
-                    PenaltyCondition, PoissonElement, solve)
+                    PenaltyCondition, PoissonElement, SurrogateBoundary,
+                    solve)
 
 # Sides of the rectangle, and of the square inside it, whose edges halve
 # the cells they cut, so that no cut is a sliver
@@ -42,17 +43,30 @@ def square_cell_types(patch):
     return cell_types
 
 
-def square_boundary(patch, sides=range(4)):
-    """Quadrature of sides of the square, numbered counterclockwise from the
-    bottom one, one face per side."""
+def square_sides(sides=range(4)):
+    """Sides of the square, numbered counterclockwise from the bottom one,
+    one face per side."""
     corners = np.array([LOWER, [UPPER[0], LOWER[1]], UPPER,
                         [LOWER[0], UPPER[1]]])
-    faces = [iguana.create_curve(degree=1, knots=[0., 0., 1., 1.],
-                                 control_points=[corners[side],
-                                                 corners[(side + 1) % 4]])
-             for side in sides]
 
-    return BoundaryQuadrature(patch, Boundary(faces), 5)
+    return Boundary([iguana.create_curve(degree=1, knots=[0., 0., 1., 1.],
+                                         control_points=[corners[side],
+                                                         corners[(side + 1)
+                                                                 % 4]])
+                     for side in sides])
+
+
+def square_boundary(patch, sides=range(4)):
+    """Quadrature of sides of the square."""
+    return BoundaryQuadrature(patch, square_sides(sides), 5)
+
+
+def square_surrogate(patch):
+    """Quadrature of the surrogate boundary of the cells inside the square,
+    shifted towards its sides."""
+    surrogate = SurrogateBoundary(patch, square_cell_types(patch))
+
+    return BoundaryQuadrature(patch, surrogate, 3, shift=square_sides())
 
 
 def square_problem():
@@ -126,6 +140,19 @@ def test_neumann_condition_imposes_a_flux():
     assert errors[1] / errors[0] == pytest.approx(1e-2, rel=.05)
 
 
+def test_data_at_the_closest_points():
+    """On a shifted quadrature, a condition takes its data where the points
+    are shifted to, the sides of the square, half a cell away from the
+    surrogate boundary."""
+    shifted = square_surrogate(rectangle())
+    condition = PenaltyCondition(PoissonElement().u, shifted,
+                                 lambda x: x @ GRADIENT, 1.)
+
+    np.testing.assert_allclose(condition.values,
+                               shifted.projections @ GRADIENT)
+    assert not np.allclose(condition.values, shifted.positions @ GRADIENT)
+
+
 def test_invalid_arguments():
     patch, space, quadrature = square_problem()
     boundary = square_boundary(patch)
@@ -153,6 +180,12 @@ def test_invalid_arguments():
 
     with pytest.raises(ValueError):
         NeumannCondition(element.u, boundary, values[:-1])
+
+    # A shifted flux would need the gradients at the closest points
+    shifted = square_surrogate(patch)
+
+    with pytest.raises(ValueError):
+        NeumannCondition(element.u, shifted, np.zeros(shifted.num_points))
 
     with pytest.raises(TypeError):
         solve(element, space, quadrature, source, conditions=['condition'])
