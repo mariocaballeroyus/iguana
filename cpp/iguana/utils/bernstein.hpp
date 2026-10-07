@@ -80,6 +80,76 @@ void de_casteljau_split(const Eigen::VectorX<T>& coefficients, T t,
 }
 
 /**
+ * @brief Bernstein coefficients of the derivative of a polynomial in
+ *        Bernstein form on [0, 1]
+ *
+ * The derivative of a polynomial of degree p has degree p - 1, with
+ * coefficients p (b_{j + 1} - b_j). That of a constant is zero, given as a
+ * single zero coefficient
+ *
+ * @param coefficients Bernstein coefficients b_0, ..., b_p
+ * @return Bernstein coefficients of the derivative
+ *
+ * @pre @p coefficients is not empty
+ */
+template<std::floating_point T>
+Eigen::VectorX<T> bernstein_derivative(const Eigen::VectorX<T>& coefficients)
+{
+    const Eigen::Index degree = coefficients.size() - 1;
+
+    if (degree == 0)
+        return Eigen::VectorX<T>::Zero(1);
+
+    return static_cast<T>(degree)
+           * (coefficients.tail(degree) - coefficients.head(degree));
+}
+
+/**
+ * @brief Bernstein coefficients of the product of two polynomials in
+ *        Bernstein form on [0, 1]
+ *
+ * The product of degrees m and n has degree m + n, with coefficients
+ * c_k = sum over i + j = k of C(m, i) C(n, j) / C(m + n, k) a_i b_j
+ *
+ * @param left Bernstein coefficients a_0, ..., a_m
+ * @param right Bernstein coefficients b_0, ..., b_n
+ * @return Bernstein coefficients of the product
+ *
+ * @pre Neither @p left nor @p right is empty
+ */
+template<std::floating_point T>
+Eigen::VectorX<T> bernstein_product(const Eigen::VectorX<T>& left,
+                                    const Eigen::VectorX<T>& right)
+{
+    // Binomial coefficients C(degree, k) for k = 0, ..., degree
+    const auto binomials = [](Eigen::Index degree) {
+        Eigen::VectorX<T> result(degree + 1);
+        result(0) = T{1};
+
+        for (Eigen::Index k = 1; k <= degree; ++k)
+            result(k) = result(k - 1) * static_cast<T>(degree - k + 1)
+                        / static_cast<T>(k);
+
+        return result;
+    };
+
+    const Eigen::Index left_degree = left.size() - 1;
+    const Eigen::Index right_degree = right.size() - 1;
+    const Eigen::VectorX<T> left_binomials = binomials(left_degree);
+    const Eigen::VectorX<T> right_binomials = binomials(right_degree);
+
+    Eigen::VectorX<T> product =
+        Eigen::VectorX<T>::Zero(left_degree + right_degree + 1);
+
+    for (Eigen::Index i = 0; i <= left_degree; ++i)
+        for (Eigen::Index j = 0; j <= right_degree; ++j)
+            product(i + j) += left_binomials(i) * right_binomials(j)
+                              * left(i) * right(j);
+
+    return product.cwiseQuotient(binomials(left_degree + right_degree));
+}
+
+/**
  * @brief Number of sign changes of some Bernstein coefficients, zeros
  *        skipped
  *
