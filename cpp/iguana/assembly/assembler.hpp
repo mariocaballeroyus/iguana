@@ -8,6 +8,7 @@
 
 #include <concepts>
 #include <cstddef>
+#include <span>
 
 #include <Eigen/Core>
 #include <Eigen/SparseCore>
@@ -18,6 +19,8 @@
 #include "iguana/geometry/patch.hpp"
 #include "iguana/quadrature/boundary_quadrature.hpp"
 #include "iguana/quadrature/domain_quadrature.hpp"
+#include "iguana/quadrature/face_quadrature.hpp"
+#include "iguana/stabilization/ghost_penalty.hpp"
 
 namespace iguana
 {
@@ -157,6 +160,31 @@ public:
                        const BoundaryQuadrature<Scalar, dim>& quadrature,
                        const Eigen::VectorX<Scalar>& data);
 
+    /**
+     * @brief Adds the stiffness of a ghost penalty over the points of a face
+     *        quadrature
+     *
+     * On each face, the values of the cells before and after it, each with
+     * its own polynomial, are differentiated across it at the same points.
+     * The patch maps the weights of the quadrature, which measure the faces
+     * in parameter space, into face weights, and the local stiffness
+     * couples the degrees of freedom of both cells
+     *
+     * @param penalty Ghost penalty whose local stiffness is added
+     * @param quadrature Quadrature over interior faces of the grid of the
+     *        basis
+     *
+     * @throws std::invalid_argument If the faces are not coupled, if the map
+     *         of the patch is not affine, or if the patch is not a B-spline
+     *         one
+     *
+     * @pre @p quadrature is built on the grid of the basis, and every cell
+     *      it holds has its degrees of freedom in the space
+     */
+    void assemble_stiffness(const GhostPenalty<Basis, n>& penalty,
+                            const FaceQuadrature<Scalar, dim>& quadrature)
+        requires (dim == 2);
+
     /// @brief Zeroes the stiffness and load, keeping the pattern
     void clear();
 
@@ -171,12 +199,14 @@ public:
 
 private:
     /**
-     * @brief Adds a local stiffness at the degrees of freedom of a cell, the
-     *        only place where the stiffness is written
+     * @brief Adds a local stiffness at degrees of freedom, those of a cell
+     *        or of the two cells of a face, the only place where the
+     *        stiffness is written
      *
-     * @pre The rows of @p local follow the degrees of freedom of the cell
+     * @pre The rows of @p local follow @p dofs
      */
-    void add_to_stiffness(int cell, const Eigen::MatrixX<Scalar>& local);
+    void add_to_stiffness(std::span<const int> dofs,
+                          const Eigen::MatrixX<Scalar>& local);
 
     /**
      * @brief Adds a local load at the degrees of freedom of a cell, the only
@@ -191,6 +221,9 @@ private:
 
     /// @brief Patch that maps the points of the quadratures
     const Patch<Basis, n>& patch_;
+
+    /// @brief Whether the pattern couples the cells of every interior face
+    bool couple_faces_;
 
     /// @brief Stiffness, with an entry for every pair of degrees of freedom
     ///        sharing an element, or the cells of a face when coupled
