@@ -112,6 +112,14 @@ void embedding(py::module_& module)
     py::class_<CellClassification3d>(module, "CellClassification3d")
         .def(py::init<std::vector<CellType>>(), py::arg("cell_types"));
 
+    // The volume fractions of the elements of a planar patch inside a
+    // boundary in its plane, and the cell types they give
+    module.def("volume_fractions",
+               &volume_fractions<TensorBSpline<double, 2>>, py::arg("patch"),
+               py::arg("boundary"));
+    module.def("cell_types", &cell_types<double>,
+               py::arg("volume_fractions"));
+
     py::class_<EmbeddedBoundary2d>(module, "EmbeddedBoundary2d")
         .def(py::init<const PlanarPatch&, const Boundary<double, 2>&>(),
              py::arg("patch"), py::arg("boundary"))
