@@ -45,5 +45,6 @@
 #include "condition/penalty_condition.hpp"
 #include "condition/nitsche_condition.hpp"
 #include "condition/neumann_condition.hpp"
+#include "stabilization/ghost_penalty.hpp"
 
 #endif // IGUANA_IGUANA_HPP
