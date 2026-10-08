@@ -4,8 +4,9 @@
 """Solver, the solution of a problem on a function space
 
 The solve assembles the stiffness and load of an element over a quadrature,
-and of conditions along boundaries, in compiled code, holds some degrees of
-freedom at given values, and solves the sparse system for the others.
+of conditions along boundaries and of stabilizations across faces, in
+compiled code, holds some degrees of freedom at given values, and solves
+the sparse system for the others.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from iguana.element import PoissonElement
 from iguana.fspace import FunctionSpace
 from iguana.patch import PlanarPatch, VolumePatch
 from iguana.quadrature import DomainQuadrature
+from iguana.stabilization import GhostPenalty
 
 
 def solve(
@@ -36,13 +38,15 @@ def solve(
     values: npt.ArrayLike | None = None,
     conditions: Sequence[PenaltyCondition | NitscheCondition
                          | NeumannCondition] = (),
+    stabilizations: Sequence[GhostPenalty] = (),
 ) -> npt.NDArray[np.float64]:
     """Solve the problem of an element on a space.
 
     The free degrees of freedom solve K_ff u_f = F_f - K_fc u_c, with the
-    stiffness K and load F assembled over the quadrature and along the
-    boundaries of the conditions, and the fixed degrees of freedom held at
-    their values u_c.
+    stiffness K and load F assembled over the quadrature, along the
+    boundaries of the conditions and across the faces of the
+    stabilizations, and the fixed degrees of freedom held at their values
+    u_c.
 
     Args:
         element: The element stating the problem.
@@ -60,6 +64,10 @@ def solve(
         conditions: Conditions along boundaries in the patch of the
             space, penalties or Nitsche conditions imposing values, or
             Neumann conditions loading fluxes, which need a planar patch.
+        stabilizations: Ghost penalties across the faces of the cells of
+            the patch of the space, which need a planar patch with an
+            affine map. They extend the field beyond the physical domain,
+            as a space keeping the functions of every cell needs.
 
     Returns:
         The coefficient of each degree of freedom, of shape `(num_dofs,)`.
@@ -67,17 +75,19 @@ def solve(
     Raises:
         TypeError: If the element is not a Poisson element, if the space
             is not a function space on a planar or volume patch, if the
-            quadrature is not a domain quadrature, or if a condition is
-            neither a penalty, a Nitsche nor a Neumann condition or is given
-            on a volume patch.
-        ValueError: If the quadrature or the boundary of a condition does
-            not lie on the elements of the patch of the space, if the source
-            does not give one value per point, if a fixed degree of freedom
-            lies outside the space or repeats, or if there is not one value
-            per fixed one.
+            quadrature is not a domain quadrature, if a condition is neither
+            a penalty, a Nitsche nor a Neumann condition, if a
+            stabilization is not a ghost penalty, or if either is given on a
+            volume patch.
+        ValueError: If the quadrature, the boundary of a condition or the
+            cells of a stabilization do not lie on the elements of the patch
+            of the space, if a stabilization is given on a patch whose map
+            is not affine, if the source does not give one value per point,
+            if a fixed degree of freedom lies outside the space or repeats,
+            or if there is not one value per fixed one.
     """
     stiffness, load = _assemble(element, space, quadrature, source,
-                                conditions)
+                                conditions, stabilizations)
     fixed, values = _fixed(space.num_dofs, fixed, values)
 
     # The fixed degrees of freedom carry their part of the stiffness over to
@@ -100,10 +110,11 @@ def _assemble(
              | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
     conditions: Sequence[PenaltyCondition | NitscheCondition
                          | NeumannCondition],
+    stabilizations: Sequence[GhostPenalty],
 ) -> tuple[csr_matrix, npt.NDArray[np.float64]]:
-    """Stiffness and load of an element over a quadrature, and of
-    conditions along boundaries, in the numbering of the degrees of freedom
-    of a space."""
+    """Stiffness and load of an element over a quadrature, of conditions
+    along boundaries and of stabilizations across faces, in the numbering
+    of the degrees of freedom of a space."""
     if not isinstance(element, PoissonElement):
         raise TypeError('the element must be a Poisson element')
 
@@ -111,9 +122,12 @@ def _assemble(
         raise TypeError('the space must be a function space')
 
     patch = space.patch
+    stabilizations = list(stabilizations)
 
     if isinstance(patch, PlanarPatch):
-        assembler = _cpp.Assembler2d(space._cpp_object, patch._cpp_object)
+        # Terms across faces couple the cells on either side
+        assembler = _cpp.Assembler2d(space._cpp_object, patch._cpp_object,
+                                     couple_faces=bool(stabilizations))
         cpp_element = element._cpp_element(2)
     elif isinstance(patch, VolumePatch):
         assembler = _cpp.Assembler3d(space._cpp_object, patch._cpp_object)
@@ -158,6 +172,20 @@ def _assemble(
                              'patch of the space')
 
         condition._assemble(assembler)
+
+    for stabilization in stabilizations:
+        if not isinstance(stabilization, GhostPenalty):
+            raise TypeError('the stabilizations must be ghost penalties')
+
+        # Faces between cells lie in the plane
+        if not isinstance(patch, PlanarPatch):
+            raise TypeError('stabilizations need a planar patch')
+
+        if stabilization.patch is not patch:
+            raise ValueError('the cells of a stabilization must lie on the '
+                             'patch of the space')
+
+        stabilization._assemble(assembler)
 
     return assembler.stiffness, assembler.load
 
