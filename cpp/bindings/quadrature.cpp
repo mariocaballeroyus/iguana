@@ -29,6 +29,7 @@ namespace
 using DomainQuadrature2d = DomainQuadrature<double, 2>;
 using DomainQuadrature3d = DomainQuadrature<double, 3>;
 using BoundaryQuadrature2d = BoundaryQuadrature<double, 2>;
+using FaceQuadrature2d = FaceQuadrature<double, 2>;
 using PlanarPatch = Patch<TensorBSpline<double, 2>, 2>;
 
 /// @brief Fills the cells of one type with a Gauss-Legendre rule, which
@@ -248,6 +249,14 @@ BoundaryQuadrature2d surrogate_gauss_legendre(
     const SurrogateBoundary<double, 2>& boundary, int num_points)
 {
     return {boundary, GaussLegendre<double, 1>(num_points)};
+}
+
+/// @brief Places a Gauss-Legendre rule on every face where a ghost penalty
+///        acts, a rule Python never handles itself
+FaceQuadrature2d face_gauss_legendre(const GhostFaces<double, 2>& faces,
+                                     int num_points)
+{
+    return {faces, GaussLegendre<double, 1>(num_points)};
 }
 
 /**
@@ -494,6 +503,12 @@ void quadrature(py::module_& module)
         .def("physical_weights", &physical_boundary_weights, py::arg("patch"))
         .def("physical_normals", &physical_boundary_normals,
              py::arg("patch"));
+
+    py::class_<FaceQuadrature2d>(module, "FaceQuadrature2d")
+        .def(py::init(&face_gauss_legendre), py::arg("faces"),
+             py::arg("num_points"))
+        .def_property_readonly("num_faces", &FaceQuadrature2d::num_faces)
+        .def_property_readonly("num_points", &FaceQuadrature2d::num_points);
 }
 
 } // namespace iguana::bindings
