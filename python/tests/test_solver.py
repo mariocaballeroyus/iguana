@@ -125,3 +125,7 @@ def test_invalid_arguments():
 
     with pytest.raises(ValueError):
         solve(element, space, quadrature, ones, fixed=[0, 1], values=[1.])
+
+    # One weight short of the six cells
+    with pytest.raises(ValueError):
+        solve(element, space, quadrature, ones, cell_weights=np.ones(5))

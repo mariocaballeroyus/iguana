@@ -9,8 +9,9 @@ import pytest
 
 import iguana
 from iguana import (Boundary, BoundaryQuadrature, CellType, DomainQuadrature,
-                    FunctionSpace, NitscheCondition, PoissonElement,
-                    SurrogateBoundary, classify_cells, cpp, solve)
+                    FunctionSpace, GhostPenalty, NitscheCondition,
+                    PoissonElement, SurrogateBoundary, classify_cells, cpp,
+                    solve)
 
 # Centre and radius of a circle off the knot lines of the rectangle three by
 # two of fourteen elements along each direction
@@ -179,6 +180,42 @@ def test_classified_cells_solve_a_shifted_problem():
               conditions=[condition])
 
     assert np.abs(u - space.control_points @ gradient).max() < 1e-10
+
+
+def test_binary_cell_weights_reduce_to_the_shifted_problem():
+    """Weights of one on the inside cells and zero elsewhere, over a
+    quadrature of every cell, give the shifted boundary method on the inside
+    cells, as the volume fractions of the generalized method do when every
+    cell is either full or empty. The space keeps every function, extended
+    by a ghost penalty, so that the cells left out still carry degrees of
+    freedom their weights must silence."""
+    patch = iguana.create_rectangle(lengths=(3., 2.), elements=(14, 14))
+    classified = classify_cells(patch, circle()).cell_types
+    cell_types = [CellType.inside if cell == CellType.inside
+                  else CellType.outside for cell in classified]
+
+    boundary = BoundaryQuadrature(patch, SurrogateBoundary(patch, cell_types),
+                                  3, shift=circle())
+    space = FunctionSpace(patch, [CellType.inside] * len(cell_types))
+    element = PoissonElement()
+    conditions = [NitscheCondition(element.u, boundary, lambda x: x[:, 0],
+                                   40.)]
+    stabilizations = [GhostPenalty(element.u, patch, classified, .1)]
+
+    inside = DomainQuadrature(patch, cell_types)
+    inside.fill_gauss_legendre(CellType.inside, 3)
+    shifted = solve(element, space, inside, np.ones(inside.num_points),
+                    conditions=conditions, stabilizations=stabilizations)
+
+    every = DomainQuadrature(patch, cell_types)
+    every.fill_gauss_legendre(CellType.inside, 3)
+    every.fill_gauss_legendre(CellType.outside, 3)
+    weights = [1. if cell == CellType.inside else 0. for cell in cell_types]
+    weighted = solve(element, space, every, np.ones(every.num_points),
+                     cell_weights=weights, conditions=conditions,
+                     stabilizations=stabilizations)
+
+    assert np.abs(weighted - shifted).max() < 1e-12
 
 
 def test_invalid_classifications():
