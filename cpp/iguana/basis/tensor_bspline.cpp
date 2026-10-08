@@ -203,6 +203,35 @@ void TensorBSpline<T, d>::eval_on_element(
 }
 
 template<std::floating_point T, std::size_t d>
+void TensorBSpline<T, d>::deriv_on_element(
+    const std::array<int, d>& first_active, const Eigen::MatrixX<T>& points,
+    std::size_t direction, int order, Eigen::MatrixX<T>& derivatives) const
+{
+    const Eigen::Index num_points = points.rows();
+
+    // Derivatives of the order along the direction and values along the
+    // others, of the active univariate functions
+    std::array<std::vector<Eigen::MatrixX<T>>, d> axis_derivs;
+    std::array<const Eigen::MatrixX<T>*, d> factors{};
+
+    for (std::size_t axis = 0; axis < d; ++axis) {
+        const std::span<const T> coords(points.col(axis).data(), num_points);
+        const int axis_order = axis == direction ? order : 0;
+
+        axes_[axis].derivs_on_element(first_active[axis], coords, axis_order,
+                                      axis_derivs[axis]);
+        factors[axis] =
+            &axis_derivs[axis][static_cast<std::size_t>(axis_order)];
+    }
+
+    Eigen::MatrixX<T> accumulated;
+    Eigen::MatrixX<T> scratch;
+
+    derivatives.resize(num_active_, num_points);
+    khatri_rao_into(factors, accumulated, scratch, derivatives);
+}
+
+template<std::floating_point T, std::size_t d>
 void TensorBSpline<T, d>::grad_on_element(
     const std::array<int, d>& first_active,
     const Eigen::MatrixX<T>& points, Eigen::MatrixX<T>& values,
