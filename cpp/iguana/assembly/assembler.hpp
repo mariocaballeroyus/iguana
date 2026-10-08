@@ -38,6 +38,11 @@ namespace iguana
  * The assembler does not tell linear from nonlinear or transient problems,
  * which the elements and the solvers that drive it do
  *
+ * The test functions of each cell may carry a weight of their own, such as
+ * its volume fraction in the generalized shifted boundary method. Constant
+ * on the cell, it scales the weights of its points, and a cell of weight
+ * zero adds nothing and is skipped
+ *
  * The basis of the space spans the functions and that of the patch maps the
  * points, so both must be one basis, as in isoparametric analysis
  *
@@ -89,6 +94,29 @@ public:
                             const DomainQuadrature<Scalar, dim>& quadrature);
 
     /**
+     * @brief Adds the stiffness of an element over the points of a
+     *        quadrature, with the test functions of each cell weighted
+     *
+     * @tparam E Element, a final class derived from Element
+     *
+     * @param element Element whose local stiffness is added
+     * @param quadrature Quadrature over elements of the grid of the basis
+     * @param cell_weights Weight of the test functions on each element of
+     *        the grid, in its numbering
+     *
+     * @throws std::invalid_argument If @p cell_weights does not have one
+     *         value per element of the grid
+     *
+     * @pre @p quadrature is built on the grid of the basis, and every
+     *      element it holds with a non-zero weight has its degrees of
+     *      freedom in the space
+     */
+    template<std::derived_from<Element<Basis, n>> E>
+    void assemble_stiffness(const E& element,
+                            const DomainQuadrature<Scalar, dim>& quadrature,
+                            const Eigen::VectorX<Scalar>& cell_weights);
+
+    /**
      * @brief Adds the load of an element over the points of a quadrature,
      *        from a source given at them
      *
@@ -108,6 +136,32 @@ public:
     void assemble_load(const E& element,
                        const DomainQuadrature<Scalar, dim>& quadrature,
                        const Eigen::VectorX<Scalar>& source);
+
+    /**
+     * @brief Adds the load of an element over the points of a quadrature,
+     *        from a source given at them, with the test functions of each
+     *        cell weighted
+     *
+     * @tparam E Element, a final class derived from Element
+     *
+     * @param element Element whose local load is added
+     * @param quadrature Quadrature over elements of the grid of the basis
+     * @param source Value of the source at each point of the quadrature, in
+     *        its order
+     * @param cell_weights Weight of the test functions on each element of
+     *        the grid, in its numbering
+     *
+     * @throws std::invalid_argument If @p source does not have one value per
+     *         point of @p quadrature, or if @p cell_weights does not have one
+     *         value per element of the grid
+     *
+     * @pre @p quadrature is built as for the weighted assemble_stiffness()
+     */
+    template<std::derived_from<Element<Basis, n>> E>
+    void assemble_load(const E& element,
+                       const DomainQuadrature<Scalar, dim>& quadrature,
+                       const Eigen::VectorX<Scalar>& source,
+                       const Eigen::VectorX<Scalar>& cell_weights);
 
     /**
      * @brief Adds the stiffness of a condition along the points of a
