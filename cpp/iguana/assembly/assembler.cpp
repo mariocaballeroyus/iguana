@@ -14,6 +14,7 @@
 #include "iguana/basis/tensor_bspline.hpp"
 #include "iguana/basis/tensor_nurbs.hpp"
 #include "iguana/condition/neumann_condition.hpp"
+#include "iguana/condition/nitsche_condition.hpp"
 #include "iguana/condition/penalty_condition.hpp"
 #include "iguana/element/poisson/poisson_element.hpp"
 
@@ -145,10 +146,12 @@ void Assembler<Basis, n>::assemble_stiffness(
     const C& condition, const BoundaryQuadrature<Scalar, dim>& quadrature)
 {
     ElementValues<Basis, n> values(patch_, condition.flags());
+    ElementValues<Basis, n> shifted_values(patch_, condition.flags());
     Eigen::MatrixX<Scalar> points;
     Eigen::MatrixX<Scalar> normals;
     Eigen::VectorX<Scalar> measures;
     Eigen::VectorX<Scalar> weights;
+    PointMatrix<Scalar, n> physical_normals;
     Eigen::MatrixX<Scalar> local;
 
     for (int held = 0; held < quadrature.num_elements(); ++held) {
@@ -159,20 +162,31 @@ void Assembler<Basis, n>::assemble_stiffness(
         points = quadrature.points().middleRows(first, count);
         values.reinit(cell, points);
 
-        // A shifted quadrature expands the values towards the boundary it is
-        // shifted onto, its weights staying those of its points
-        if (quadrature.is_shifted())
-            shift_values(values, quadrature, first, count);
+        // A shifted quadrature also expands the values towards the boundary
+        // it is shifted onto, its weights and normals staying those of its
+        // points. Otherwise the shifted values are the values themselves
+        if (quadrature.is_shifted()) {
+            shifted_values.reinit(cell, points);
+            shift_values(shifted_values, quadrature, first, count);
+        }
+
+        const ElementValues<Basis, n>& shifted =
+            quadrature.is_shifted() ? shifted_values : values;
 
         // Boundary weights, the quadrature weights times the measure of the
-        // boundary through the map, from its normals in parameter space
+        // boundary through the map, and the normals in physical space, from
+        // the normals in parameter space
         normals = quadrature.normals().middleRows(first, count);
         Patch<Basis, n>::boundary_measure_on_element(values.tangents(),
                                                      normals, measures);
+        Patch<Basis, n>::physical_normal_on_element(values.tangents(),
+                                                    normals,
+                                                    physical_normals);
         weights = quadrature.weights().segment(first, count);
         weights = weights.cwiseProduct(measures);
 
-        condition.local_stiffness(values, weights, local);
+        condition.local_stiffness(values, shifted, weights, physical_normals,
+                                  local);
         add_to_stiffness(cell, local);
     }
 }
@@ -188,10 +202,12 @@ void Assembler<Basis, n>::assemble_load(
                                     "the data must have one value per point");
 
     ElementValues<Basis, n> values(patch_, condition.flags());
+    ElementValues<Basis, n> shifted_values(patch_, condition.flags());
     Eigen::MatrixX<Scalar> points;
     Eigen::MatrixX<Scalar> normals;
     Eigen::VectorX<Scalar> measures;
     Eigen::VectorX<Scalar> weights;
+    PointMatrix<Scalar, n> physical_normals;
     Eigen::VectorX<Scalar> imposed;
     Eigen::VectorX<Scalar> local;
 
@@ -203,21 +219,32 @@ void Assembler<Basis, n>::assemble_load(
         points = quadrature.points().middleRows(first, count);
         values.reinit(cell, points);
 
-        // A shifted quadrature expands the values towards the boundary it is
-        // shifted onto, its weights staying those of its points
-        if (quadrature.is_shifted())
-            shift_values(values, quadrature, first, count);
+        // A shifted quadrature also expands the values towards the boundary
+        // it is shifted onto, its weights and normals staying those of its
+        // points. Otherwise the shifted values are the values themselves
+        if (quadrature.is_shifted()) {
+            shifted_values.reinit(cell, points);
+            shift_values(shifted_values, quadrature, first, count);
+        }
+
+        const ElementValues<Basis, n>& shifted =
+            quadrature.is_shifted() ? shifted_values : values;
 
         // Boundary weights, the quadrature weights times the measure of the
-        // boundary through the map, from its normals in parameter space
+        // boundary through the map, and the normals in physical space, from
+        // the normals in parameter space
         normals = quadrature.normals().middleRows(first, count);
         Patch<Basis, n>::boundary_measure_on_element(values.tangents(),
                                                      normals, measures);
+        Patch<Basis, n>::physical_normal_on_element(values.tangents(),
+                                                    normals,
+                                                    physical_normals);
         weights = quadrature.weights().segment(first, count);
         weights = weights.cwiseProduct(measures);
 
         imposed = data.segment(first, count);
-        condition.local_load(values, weights, imposed, local);
+        condition.local_load(values, shifted, weights, physical_normals,
+                             imposed, local);
         add_to_load(cell, local);
     }
 }
@@ -311,6 +338,20 @@ template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
     const BoundaryQuadrature<double, 2>&, const Eigen::VectorX<double>&);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
     const NeumannCondition<TensorNURBS<double, 2>, 2>&,
+    const BoundaryQuadrature<double, 2>&, const Eigen::VectorX<double>&);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_stiffness(
+    const NitscheCondition<TensorBSpline<double, 2>, 2>&,
+    const BoundaryQuadrature<double, 2>&);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_stiffness(
+    const NitscheCondition<TensorNURBS<double, 2>, 2>&,
+    const BoundaryQuadrature<double, 2>&);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
+    const NitscheCondition<TensorBSpline<double, 2>, 2>&,
+    const BoundaryQuadrature<double, 2>&, const Eigen::VectorX<double>&);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
+    const NitscheCondition<TensorNURBS<double, 2>, 2>&,
     const BoundaryQuadrature<double, 2>&, const Eigen::VectorX<double>&);
 
 } // namespace iguana

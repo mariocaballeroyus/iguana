@@ -133,6 +133,17 @@ public:
     { return measures_; }
 
     /**
+     * @brief Size h of the element at each point, the dim-th root of its
+     *        measure in physical space as the map gives it there
+     *
+     * It is (measure x volume of the element in parameter space)^(1/dim),
+     * the side of a cube of the same measure, as penalties scaled by the
+     * element size need it
+     */
+    constexpr const Eigen::VectorX<Scalar>& sizes() const noexcept
+    { return sizes_; }
+
+    /**
      * @brief Gradients of the active functions in physical space, one
      *        matrix per coordinate of the size of values()
      *
@@ -169,6 +180,9 @@ private:
 
     /// @brief Measure of the patch at each point
     Eigen::VectorX<Scalar> measures_;
+
+    /// @brief Size of the element at each point
+    Eigen::VectorX<Scalar> sizes_;
 
     /// @brief Gradients of the active functions in physical space, empty
     ///        unless flagged

@@ -6,6 +6,7 @@
 #include <iguana/iguana.hpp>
 
 #include <array>
+#include <cmath>
 #include <stdexcept>
 #include <vector>
 
@@ -403,4 +404,90 @@ TEST_CASE("A shifted penalty imposes a field of the space from its closest "
 
     REQUIRE((assembler.stiffness() * u - assembler.load()).cwiseAbs()
                 .maxCoeff() > 1e-2);
+}
+
+TEST_CASE("A shifted Nitsche condition imposes a field of the space "
+          "consistently", "[assembler]")
+{
+    const Basis basis = uneven();
+    const iguana::Patch<Basis, 2> patch = rectangle(basis);
+    const iguana::FunctionSpace<Basis> space(
+        basis, with_last_column(CellType::inside));
+
+    // The surrogate domain is the element [.4, 1.2] x [0, 2.1], inside the
+    // rectangle [.3, 1.3] x [-.2, 2.2], whose sides cross no knot line
+    std::vector<CellType> cell_types(6, CellType::outside);
+    cell_types[1] = CellType::inside;
+
+    const EmbeddedDomain<double, 2> domain(cell_types);
+    const iguana::SurrogateBoundary<double, 2> surrogate(basis.grid(),
+                                                         domain);
+
+    const std::array<Eigen::RowVector2d, 4> corners{
+        Eigen::RowVector2d(.3, -.2), Eigen::RowVector2d(1.3, -.2),
+        Eigen::RowVector2d(1.3, 2.2), Eigen::RowVector2d(.3, 2.2)};
+    std::vector<iguana::Boundary<double, 2>::Face> faces;
+
+    for (std::size_t side = 0; side < 4; ++side)
+        faces.push_back(segment(corners[side], corners[(side + 1) % 4]));
+
+    iguana::BoundaryQuadrature<double, 2> quadrature(
+        surrogate, iguana::GaussLegendre<double, 1>(3));
+    quadrature.shift(patch, iguana::Boundary<double, 2>(faces, {1, 1, 1, 1}),
+                     2);
+
+    // The data of b . x at the closest points, the points lying in parameter
+    // space, where the map scales each axis by its side
+    const Eigen::Vector2d b(1., -2.);
+    const Eigen::MatrixXd closest =
+        quadrature.points() + quadrature.distances();
+    const Eigen::VectorXd data = width * b(0) * closest.col(0)
+                                 + height * b(1) * closest.col(1);
+
+    const iguana::PoissonElement<Basis, 2> element;
+    const iguana::PoissonElement<Basis, 2>::U trace;
+    const iguana::PoissonElement<Basis, 2>::Q flux;
+    const iguana::DomainQuadrature<double, 2> cells =
+        inside_quadrature(basis, domain);
+
+    // With every cell inside, each function keeps its own index, and the
+    // coefficients of b . x are b . x_i at the control points
+    const Eigen::VectorXd u = patch.coefficients() * b;
+    const Eigen::VectorXd constant =
+        Eigen::VectorXd::Ones(space.dof_map().num_dofs());
+
+    // b . x has no Laplacian, and the method is consistent, so it solves the
+    // system of the surrogate domain whatever the penalty. Constants have no
+    // flux, so only the penalty acts on them, gamma times the perimeter of
+    // the element over its size
+    for (const double penalty : {10., 1e3}) {
+        INFO("penalty " << penalty);
+
+        const iguana::NitscheCondition<Basis, 2> condition(trace, flux,
+                                                           penalty);
+        iguana::Assembler<Basis, 2> assembler(space, patch);
+        assembler.assemble_stiffness(element, cells);
+        assembler.assemble_stiffness(condition, quadrature);
+        assembler.assemble_load(condition, quadrature, data);
+
+        REQUIRE((assembler.stiffness() * u - assembler.load()).cwiseAbs()
+                    .maxCoeff() < 1e-12 * penalty);
+        REQUIRE_THAT(constant.dot(assembler.stiffness() * constant),
+                     WithinRel(penalty * 2. * (.8 + 2.1) / std::sqrt(.8 * 2.1),
+                               1e-12));
+    }
+
+    // A penalty alone leaves the flux across the surrogate boundary
+    // unbalanced, however it imposes the data
+    const iguana::PenaltyCondition<Basis, 2> penalty(trace, 1e3);
+    iguana::Assembler<Basis, 2> assembler(space, patch);
+    assembler.assemble_stiffness(element, cells);
+    assembler.assemble_stiffness(penalty, quadrature);
+    assembler.assemble_load(penalty, quadrature, data);
+
+    REQUIRE((assembler.stiffness() * u - assembler.load()).cwiseAbs()
+                .maxCoeff() > 1e-2);
+
+    REQUIRE_THROWS_AS((iguana::NitscheCondition<Basis, 2>(trace, flux, 0.)),
+                      std::invalid_argument);
 }

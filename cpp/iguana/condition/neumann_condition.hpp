@@ -50,11 +50,15 @@ public:
     { return trace_.flags(); }
 
     void local_stiffness(const ElementValues<Basis, n>& values,
+                         const ElementValues<Basis, n>& shifted,
                          const Eigen::VectorX<Scalar>& weights,
+                         const PointMatrix<Scalar, n>& normals,
                          Eigen::MatrixX<Scalar>& stiffness) const override;
 
     void local_load(const ElementValues<Basis, n>& values,
+                    const ElementValues<Basis, n>& shifted,
                     const Eigen::VectorX<Scalar>& weights,
+                    const PointMatrix<Scalar, n>& normals,
                     const Eigen::VectorX<Scalar>& data,
                     Eigen::VectorX<Scalar>& load) const override;
 

@@ -26,6 +26,11 @@ class PoissonElement:
             lie in so far."""
             return _cpp.PoissonElement2d.U()
 
+        def _cpp_flux(self) -> _cpp.PoissonElement2d.Q:
+            """The compiled flux conjugate to the trace, the normal
+            derivative of u, which Nitsche's method pairs with it."""
+            return _cpp.PoissonElement2d.Q()
+
         def __repr__(self) -> str:
             return 'PoissonElement.U()'
 

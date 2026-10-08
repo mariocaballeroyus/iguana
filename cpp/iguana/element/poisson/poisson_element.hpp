@@ -23,7 +23,7 @@ namespace iguana
  * K_AB = integral of grad N_A . grad N_B, and its load weights their values
  * by the source, F_A = integral of f N_A. It holds no state. The patch must
  * be a domain, as only a domain has physical gradients. Its only trace is
- * the field, U, the flux being natural
+ * the field, U, and its flux the normal derivative of the field, Q
  *
  * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
  * @tparam n Dimension of the physical space, the number of parametric
@@ -54,6 +54,10 @@ public:
 
     /// @brief Trace of the field u, defined in poisson_traces.hpp
     class U;
+
+    /// @brief Flux of the field u, its normal derivative, defined in
+    ///        poisson_traces.hpp
+    class Q;
 };
 
 } // namespace iguana

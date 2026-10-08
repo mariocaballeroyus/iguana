@@ -4,9 +4,11 @@
 """Conditions, what a problem prescribes on a boundary
 
 A condition prescribes data along a boundary through a trace of an element:
-a penalty imposes values on the trace, and a Neumann condition loads the
-trace of the test functions with natural data, such as a flux. It holds its
-data and where it applies, and the solve assembles it with the element.
+a penalty imposes values on the trace, Nitsche's method imposes them
+consistently through the flux conjugate to the trace, and a Neumann
+condition loads the trace of the test functions with natural data, such as
+a flux. It holds its data and where it applies, and the solve assembles it
+with the element.
 """
 
 from __future__ import annotations
@@ -43,7 +45,8 @@ class PenaltyCondition:
         expansion of the trace from each point to its closest point, the
         shifted penalty. Alone it is not consistent: nothing balances the
         flux of the field across the surrogate boundary, so the error stays
-        of the order of the cells, whatever the penalty.
+        of the order of the cells, whatever the penalty. `NitscheCondition`
+        imposes the values consistently.
 
         Args:
             trace: The trace whose values are imposed, such as
@@ -111,6 +114,103 @@ class PenaltyCondition:
 
     def __repr__(self) -> str:
         return f'PenaltyCondition({self._trace!r}, penalty={self._penalty})'
+
+
+class NitscheCondition:
+    """Values imposed on a trace of an element along a boundary by
+    Nitsche's method."""
+
+    def __init__(
+        self,
+        trace: PoissonElement.U,
+        quadrature: BoundaryQuadrature,
+        values: (npt.ArrayLike
+                 | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
+        penalty: float,
+    ) -> None:
+        """Initialize the condition imposing values on a trace.
+
+        Nitsche's method keeps the boundary term of the weak form, which
+        pairs the trace with its flux, such as the normal derivative of the
+        field u of the Poisson element, and adds its adjoint and a penalty
+        scaled by the size of the elements. Unlike a penalty alone, it is
+        consistent: the error decays with the order of the space for any
+        penalty large enough to keep the method stable, about ten times the
+        square of the degree of the patch.
+
+        On a shifted quadrature, the adjoint and the penalty act on the
+        Taylor expansion of the trace from each point to its closest point,
+        while the boundary term stays at the points, as the shifted boundary
+        method needs.
+
+        Args:
+            trace: The trace whose values are imposed, such as
+                `PoissonElement().u`.
+            quadrature: The quadrature of the boundary the values are
+                imposed along.
+            values: The value imposed at each point of the quadrature, in
+                its order, or a function that takes the points where they
+                apply, `quadrature.projections` of shape `(num_points, 2)`,
+                and returns those values.
+            penalty: The penalty, positive, which the size of the elements
+                scales.
+
+        Raises:
+            TypeError: If the trace is not the trace of an element, or if
+                the quadrature is not a boundary quadrature.
+            ValueError: If the values are not one per point, or if the
+                penalty is not positive.
+        """
+        if not isinstance(trace, PoissonElement.U):
+            raise TypeError('the trace must be the trace of an element')
+
+        if not isinstance(quadrature, BoundaryQuadrature):
+            raise TypeError('the quadrature must be a boundary quadrature')
+
+        values = _values(quadrature, values)
+
+        if not penalty > 0.:
+            raise ValueError('the penalty must be positive')
+
+        self._trace = trace
+        self._quadrature = quadrature
+        self._values = values
+        self._penalty = float(penalty)
+
+    @property
+    def trace(self) -> PoissonElement.U:
+        """The trace whose values are imposed."""
+        return self._trace
+
+    @property
+    def quadrature(self) -> BoundaryQuadrature:
+        """The quadrature of the boundary the values are imposed along."""
+        return self._quadrature
+
+    @property
+    def values(self) -> npt.NDArray[np.float64]:
+        """Value imposed at each point of the quadrature, of shape
+        `(num_points,)`."""
+        return self._values.copy()
+
+    @property
+    def penalty(self) -> float:
+        """The penalty."""
+        return self._penalty
+
+    def _assemble(self, assembler: _cpp.Assembler2d) -> None:
+        """Add the stiffness and load of the condition into the compiled
+        assembler of a planar space."""
+        condition = _cpp.NitscheCondition2d(self._trace._cpp_trace(),
+                                            self._trace._cpp_flux(),
+                                            self._penalty)
+        quadrature = self._quadrature._cpp_object
+
+        assembler.assemble_stiffness(condition, quadrature)
+        assembler.assemble_load(condition, quadrature, self._values)
+
+    def __repr__(self) -> str:
+        return f'NitscheCondition({self._trace!r}, penalty={self._penalty})'
 
 
 class NeumannCondition:

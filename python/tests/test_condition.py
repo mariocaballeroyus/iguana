@@ -9,8 +9,8 @@ import pytest
 import iguana
 from iguana import (Boundary, BoundaryQuadrature, CellType, DomainQuadrature,
                     FunctionSpace, HierarchicalGrid, NeumannCondition,
-                    PenaltyCondition, PoissonElement, SurrogateBoundary,
-                    solve)
+                    NitscheCondition, PenaltyCondition, PoissonElement,
+                    SurrogateBoundary, solve)
 
 # Sides of the rectangle, and of the square inside it, whose edges halve
 # the cells they cut, so that no cut is a sliver
@@ -18,7 +18,7 @@ SIDES = np.array([2., 3.])
 LOWER = np.array([.5, 1.25])
 UPPER = np.array([1.5, 2.25])
 
-# Gradient of the linear field the penalty imposes
+# Gradient of the linear field the conditions impose
 GRADIENT = np.array([1., -2.])
 
 
@@ -85,6 +85,19 @@ def square_problem():
     return patch, FunctionSpace(patch, cell_types), quadrature
 
 
+def surrogate_problem():
+    """Patch, space and domain quadrature of the surrogate domain of the
+    square, its inside cells, with every cut cell left out."""
+    patch = rectangle()
+    cell_types = [CellType.inside if cell == CellType.inside
+                  else CellType.outside for cell in square_cell_types(patch)]
+
+    quadrature = DomainQuadrature(patch, cell_types)
+    quadrature.fill_gauss_legendre(CellType.inside, 3)
+
+    return patch, FunctionSpace(patch, cell_types), quadrature
+
+
 def test_penalty_imposes_a_linear_field():
     patch, space, quadrature = square_problem()
     boundary = square_boundary(patch)
@@ -140,6 +153,30 @@ def test_neumann_condition_imposes_a_flux():
     assert errors[1] / errors[0] == pytest.approx(1e-2, rel=.05)
 
 
+def test_nitsche_condition_imposes_a_linear_field():
+    """On the surrogate domain of the square, Nitsche's method imposes the
+    linear field from the sides exactly, whatever the penalty, where a
+    penalty alone leaves an error of the order of the cells."""
+    patch, space, quadrature = surrogate_problem()
+    shifted = square_surrogate(patch)
+    element = PoissonElement()
+    source = np.zeros(quadrature.num_points)
+    exact = space.control_points @ GRADIENT
+
+    for penalty in (40., 4e3):
+        condition = NitscheCondition(element.u, shifted,
+                                     lambda x: x @ GRADIENT, penalty)
+        u = solve(element, space, quadrature, source, conditions=[condition])
+
+        assert np.abs(u - exact).max() < 1e-10
+
+    condition = PenaltyCondition(element.u, shifted, lambda x: x @ GRADIENT,
+                                 4e3)
+    u = solve(element, space, quadrature, source, conditions=[condition])
+
+    assert np.abs(u - exact).max() > 1e-2
+
+
 def test_data_at_the_closest_points():
     """On a shifted quadrature, a condition takes its data where the points
     are shifted to, the sides of the square, half a cell away from the
@@ -171,6 +208,18 @@ def test_invalid_arguments():
 
     with pytest.raises(ValueError):
         PenaltyCondition(element.u, boundary, values, 0.)
+
+    with pytest.raises(TypeError):
+        NitscheCondition('u', boundary, values, 1.)
+
+    with pytest.raises(TypeError):
+        NitscheCondition(element.u, quadrature, values, 1.)
+
+    with pytest.raises(ValueError):
+        NitscheCondition(element.u, boundary, values[:-1], 1.)
+
+    with pytest.raises(ValueError):
+        NitscheCondition(element.u, boundary, values, 0.)
 
     with pytest.raises(TypeError):
         NeumannCondition('u', boundary, values)

@@ -106,10 +106,10 @@ public:
      *
      * The patch maps the weights of the quadrature, which measure the
      * boundary in parameter space, into the boundary weights the condition
-     * takes, through the normals of the boundary. On a shifted quadrature
-     * the values are expanded towards the boundary it is shifted onto, as
-     * the shifted boundary method needs, while the weights stay those of
-     * its points
+     * takes, and its normals into physical ones. On a shifted quadrature
+     * the condition also receives the values expanded towards the boundary
+     * it is shifted onto, as the shifted boundary method needs, while the
+     * weights and normals stay those of its points
      *
      * @tparam C Condition, a final class derived from Condition
      *
