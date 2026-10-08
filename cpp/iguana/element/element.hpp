@@ -45,7 +45,9 @@ public:
      *        form
      *
      * @param values Values at the points of the element
-     * @param weights Physical weights, one per point
+     * @param weights Physical weights, one per point, scaled by the
+     *        weight of the test functions on the cell when the
+     *        assembly gives one
      * @param stiffness Output of size (num_active, num_active),
      *        overwritten. It is resized when necessary
      *
@@ -60,7 +62,9 @@ public:
      *        from a source given at its points
      *
      * @param values Values at the points of the element
-     * @param weights Physical weights, one per point
+     * @param weights Physical weights, one per point, scaled by the
+     *        weight of the test functions on the cell when the
+     *        assembly gives one
      * @param source Value of the source at each point
      * @param load Output of size num_active, overwritten. It is resized
      *        when necessary

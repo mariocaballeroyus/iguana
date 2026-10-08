@@ -36,6 +36,7 @@ def solve(
              | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
     fixed: npt.ArrayLike | None = None,
     values: npt.ArrayLike | None = None,
+    cell_weights: npt.ArrayLike | None = None,
     conditions: Sequence[PenaltyCondition | NitscheCondition
                          | NeumannCondition] = (),
     stabilizations: Sequence[GhostPenalty] = (),
@@ -61,6 +62,11 @@ def solve(
             problem must determine the solution by itself.
         values: Value of each fixed degree of freedom. Without them, the
             fixed ones are held at zero.
+        cell_weights: The weight of the test functions of the element on
+            each cell, in the order of the elements of the patch, such as
+            the volume fractions of the generalized shifted boundary
+            method. Cells of weight zero add nothing. Without them, every
+            cell weighs one.
         conditions: Conditions along boundaries in the patch of the
             space, penalties or Nitsche conditions imposing values, or
             Neumann conditions loading fluxes, which need a planar patch.
@@ -84,10 +90,11 @@ def solve(
             of the space, if a stabilization is given on a patch whose map
             is not affine, if the source does not give one value per point,
             if a fixed degree of freedom lies outside the space or repeats,
-            or if there is not one value per fixed one.
+            if there is not one value per fixed one, or if the cell weights
+            are not one per cell.
     """
     stiffness, load = _assemble(element, space, quadrature, source,
-                                conditions, stabilizations)
+                                cell_weights, conditions, stabilizations)
     fixed, values = _fixed(space.num_dofs, fixed, values)
 
     # The fixed degrees of freedom carry their part of the stiffness over to
@@ -108,6 +115,7 @@ def _assemble(
     quadrature: DomainQuadrature,
     source: (npt.ArrayLike
              | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
+    cell_weights: npt.ArrayLike | None,
     conditions: Sequence[PenaltyCondition | NitscheCondition
                          | NeumannCondition],
     stabilizations: Sequence[GhostPenalty],
@@ -154,8 +162,21 @@ def _assemble(
     if source.shape != (quadrature.num_points,):
         raise ValueError('the source must give one value per point')
 
-    assembler.assemble_stiffness(cpp_element, quadrature._cpp_object)
-    assembler.assemble_load(cpp_element, quadrature._cpp_object, source)
+    # The quadrature lies on the elements of the patch, its cells
+    num_cells = quadrature.grid.num_elements
+
+    if cell_weights is None:
+        cell_weights = np.ones(num_cells)
+
+    cell_weights = np.asarray(cell_weights, dtype=np.float64)
+
+    if cell_weights.shape != (num_cells,):
+        raise ValueError('the cell weights must give one value per cell')
+
+    assembler.assemble_stiffness(cpp_element, quadrature._cpp_object,
+                                 cell_weights)
+    assembler.assemble_load(cpp_element, quadrature._cpp_object, source,
+                            cell_weights)
 
     for condition in conditions:
         if not isinstance(condition, (PenaltyCondition, NitscheCondition,

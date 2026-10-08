@@ -291,6 +291,69 @@ TEST_CASE("An assembler needs one source value per point", "[assembler]")
                       std::invalid_argument);
 }
 
+TEST_CASE("Cell weights weight the test functions of each cell",
+          "[assembler]")
+{
+    const Basis basis = uneven();
+    const iguana::Patch<Basis, 2> patch = rectangle(basis);
+
+    // Every cell of the space keeps its functions, and the quadrature holds
+    // them type after type, in another order than the grid's
+    const std::vector<CellType> cell_types{
+        CellType::inside, CellType::cut, CellType::outside,
+        CellType::cut, CellType::inside, CellType::outside};
+    const CellClassification<double, 2> classification(cell_types);
+    const iguana::FunctionSpace<Basis> space(basis,
+                                             all_cells(CellType::inside));
+
+    iguana::DomainQuadrature<double, 2> quadrature;
+
+    for (const CellType type :
+         {CellType::inside, CellType::cut, CellType::outside})
+        quadrature.fill(basis.grid(), classification, type,
+                        iguana::GaussLegendre<double, 2>(3));
+
+    // Weights such as volume fractions, zero on the outside cells
+    Eigen::VectorXd cell_weights(6);
+    cell_weights << 1., .3, 0., .6, 1., 0.;
+
+    const iguana::PoissonElement<Basis, 2> element;
+    const Eigen::VectorXd source =
+        Eigen::VectorXd::Ones(quadrature.num_points());
+
+    iguana::Assembler<Basis, 2> assembler(space, patch);
+    assembler.assemble_stiffness(element, quadrature, cell_weights);
+    assembler.assemble_load(element, quadrature, source, cell_weights);
+
+    // The cells span .2, .4 and .4 along x, scaled by the width, and .7 and
+    // .3 along y, scaled by the height
+    const std::array<double, 3> widths{.2 * width, .4 * width, .4 * width};
+    const std::array<double, 2> heights{.7 * height, .3 * height};
+    double weighted_area = 0.;
+
+    for (int cell = 0; cell < 6; ++cell)
+        weighted_area += cell_weights(cell) * widths[cell % 3]
+                         * heights[cell / 3];
+
+    // The functions sum to one, so the load of a unit source is the weighted
+    // area, and so is the energy of x, whose gradient has unit length
+    const Eigen::VectorXd x = patch.coefficients().col(0);
+
+    REQUIRE_THAT(assembler.load().sum(), WithinRel(weighted_area, 1e-12));
+    REQUIRE_THAT(x.dot(assembler.stiffness() * x),
+                 WithinRel(weighted_area, 1e-12));
+
+    // One weight short of the cells
+    const Eigen::VectorXd short_weights = cell_weights.head(5);
+
+    REQUIRE_THROWS_AS(assembler.assemble_stiffness(element, quadrature,
+                                                   short_weights),
+                      std::invalid_argument);
+    REQUIRE_THROWS_AS(assembler.assemble_load(element, quadrature, source,
+                                              short_weights),
+                      std::invalid_argument);
+}
+
 TEST_CASE("A penalty on an embedded boundary imposes a field of the space",
           "[assembler]")
 {
