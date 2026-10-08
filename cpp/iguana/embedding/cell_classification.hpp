@@ -11,6 +11,8 @@
 #include <cstdint>
 #include <vector>
 
+#include <Eigen/Core>
+
 namespace iguana
 {
 
@@ -32,6 +34,34 @@ enum class CellType : std::uint8_t
     /// @brief Crossed by the boundary of the physical domain
     cut
 };
+
+/**
+ * @brief Cell types of the elements of a grid from their volume fractions,
+ *        the parts of their measures inside the physical domain
+ *
+ * A fraction of exactly 1 makes an inside cell, of exactly 0 an outside
+ * one, and any other a cut one
+ *
+ * @param volume_fractions Volume fraction of each element
+ * @return Cell type of each element, in the same order
+ */
+template<std::floating_point T>
+std::vector<CellType> cell_types(const Eigen::VectorX<T>& volume_fractions)
+{
+    std::vector<CellType> types;
+    types.reserve(static_cast<std::size_t>(volume_fractions.size()));
+
+    for (const T fraction : volume_fractions) {
+        if (fraction == T{1})
+            types.push_back(CellType::inside);
+        else if (fraction == T{0})
+            types.push_back(CellType::outside);
+        else
+            types.push_back(CellType::cut);
+    }
+
+    return types;
+}
 
 /**
  * @brief Classification of the elements of a background grid against a
