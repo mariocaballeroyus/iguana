@@ -11,7 +11,7 @@
 
 #include <Eigen/Core>
 
-#include "iguana/embedding/embedded_domain.hpp"
+#include "iguana/embedding/cell_classification.hpp"
 
 namespace iguana
 {
@@ -79,16 +79,18 @@ public:
      *         differ from one cell to another
      *
      * @param grid Grid whose elements are the cells
-     * @param domain Cell type of each element of the grid
+     * @param classification Cell type of each element of the grid
      * @param cell_type Type of the cells to fill
      * @param rule Rule giving the points and weights of each cell
      *
-     * @throws std::invalid_argument If the domain does not have one cell type
-     *         per element of the grid, if an element already held lies
-     *         outside the grid, or if a cell of this type is already held
+     * @throws std::invalid_argument If the classification does not have one
+     *         cell type per element of the grid, if an element already held
+     *         lies outside the grid, or if a cell of this type is already
+     *         held
      */
     template<typename Grid, typename Rule>
-    void fill(const Grid& grid, const EmbeddedDomain<T, d>& domain,
+    void fill(const Grid& grid,
+              const CellClassification<T, d>& classification,
               CellType cell_type, const Rule& rule);
 
     /// @brief Number of integrated elements

@@ -16,13 +16,14 @@ namespace iguana
 {
 
 template<std::floating_point T, std::size_t d>
-SurrogateBoundary<T, d>::SurrogateBoundary(const TensorGrid<T, d>& grid,
-                                           const EmbeddedDomain<T, d>& domain)
+SurrogateBoundary<T, d>::SurrogateBoundary(
+    const TensorGrid<T, d>& grid,
+    const CellClassification<T, d>& classification)
 {
-    if (domain.num_elements() != grid.num_elements())
+    if (classification.num_elements() != grid.num_elements())
         throw std::invalid_argument("SurrogateBoundary: "
-                                    "the domain must have one cell type per "
-                                    "element");
+                                    "the classification must have one cell "
+                                    "type per element");
 
     std::array<int, d> counts{};
 
@@ -38,14 +39,15 @@ SurrogateBoundary<T, d>::SurrogateBoundary(const TensorGrid<T, d>& grid,
         if (cell[direction] < 0 || cell[direction] >= counts[direction])
             return false;
 
-        return domain.cell_type(flatten(cell, counts)) == CellType::inside;
+        return classification.cell_type(flatten(cell, counts))
+               == CellType::inside;
     };
 
     offsets_.resize(grid.num_elements() + 1);
     offsets_(0) = 0;
 
     for (const TensorGridIterator<T, d>& element : grid) {
-        if (domain.cell_type(element.index()) == CellType::inside) {
+        if (classification.cell_type(element.index()) == CellType::inside) {
             const std::array<int, d> cell = unflatten(element.index(), counts);
 
             for (std::size_t direction = 0; direction < d; ++direction) {

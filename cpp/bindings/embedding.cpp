@@ -19,8 +19,8 @@ namespace iguana::bindings
 namespace
 {
 
-using EmbeddedDomain2d = EmbeddedDomain<double, 2>;
-using EmbeddedDomain3d = EmbeddedDomain<double, 3>;
+using CellClassification2d = CellClassification<double, 2>;
+using CellClassification3d = CellClassification<double, 3>;
 using EmbeddedBoundary2d = EmbeddedBoundary<double, 2>;
 using SurrogateBoundary2d = SurrogateBoundary<double, 2>;
 using PlanarPatch = Patch<TensorBSpline<double, 2>, 2>;
@@ -74,10 +74,10 @@ Eigen::MatrixXd intervals(const EmbeddedBoundary2d& boundary)
 
 /// @brief Surrogate boundary of the inside cells among the elements of a
 ///        patch
-SurrogateBoundary2d surrogate_boundary(const PlanarPatch& patch,
-                                       const EmbeddedDomain2d& domain)
+SurrogateBoundary2d surrogate_boundary(
+    const PlanarPatch& patch, const CellClassification2d& classification)
 {
-    return {patch.basis().grid(), domain};
+    return {patch.basis().grid(), classification};
 }
 
 /// @brief Element of the grid holding each face, in the order of the faces
@@ -106,11 +106,19 @@ void embedding(py::module_& module)
         .value("inside", CellType::inside)
         .value("cut", CellType::cut);
 
-    py::class_<EmbeddedDomain2d>(module, "EmbeddedDomain2d")
+    py::class_<CellClassification2d>(module, "CellClassification2d")
         .def(py::init<std::vector<CellType>>(), py::arg("cell_types"));
 
-    py::class_<EmbeddedDomain3d>(module, "EmbeddedDomain3d")
+    py::class_<CellClassification3d>(module, "CellClassification3d")
         .def(py::init<std::vector<CellType>>(), py::arg("cell_types"));
+
+    // The volume fractions of the elements of a planar patch inside a
+    // boundary in its plane, and the cell types they give
+    module.def("volume_fractions",
+               &volume_fractions<TensorBSpline<double, 2>>, py::arg("patch"),
+               py::arg("boundary"));
+    module.def("cell_types", &cell_types<double>,
+               py::arg("volume_fractions"));
 
     py::class_<EmbeddedBoundary2d>(module, "EmbeddedBoundary2d")
         .def(py::init<const PlanarPatch&, const Boundary<double, 2>&>(),
@@ -122,7 +130,7 @@ void embedding(py::module_& module)
 
     py::class_<SurrogateBoundary2d>(module, "SurrogateBoundary2d")
         .def(py::init(&surrogate_boundary), py::arg("patch"),
-             py::arg("domain"))
+             py::arg("classification"))
         .def_property_readonly("num_faces", &SurrogateBoundary2d::num_faces)
         .def_property_readonly("elements", &face_elements);
 }

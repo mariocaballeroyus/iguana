@@ -19,7 +19,7 @@ namespace
 
 using Catch::Matchers::WithinRel;
 using iguana::CellType;
-using iguana::EmbeddedDomain;
+using iguana::CellClassification;
 using iguana::HierarchicalGrid;
 using iguana::KnotVector;
 using iguana::TensorGrid;
@@ -37,9 +37,9 @@ TensorGrid<double, 3> uneven()
 }
 
 /// @brief Inside cells 0, 2 and 4, cut cells 1 and 5 and outside cell 3
-EmbeddedDomain<double, 3> mixed()
+CellClassification<double, 3> mixed()
 {
-    return EmbeddedDomain<double, 3>({CellType::inside, CellType::cut,
+    return CellClassification<double, 3>({CellType::inside, CellType::cut,
                                  CellType::inside, CellType::outside,
                                  CellType::inside, CellType::cut});
 }
@@ -81,13 +81,13 @@ TEST_CASE("The filled cells integrate the polynomials of the rule exactly",
           "[quadrature]")
 {
     const TensorGrid<double, 3> grid = uneven();
-    const EmbeddedDomain<double, 3> domain = mixed();
+    const CellClassification<double, 3> classification = mixed();
 
     // Exact up to degree 2n - 1 in each direction
     const std::array<int, 3> counts{2, 3, 1};
 
     Quadrature quadrature;
-    quadrature.fill(grid, domain, CellType::inside, Gauss(counts));
+    quadrature.fill(grid, classification, CellType::inside, Gauss(counts));
 
     REQUIRE(quadrature.elements() == integers({0, 2, 4}));
 
@@ -96,7 +96,7 @@ TEST_CASE("The filled cells integrate the polynomials of the rule exactly",
     int held = 0;
 
     for (const auto& element : grid) {
-        if (domain.cell_type(element.index()) != CellType::inside)
+        if (classification.cell_type(element.index()) != CellType::inside)
             continue;
 
         const int first = quadrature.offsets()(held);
@@ -137,24 +137,25 @@ TEST_CASE("Cell types are filled one after another, once each",
           "[quadrature]")
 {
     const TensorGrid<double, 3> grid = uneven();
-    const EmbeddedDomain<double, 3> domain = mixed();
+    const CellClassification<double, 3> classification = mixed();
 
     Quadrature quadrature;
-    quadrature.fill(grid, domain, CellType::inside, Gauss(2));
-    quadrature.fill(grid, domain, CellType::cut, Gauss(1));
+    quadrature.fill(grid, classification, CellType::inside, Gauss(2));
+    quadrature.fill(grid, classification, CellType::cut, Gauss(1));
 
     REQUIRE(quadrature.elements() == integers({0, 2, 4, 1, 5}));
     REQUIRE(quadrature.offsets() == integers({0, 8, 16, 24, 25, 26}));
 
-    // A cell type already held, or a domain without one cell type per
-    // element, is rejected, and nothing changes
+    // A cell type already held, or a classification without one cell type
+    // per element, is rejected, and nothing changes
     const Quadrature before = quadrature;
 
     REQUIRE_THROWS_AS(
-        quadrature.fill(grid, domain, CellType::inside, Gauss(1)),
+        quadrature.fill(grid, classification, CellType::inside, Gauss(1)),
         std::invalid_argument);
     REQUIRE_THROWS_AS(
-        quadrature.fill(grid, EmbeddedDomain<double, 3>({CellType::outside}),
+        quadrature.fill(grid,
+                        CellClassification<double, 3>({CellType::outside}),
                         CellType::outside, Gauss(1)),
         std::invalid_argument);
     REQUIRE(quadrature.offsets() == before.offsets());
@@ -173,14 +174,14 @@ TEST_CASE("A hierarchical grid is filled over its whole parametric domain",
         refine(refine(coarse, std::vector<int>{0, 4}),
                std::vector<int>{0, 11});
 
-    const EmbeddedDomain<double, 2> domain(
+    const CellClassification<double, 2> classification(
         std::vector<CellType>(grid.num_elements(), CellType::inside));
 
     // Exact up to degree 2n - 1 in each direction
     const std::array<int, 2> counts{3, 2};
 
     iguana::DomainQuadrature<double, 2> quadrature;
-    quadrature.fill(grid, domain, CellType::inside,
+    quadrature.fill(grid, classification, CellType::inside,
                     iguana::GaussLegendre<double, 2>(counts));
 
     REQUIRE(quadrature.num_elements() == grid.num_elements());

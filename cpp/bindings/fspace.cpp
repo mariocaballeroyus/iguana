@@ -61,8 +61,8 @@ void fspace(py::module_& module)
 {
     py::class_<FunctionSpace2d>(module, "FunctionSpace2d")
         .def(py::init<TensorBSpline<double, 2>,
-                      const EmbeddedDomain<double, 2>&>(),
-             py::arg("basis"), py::arg("domain"))
+                      const CellClassification<double, 2>&>(),
+             py::arg("basis"), py::arg("classification"))
         .def_property_readonly("num_dofs",
                                &num_dofs<TensorBSpline<double, 2>>)
         .def_property_readonly("functions",
@@ -70,8 +70,8 @@ void fspace(py::module_& module)
 
     py::class_<FunctionSpace3d>(module, "FunctionSpace3d")
         .def(py::init<TensorBSpline<double, 3>,
-                      const EmbeddedDomain<double, 3>&>(),
-             py::arg("basis"), py::arg("domain"))
+                      const CellClassification<double, 3>&>(),
+             py::arg("basis"), py::arg("classification"))
         .def_property_readonly("num_dofs",
                                &num_dofs<TensorBSpline<double, 3>>)
         .def_property_readonly("functions",
@@ -79,8 +79,8 @@ void fspace(py::module_& module)
 
     py::class_<NURBSFunctionSpace2d>(module, "NURBSFunctionSpace2d")
         .def(py::init<TensorNURBS<double, 2>,
-                      const EmbeddedDomain<double, 2>&>(),
-             py::arg("basis"), py::arg("domain"))
+                      const CellClassification<double, 2>&>(),
+             py::arg("basis"), py::arg("classification"))
         .def_property_readonly("num_dofs",
                                &num_dofs<TensorNURBS<double, 2>>)
         .def_property_readonly("functions",

@@ -52,11 +52,11 @@ class DomainQuadrature:
         """
         if isinstance(patch, VolumePatch):
             self._cpp_object = _cpp.DomainQuadrature3d()
-            domain = _cpp.EmbeddedDomain3d
+            classification = _cpp.CellClassification3d
             self._dimension = 3
         elif isinstance(patch, (PlanarPatch, SurfacePatch)):
             self._cpp_object = _cpp.DomainQuadrature2d()
-            domain = _cpp.EmbeddedDomain2d
+            classification = _cpp.CellClassification2d
             self._dimension = 2
         else:
             raise TypeError('the patch must be a planar, surface or volume '
@@ -87,7 +87,7 @@ class DomainQuadrature:
         self._patch = patch
         self._grid = grid
         self._cell_types = list(cell_types)
-        self._domain = domain(self._cell_types)
+        self._classification = classification(self._cell_types)
 
     @property
     def patch(self) -> PlanarPatch | SurfacePatch | VolumePatch:
@@ -157,7 +157,7 @@ class DomainQuadrature:
                              'direction')
 
         self._cpp_object.fill_gauss_legendre(
-            self._grid._cpp_object, self._domain, cell_type,
+            self._grid._cpp_object, self._classification, cell_type,
             list(num_points))
 
     def fill_moment_fitting(self, cell_type: CellType,
@@ -206,7 +206,7 @@ class DomainQuadrature:
             parameters = self._patch.invert_points(vertices)
 
         self._cpp_object.fill_moment_fitting(
-            self._grid._cpp_object, self._domain, cell_type,
+            self._grid._cpp_object, self._classification, cell_type,
             parameters, np.asarray(facets, dtype=np.int32), order)
 
     def __repr__(self) -> str:

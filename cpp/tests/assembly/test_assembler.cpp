@@ -20,7 +20,7 @@ namespace
 
 using Catch::Matchers::WithinRel;
 using iguana::CellType;
-using iguana::EmbeddedDomain;
+using iguana::CellClassification;
 using iguana::KnotVector;
 using iguana::TensorGrid;
 using Basis = iguana::TensorBSpline<double, 2>;
@@ -67,9 +67,9 @@ iguana::Patch<Basis, 2> rectangle(const Basis& basis)
 
 /// @brief Inside cells, except those of the last column along the first
 ///        direction, which take the given type
-EmbeddedDomain<double, 2> with_last_column(CellType type)
+CellClassification<double, 2> with_last_column(CellType type)
 {
-    return EmbeddedDomain<double, 2>(
+    return CellClassification<double, 2>(
         {CellType::inside, CellType::inside, type,
          CellType::inside, CellType::inside, type});
 }
@@ -77,10 +77,10 @@ EmbeddedDomain<double, 2> with_last_column(CellType type)
 /// @brief Gauss quadrature of the inside cells, exact for the products of
 ///        quadratic functions through an affine map
 iguana::DomainQuadrature<double, 2> inside_quadrature(
-    const Basis& basis, const EmbeddedDomain<double, 2>& domain)
+    const Basis& basis, const CellClassification<double, 2>& classification)
 {
     iguana::DomainQuadrature<double, 2> quadrature;
-    quadrature.fill(basis.grid(), domain, CellType::inside,
+    quadrature.fill(basis.grid(), classification, CellType::inside,
                     iguana::GaussLegendre<double, 2>(3));
 
     return quadrature;
@@ -133,10 +133,11 @@ TEST_CASE("The Poisson system of a rectangle integrates exactly",
 {
     const Basis basis = uneven();
     const iguana::Patch<Basis, 2> patch = rectangle(basis);
-    const EmbeddedDomain<double, 2> domain = with_last_column(CellType::inside);
-    const iguana::FunctionSpace<Basis> space(basis, domain);
+    const CellClassification<double, 2> classification =
+        with_last_column(CellType::inside);
+    const iguana::FunctionSpace<Basis> space(basis, classification);
     const iguana::DomainQuadrature<double, 2> quadrature =
-        inside_quadrature(basis, domain);
+        inside_quadrature(basis, classification);
     const iguana::PoissonElement<Basis, 2> element;
 
     iguana::Assembler<Basis, 2> assembler(space, patch);
@@ -174,11 +175,11 @@ TEST_CASE("The Poisson system leaves out the functions of outside cells",
 {
     const Basis basis = uneven();
     const iguana::Patch<Basis, 2> patch = rectangle(basis);
-    const EmbeddedDomain<double, 2> domain =
+    const CellClassification<double, 2> classification =
         with_last_column(CellType::outside);
-    const iguana::FunctionSpace<Basis> space(basis, domain);
+    const iguana::FunctionSpace<Basis> space(basis, classification);
     const iguana::DomainQuadrature<double, 2> quadrature =
-        inside_quadrature(basis, domain);
+        inside_quadrature(basis, classification);
     const iguana::PoissonElement<Basis, 2> element;
 
     iguana::Assembler<Basis, 2> assembler(space, patch);
@@ -202,10 +203,11 @@ TEST_CASE("A cleared assembler assembles the same system again",
 {
     const Basis basis = uneven();
     const iguana::Patch<Basis, 2> patch = rectangle(basis);
-    const EmbeddedDomain<double, 2> domain = with_last_column(CellType::inside);
-    const iguana::FunctionSpace<Basis> space(basis, domain);
+    const CellClassification<double, 2> classification =
+        with_last_column(CellType::inside);
+    const iguana::FunctionSpace<Basis> space(basis, classification);
     const iguana::DomainQuadrature<double, 2> quadrature =
-        inside_quadrature(basis, domain);
+        inside_quadrature(basis, classification);
     const iguana::PoissonElement<Basis, 2> element;
 
     iguana::Assembler<Basis, 2> assembler(space, patch);
@@ -232,10 +234,11 @@ TEST_CASE("An assembler needs one source value per point", "[assembler]")
 {
     const Basis basis = uneven();
     const iguana::Patch<Basis, 2> patch = rectangle(basis);
-    const EmbeddedDomain<double, 2> domain = with_last_column(CellType::inside);
-    const iguana::FunctionSpace<Basis> space(basis, domain);
+    const CellClassification<double, 2> classification =
+        with_last_column(CellType::inside);
+    const iguana::FunctionSpace<Basis> space(basis, classification);
     const iguana::DomainQuadrature<double, 2> quadrature =
-        inside_quadrature(basis, domain);
+        inside_quadrature(basis, classification);
     const iguana::PoissonElement<Basis, 2> element;
 
     iguana::Assembler<Basis, 2> assembler(space, patch);
@@ -356,7 +359,7 @@ TEST_CASE("A shifted penalty imposes a field of the space from its closest "
     cell_types[1] = CellType::inside;
 
     const iguana::SurrogateBoundary<double, 2> surrogate(
-        basis.grid(), EmbeddedDomain<double, 2>(cell_types));
+        basis.grid(), CellClassification<double, 2>(cell_types));
 
     const std::array<Eigen::RowVector2d, 4> corners{
         Eigen::RowVector2d(.3, -.2), Eigen::RowVector2d(1.3, -.2),
@@ -419,9 +422,9 @@ TEST_CASE("A shifted Nitsche condition imposes a field of the space "
     std::vector<CellType> cell_types(6, CellType::outside);
     cell_types[1] = CellType::inside;
 
-    const EmbeddedDomain<double, 2> domain(cell_types);
+    const CellClassification<double, 2> classification(cell_types);
     const iguana::SurrogateBoundary<double, 2> surrogate(basis.grid(),
-                                                         domain);
+                                                         classification);
 
     const std::array<Eigen::RowVector2d, 4> corners{
         Eigen::RowVector2d(.3, -.2), Eigen::RowVector2d(1.3, -.2),
@@ -448,7 +451,7 @@ TEST_CASE("A shifted Nitsche condition imposes a field of the space "
     const iguana::PoissonElement<Basis, 2>::U trace;
     const iguana::PoissonElement<Basis, 2>::Q flux;
     const iguana::DomainQuadrature<double, 2> cells =
-        inside_quadrature(basis, domain);
+        inside_quadrature(basis, classification);
 
     // With every cell inside, each function keeps its own index, and the
     // coefficients of b . x are b . x_i at the control points

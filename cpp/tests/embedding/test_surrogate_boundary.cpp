@@ -18,7 +18,7 @@ namespace
 
 using Catch::Matchers::WithinAbs;
 using iguana::CellType;
-using iguana::EmbeddedDomain;
+using iguana::CellClassification;
 using iguana::KnotVector;
 using iguana::SurrogateBoundary;
 using iguana::TensorGrid;
@@ -77,13 +77,13 @@ TEST_CASE("The surrogate boundary bounds the inside cells",
 
     cell_types[5] = CellType::outside;
 
-    const EmbeddedDomain<double, 2> domain(cell_types);
-    const SurrogateBoundary<double, 2> boundary(grid, domain);
+    const CellClassification<double, 2> classification(cell_types);
+    const SurrogateBoundary<double, 2> boundary(grid, classification);
 
     // Only inside cells hold faces
     for (int element = 0; element < boundary.num_elements(); ++element)
         if (!boundary.faces_on_element(element).empty())
-            REQUIRE(domain.cell_type(element) == CellType::inside);
+            REQUIRE(classification.cell_type(element) == CellType::inside);
 
     // The surrogate domain is [0, .7] x [0, 1] without the hole
     // [.1, .4] x [.3, .5], and its boundary runs along the edge of the grid
@@ -96,7 +96,7 @@ TEST_CASE("The surrogate boundary bounds the inside cells",
     REQUIRE_THAT(result.flux[1], WithinAbs(.7 - .06, 1e-14));
 
     // One cell type for twelve elements
-    const EmbeddedDomain<double, 2> one_cell({CellType::inside});
+    const CellClassification<double, 2> one_cell({CellType::inside});
 
     REQUIRE_THROWS_AS((SurrogateBoundary<double, 2>(grid, one_cell)),
                       std::invalid_argument);
@@ -112,7 +112,7 @@ TEST_CASE("The surrogate boundary of one inside cell in a volume",
     cell_types[0] = CellType::inside;
 
     const SurrogateBoundary<double, 3> boundary(
-        grid, EmbeddedDomain<double, 3>(cell_types));
+        grid, CellClassification<double, 3>(cell_types));
 
     // The six faces of the cube [0, .5]^3
     const Moments<3> result = moments(boundary);

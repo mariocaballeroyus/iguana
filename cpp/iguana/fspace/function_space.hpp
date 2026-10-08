@@ -10,7 +10,7 @@
 
 #include "iguana/basis/tensor_bspline.hpp"
 #include "iguana/basis/tensor_nurbs.hpp"
-#include "iguana/embedding/embedded_domain.hpp"
+#include "iguana/embedding/cell_classification.hpp"
 #include "iguana/fspace/dof_map.hpp"
 
 namespace iguana
@@ -27,9 +27,9 @@ namespace iguana
  * active_on_element() of the basis, so that the basis values pair with them
  * directly. Outside cells list no degrees of freedom
  *
- * The space covers the cells its domain does not mark outside, so a method
- * integrating a smaller region, such as the inside cells alone, passes that
- * region as its domain
+ * The space covers the cells its classification does not mark outside, so
+ * a method integrating a smaller region, such as the inside cells alone,
+ * passes the classification of that region
  *
  * @tparam Basis Basis whose functions span the space, TensorBSpline or
  *         TensorNURBS
@@ -49,15 +49,15 @@ public:
      *        in its elements
      *
      * @param basis Basis whose functions span the space
-     * @param domain Cell type of each element of the basis grid. With every
-     *        cell inside, each function gets the degree of freedom of its
-     *        own index
+     * @param classification Cell type of each element of the basis grid.
+     *        With every cell inside, each function gets the degree of
+     *        freedom of its own index
      *
-     * @throws std::invalid_argument If the domain does not have one cell type
-     *         per element
+     * @throws std::invalid_argument If the classification does not have one
+     *         cell type per element
      */
     FunctionSpace(Basis basis,
-                  const EmbeddedDomain<Scalar, dimension>& domain);
+                  const CellClassification<Scalar, dimension>& classification);
 
     /// @brief Basis whose functions span the space
     constexpr const Basis& basis() const noexcept

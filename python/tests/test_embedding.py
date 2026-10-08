@@ -1,14 +1,33 @@
 # Copyright (c) 2026 Mario Caballero
 # SPDX-License-Identifier: MIT
 
-"""Tests of boundaries divided over the elements of a patch"""
+"""Tests of boundaries divided over the elements of a patch, and of the
+cells they classify"""
 
 import numpy as np
 import pytest
 
 import iguana
-from iguana import (Boundary, BoundaryQuadrature, CellType, SurrogateBoundary,
-                    cpp)
+from iguana import (Boundary, BoundaryQuadrature, CellType, DomainQuadrature,
+                    FunctionSpace, NitscheCondition, PoissonElement,
+                    SurrogateBoundary, classify_cells, cpp, solve)
+
+# Centre and radius of a circle off the knot lines of the rectangle three by
+# two of fourteen elements along each direction
+CENTRE = np.array([1.43, 1.07])
+RADIUS = .71
+
+
+def circle():
+    """The circle as four quadratic arcs joined at double knots."""
+    corner = np.sqrt(.5)
+    points = np.array([[1., 0.], [1., 1.], [0., 1.], [-1., 1.], [-1., 0.],
+                       [-1., -1.], [0., -1.], [1., -1.], [1., 0.]])
+
+    return Boundary([iguana.create_curve(
+        degree=2, knots=[0., 0., 0., .25, .25, .5, .5, .75, .75, 1., 1., 1.],
+        control_points=CENTRE + RADIUS * points,
+        weights=[1., corner, 1., corner, 1., corner, 1., corner, 1.])])
 
 
 def embed(patch, boundary):
@@ -123,3 +142,59 @@ def test_invalid_surrogate_boundaries():
 
     with pytest.raises(ValueError):
         BoundaryQuadrature(other, SurrogateBoundary(patch, cell_types), 2)
+
+
+def test_classify_cells():
+    """The volume fractions of the cells add up to the area of the disc,
+    and the cells the circle crosses are the cut ones."""
+    patch = iguana.create_rectangle(lengths=(3., 2.), elements=(14, 14))
+    cell_types, fractions = classify_cells(patch, circle())
+    cut = (fractions > 0.) & (fractions < 1.)
+
+    assert fractions.sum() * 3. / 14. * 2. / 14. == pytest.approx(
+        np.pi * RADIUS**2, rel=1e-12)
+    assert [cell == CellType.cut for cell in cell_types] == list(cut)
+    assert np.all(np.isin(fractions[~cut], [0., 1.]))
+
+
+def test_classified_cells_solve_a_shifted_problem():
+    """The inside cells of the classification carry the shifted boundary
+    method, which imposes a linear field exactly from the circle."""
+    patch = iguana.create_rectangle(lengths=(3., 2.), elements=(14, 14))
+    cell_types = [CellType.inside if cell == CellType.inside
+                  else CellType.outside
+                  for cell in classify_cells(patch, circle()).cell_types]
+
+    quadrature = DomainQuadrature(patch, cell_types)
+    quadrature.fill_gauss_legendre(CellType.inside, 3)
+    boundary = BoundaryQuadrature(patch, SurrogateBoundary(patch, cell_types),
+                                  3, shift=circle())
+
+    space = FunctionSpace(patch, cell_types)
+    element = PoissonElement()
+    gradient = np.array([1., -2.])
+    condition = NitscheCondition(element.u, boundary, lambda x: x @ gradient,
+                                 40.)
+    u = solve(element, space, quadrature, np.zeros(quadrature.num_points),
+              conditions=[condition])
+
+    assert np.abs(u - space.control_points @ gradient).max() < 1e-10
+
+
+def test_invalid_classifications():
+    patch = iguana.create_rectangle(lengths=(3., 2.), elements=(14, 14))
+
+    with pytest.raises(TypeError):
+        classify_cells(patch.isocurves()[0], circle())
+
+    with pytest.raises(TypeError):
+        classify_cells(patch, patch)
+
+    # The map of the patch must be affine
+    bent = patch.control_points.copy()
+    bent[20, 1] += .1
+    curved = iguana.PlanarPatch(cpp.PlanarPatch(
+        basis=patch._cpp_object.basis, coefficients=bent))
+
+    with pytest.raises(ValueError):
+        classify_cells(curved, circle())

@@ -7,9 +7,10 @@ add_library(iguana
     grid/knot_vector.cpp
     grid/tensor_grid.cpp
     grid/tensor_grid_iterator.cpp
+    embedding/cell_classification.cpp
     embedding/embedded_boundary.cpp
-    embedding/embedded_domain.cpp
     embedding/nurbs/grid_crossings.cpp
+    embedding/nurbs/volume_fractions.cpp
     embedding/surrogate_boundary.cpp
     fspace/dof_map.cpp
     fspace/function_space.cpp

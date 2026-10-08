@@ -3,13 +3,15 @@
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef IGUANA_EMBEDDING_EMBEDDED_DOMAIN_HPP
-#define IGUANA_EMBEDDING_EMBEDDED_DOMAIN_HPP
+#ifndef IGUANA_EMBEDDING_CELL_CLASSIFICATION_HPP
+#define IGUANA_EMBEDDING_CELL_CLASSIFICATION_HPP
 
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+
+#include <Eigen/Core>
 
 namespace iguana
 {
@@ -19,7 +21,7 @@ namespace iguana
  *        to the physical domain
  *
  * The type is geometric only. How each type of cell is integrated is up to
- * the method built on the domain
+ * the method built on the classification
  */
 enum class CellType : std::uint8_t
 {
@@ -34,29 +36,58 @@ enum class CellType : std::uint8_t
 };
 
 /**
- * @brief Physical domain embedded in the elements of a background grid
+ * @brief Cell types of the elements of a grid from their volume fractions,
+ *        the parts of their measures inside the physical domain
  *
- * The domain tells how it lies on the elements, with the cell type of each
- * one. The cell types are given rather than computed, and the domain holds
- * no geometry of the solid
+ * A fraction of exactly 1 makes an inside cell, of exactly 0 an outside
+ * one, and any other a cut one
+ *
+ * @param volume_fractions Volume fraction of each element
+ * @return Cell type of each element, in the same order
+ */
+template<std::floating_point T>
+std::vector<CellType> cell_types(const Eigen::VectorX<T>& volume_fractions)
+{
+    std::vector<CellType> types;
+    types.reserve(static_cast<std::size_t>(volume_fractions.size()));
+
+    for (const T fraction : volume_fractions) {
+        if (fraction == T{1})
+            types.push_back(CellType::inside);
+        else if (fraction == T{0})
+            types.push_back(CellType::outside);
+        else
+            types.push_back(CellType::cut);
+    }
+
+    return types;
+}
+
+/**
+ * @brief Classification of the elements of a background grid against a
+ *        physical domain embedded in it
+ *
+ * It tells how the domain lies on the elements, with the cell type of each
+ * one, and holds no geometry of the domain
  *
  * @tparam T Floating-point type
  * @tparam d Number of parametric directions
  */
 template<std::floating_point T, std::size_t d>
-class EmbeddedDomain
+class CellClassification
 {
 public:
     /// @brief Number of parametric directions
     static constexpr std::size_t dimension = d;
 
     /**
-     * @brief Constructs the domain from the cell type of each element
+     * @brief Constructs the classification from the cell type of each
+     *        element
      *
      * @param cell_types Cell type of each element, in the numbering of the
      *        grid
      */
-    explicit EmbeddedDomain(std::vector<CellType> cell_types);
+    explicit CellClassification(std::vector<CellType> cell_types);
 
     /// @brief Number of elements, one per cell type
     constexpr int num_elements() const noexcept
@@ -79,4 +110,4 @@ private:
 
 } // namespace iguana
 
-#endif // IGUANA_EMBEDDING_EMBEDDED_DOMAIN_HPP
+#endif // IGUANA_EMBEDDING_CELL_CLASSIFICATION_HPP

@@ -246,7 +246,7 @@ TEST_CASE("A surrogate boundary carries a rule on each face of its cells",
     cell_types[5] = CellType::outside;
 
     const Surrogate boundary(grid,
-                             iguana::EmbeddedDomain<double, 2>(cell_types));
+                             iguana::CellClassification<double, 2>(cell_types));
     const Quadrature quadrature(boundary, Gauss(2));
 
     // Corners of each element of the grid
@@ -318,8 +318,9 @@ TEST_CASE("A shifted quadrature reaches the closest points of a boundary",
     std::vector<CellType> cell_types(9, CellType::cut);
     cell_types[4] = CellType::inside;
 
-    const Surrogate surrogate(square.basis().grid(),
-                              iguana::EmbeddedDomain<double, 2>(cell_types));
+    const Surrogate surrogate(
+        square.basis().grid(),
+        iguana::CellClassification<double, 2>(cell_types));
     const Quadrature unshifted(surrogate, Gauss(3));
 
     const Eigen::RowVector2d center(.3, -.2);
