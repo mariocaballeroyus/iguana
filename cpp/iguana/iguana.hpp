@@ -16,6 +16,7 @@
 #include "grid/tensor_grid_iterator.hpp"
 #include "embedding/cell_classification.hpp"
 #include "embedding/embedded_boundary.hpp"
+#include "embedding/nurbs/volume_fractions.hpp"
 #include "embedding/surrogate_boundary.hpp"
 #include "fspace/dof_map.hpp"
 #include "fspace/function_space.hpp"

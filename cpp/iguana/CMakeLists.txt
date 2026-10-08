@@ -10,6 +10,7 @@ add_library(iguana
     embedding/cell_classification.cpp
     embedding/embedded_boundary.cpp
     embedding/nurbs/grid_crossings.cpp
+    embedding/nurbs/volume_fractions.cpp
     embedding/surrogate_boundary.cpp
     fspace/dof_map.cpp
     fspace/function_space.cpp
