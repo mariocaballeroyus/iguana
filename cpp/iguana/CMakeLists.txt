@@ -21,6 +21,7 @@ add_library(iguana
     quadrature/boundary_quadrature.cpp
     quadrature/box_rule.cpp
     quadrature/domain_quadrature.cpp
+    quadrature/face_quadrature.cpp
     quadrature/gauss_legendre/gauss_legendre.cpp
     quadrature/gauss_legendre/gauss_legendre_tables.cpp
     quadrature/moment_fitting/moment_fitting.cpp

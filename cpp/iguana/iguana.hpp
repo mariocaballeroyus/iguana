@@ -29,6 +29,7 @@
 #include "quadrature/boundary_quadrature.hpp"
 #include "quadrature/box_rule.hpp"
 #include "quadrature/domain_quadrature.hpp"
+#include "quadrature/face_quadrature.hpp"
 #include "quadrature/gauss_legendre/gauss_legendre.hpp"
 #include "quadrature/moment_fitting/moment_fitting.hpp"
 #include "quadrature/moment_fitting/moments.hpp"
