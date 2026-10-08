@@ -47,9 +47,9 @@ class FunctionSpace:
         """
         if isinstance(patch, VolumePatch):
             space = _cpp.FunctionSpace3d
-            domain = _cpp.EmbeddedDomain3d
+            classification = _cpp.CellClassification3d
         elif isinstance(patch, (PlanarPatch, SurfacePatch)):
-            domain = _cpp.EmbeddedDomain2d
+            classification = _cpp.CellClassification2d
 
             # A NURBS surface spans its space with its rational functions
             if isinstance(patch._cpp_object, _cpp.NURBSSurfacePatch):
@@ -72,7 +72,7 @@ class FunctionSpace:
 
         self._patch = patch
         self._cpp_object = space(patch._cpp_object.basis,
-                                 domain(list(cell_types)))
+                                 classification(list(cell_types)))
 
     @property
     def patch(self) -> PlanarPatch | SurfacePatch | VolumePatch:

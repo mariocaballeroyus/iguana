@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Mario Caballero
 # SPDX-License-Identifier: MIT
 
-"""Embedded domains, how the physical domain lies on the elements of a patch
+"""Embedding, how the physical domain lies on the elements of a patch
 
 CellType tells where an element lies with respect to the physical domain:
 CellType.inside, CellType.outside or CellType.cut. The type is geometric
@@ -63,7 +63,8 @@ class SurrogateBoundary:
 
         self._patch = patch
         self._cpp_object = _cpp.SurrogateBoundary2d(
-            patch=patch._cpp_object, domain=_cpp.EmbeddedDomain2d(cell_types))
+            patch=patch._cpp_object,
+            classification=_cpp.CellClassification2d(cell_types))
 
     @property
     def patch(self) -> PlanarPatch:

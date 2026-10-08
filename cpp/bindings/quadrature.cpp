@@ -36,11 +36,11 @@ using PlanarPatch = Patch<TensorBSpline<double, 2>, 2>;
 template<std::size_t d>
 void fill_gauss_legendre(DomainQuadrature<double, d>& quadrature,
                          const HierarchicalGrid<double, d>& grid,
-                         const EmbeddedDomain<double, d>& domain,
+                         const CellClassification<double, d>& classification,
                          CellType cell_type,
                          const std::array<int, d>& num_points)
 {
-    quadrature.fill(grid, domain, cell_type,
+    quadrature.fill(grid, classification, cell_type,
                     GaussLegendre<double, d>(num_points));
 }
 
@@ -50,11 +50,11 @@ void fill_gauss_legendre(DomainQuadrature<double, d>& quadrature,
 template<std::size_t d>
 void fill_moment_fitting(DomainQuadrature<double, d>& quadrature,
                          const HierarchicalGrid<double, d>& grid,
-                         const EmbeddedDomain<double, d>& domain,
+                         const CellClassification<double, d>& classification,
                          CellType cell_type, const Eigen::MatrixXd& vertices,
                          const Eigen::MatrixXi& facets, int order)
 {
-    quadrature.fill(grid, domain, cell_type,
+    quadrature.fill(grid, classification, cell_type,
                     MomentFitting<double, d>(vertices, facets, order));
 }
 
@@ -433,11 +433,12 @@ void quadrature(py::module_& module)
     py::class_<DomainQuadrature2d>(module, "DomainQuadrature2d")
         .def(py::init<>())
         .def("fill_gauss_legendre", &fill_gauss_legendre<2>,
-             py::arg("grid"), py::arg("domain"), py::arg("cell_type"),
-             py::arg("num_points"))
+             py::arg("grid"), py::arg("classification"),
+             py::arg("cell_type"), py::arg("num_points"))
         .def("fill_moment_fitting", &fill_moment_fitting<2>,
-             py::arg("grid"), py::arg("domain"), py::arg("cell_type"),
-             py::arg("vertices"), py::arg("facets"), py::arg("order"))
+             py::arg("grid"), py::arg("classification"),
+             py::arg("cell_type"), py::arg("vertices"), py::arg("facets"),
+             py::arg("order"))
         .def_property_readonly("num_elements",
                                &DomainQuadrature2d::num_elements)
         .def_property_readonly("num_points", &DomainQuadrature2d::num_points)
@@ -458,11 +459,12 @@ void quadrature(py::module_& module)
     py::class_<DomainQuadrature3d>(module, "DomainQuadrature3d")
         .def(py::init<>())
         .def("fill_gauss_legendre", &fill_gauss_legendre<3>,
-             py::arg("grid"), py::arg("domain"), py::arg("cell_type"),
-             py::arg("num_points"))
+             py::arg("grid"), py::arg("classification"),
+             py::arg("cell_type"), py::arg("num_points"))
         .def("fill_moment_fitting", &fill_moment_fitting<3>,
-             py::arg("grid"), py::arg("domain"), py::arg("cell_type"),
-             py::arg("vertices"), py::arg("facets"), py::arg("order"))
+             py::arg("grid"), py::arg("classification"),
+             py::arg("cell_type"), py::arg("vertices"), py::arg("facets"),
+             py::arg("order"))
         .def_property_readonly("num_elements",
                                &DomainQuadrature3d::num_elements)
         .def_property_readonly("num_points", &DomainQuadrature3d::num_points)

@@ -14,7 +14,7 @@
 
 #include <Eigen/Core>
 
-#include "iguana/embedding/embedded_domain.hpp"
+#include "iguana/embedding/cell_classification.hpp"
 #include "iguana/grid/tensor_grid.hpp"
 
 namespace iguana
@@ -64,13 +64,13 @@ public:
      *        rest
      *
      * @param grid Grid whose elements are the cells
-     * @param domain Cell type of each element of the grid
+     * @param classification Cell type of each element of the grid
      *
-     * @throws std::invalid_argument If the domain does not have one cell type
-     *         per element of the grid
+     * @throws std::invalid_argument If the classification does not have one
+     *         cell type per element of the grid
      */
     SurrogateBoundary(const TensorGrid<T, d>& grid,
-                      const EmbeddedDomain<T, d>& domain);
+                      const CellClassification<T, d>& classification);
 
     /// @brief Number of elements of the grid
     constexpr int num_elements() const noexcept
