@@ -98,6 +98,21 @@ void assembly(py::module_& module)
                  &Assembler2d::assemble_load<PoissonElement2d>),
              py::arg("element"), py::arg("quadrature"), py::arg("source"))
         .def("assemble_stiffness",
+             py::overload_cast<const PoissonElement2d&,
+                               const DomainQuadrature<double, 2>&,
+                               const Eigen::VectorXd&>(
+                 &Assembler2d::assemble_stiffness<PoissonElement2d>),
+             py::arg("element"), py::arg("quadrature"),
+             py::arg("cell_weights"))
+        .def("assemble_load",
+             py::overload_cast<const PoissonElement2d&,
+                               const DomainQuadrature<double, 2>&,
+                               const Eigen::VectorXd&,
+                               const Eigen::VectorXd&>(
+                 &Assembler2d::assemble_load<PoissonElement2d>),
+             py::arg("element"), py::arg("quadrature"), py::arg("source"),
+             py::arg("cell_weights"))
+        .def("assemble_stiffness",
              &Assembler2d::assemble_stiffness<PenaltyCondition2d>,
              py::arg("condition"), py::arg("quadrature"))
         .def("assemble_load",
@@ -134,6 +149,21 @@ void assembly(py::module_& module)
                                const Eigen::VectorXd&>(
                  &Assembler3d::assemble_load<PoissonElement3d>),
              py::arg("element"), py::arg("quadrature"), py::arg("source"))
+        .def("assemble_stiffness",
+             py::overload_cast<const PoissonElement3d&,
+                               const DomainQuadrature<double, 3>&,
+                               const Eigen::VectorXd&>(
+                 &Assembler3d::assemble_stiffness<PoissonElement3d>),
+             py::arg("element"), py::arg("quadrature"),
+             py::arg("cell_weights"))
+        .def("assemble_load",
+             py::overload_cast<const PoissonElement3d&,
+                               const DomainQuadrature<double, 3>&,
+                               const Eigen::VectorXd&,
+                               const Eigen::VectorXd&>(
+                 &Assembler3d::assemble_load<PoissonElement3d>),
+             py::arg("element"), py::arg("quadrature"), py::arg("source"),
+             py::arg("cell_weights"))
         .def_property_readonly("stiffness", &Assembler3d::stiffness, copy)
         .def_property_readonly("load", &Assembler3d::load, copy);
 }
