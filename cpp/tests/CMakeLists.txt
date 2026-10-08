@@ -12,6 +12,7 @@ add_executable(iguana_tests
     embedding/nurbs/test_grid_crossings.cpp
     embedding/nurbs/test_volume_fractions.cpp
     embedding/test_embedded_boundary.cpp
+    embedding/test_ghost_faces.cpp
     embedding/test_surrogate_boundary.cpp
     fspace/test_dof_map.cpp
     fspace/test_function_space.cpp

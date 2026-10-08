@@ -5,7 +5,9 @@
 
 #include "assembler.hpp"
 
+#include <array>
 #include <concepts>
+#include <cstddef>
 #include <span>
 #include <stdexcept>
 #include <vector>
@@ -17,6 +19,7 @@
 #include "iguana/condition/nitsche_condition.hpp"
 #include "iguana/condition/penalty_condition.hpp"
 #include "iguana/element/poisson/poisson_element.hpp"
+#include "iguana/utils/multi_index.hpp"
 
 namespace iguana
 {
@@ -50,12 +53,36 @@ void shift_values(ElementValues<Basis, n>& values,
     }
 }
 
+/**
+ * @brief Differentiates the values at the points of one face across it, to
+ *        the order of the degree there
+ *
+ * @throws std::invalid_argument If the patch is not a B-spline one, whose
+ *         basis alone provides the derivatives
+ */
+template<typename Basis, std::size_t n>
+void differentiate_values(ElementValues<Basis, n>& values,
+                          std::size_t direction)
+{
+    using Scalar = typename Basis::Scalar;
+    constexpr std::size_t dim = Basis::dimension;
+
+    if constexpr (std::same_as<Basis, TensorBSpline<Scalar, dim>>) {
+        values.differentiate(direction);
+    }
+    else if constexpr (std::same_as<Basis, TensorNURBS<Scalar, dim>>) {
+        throw std::invalid_argument("Assembler: "
+                                    "a ghost penalty needs a B-spline patch");
+    }
+}
+
 } // namespace
 
 template<typename Basis, std::size_t n>
 Assembler<Basis, n>::Assembler(const FunctionSpace<Basis>& space,
-                               const Patch<Basis, n>& patch)
-    : space_(space), patch_(patch)
+                               const Patch<Basis, n>& patch,
+                               bool couple_faces)
+    : space_(space), patch_(patch), couple_faces_(couple_faces)
 {
     const DofMap& dof_map = space.dof_map();
     const int num_dofs = dof_map.num_dofs();
@@ -71,6 +98,40 @@ Assembler<Basis, n>::Assembler(const FunctionSpace<Basis>& space,
         for (const int row : dofs) {
             for (const int col : dofs)
                 entries.emplace_back(row, col, Scalar{0});
+        }
+    }
+
+    // A term on a face pairs the functions of its two cells, so with the
+    // faces coupled, every interior face of the grid adds those pairs, each
+    // face found once from the cell before it
+    if (couple_faces) {
+        std::array<int, dim> counts{};
+
+        for (std::size_t direction = 0; direction < dim; ++direction)
+            counts[direction] =
+                space.basis().grid().knots(direction).num_elements();
+
+        for (int cell = 0; cell < dof_map.num_elements(); ++cell) {
+            const std::array<int, dim> index = unflatten(cell, counts);
+            const std::span<const int> before = dof_map.dofs_on_element(cell);
+
+            for (std::size_t direction = 0; direction < dim; ++direction) {
+                std::array<int, dim> next = index;
+                next[direction] += 1;
+
+                if (next[direction] == counts[direction])
+                    continue;
+
+                const std::span<const int> after =
+                    dof_map.dofs_on_element(flatten(next, counts));
+
+                for (const int row : before) {
+                    for (const int col : after) {
+                        entries.emplace_back(row, col, Scalar{0});
+                        entries.emplace_back(col, row, Scalar{0});
+                    }
+                }
+            }
         }
     }
 
@@ -102,7 +163,7 @@ void Assembler<Basis, n>::assemble_stiffness(
         weights = weights.cwiseProduct(values.measures());
 
         element.local_stiffness(values, weights, local);
-        add_to_stiffness(cell, local);
+        add_to_stiffness(space_.dof_map().dofs_on_element(cell), local);
     }
 }
 
@@ -187,7 +248,7 @@ void Assembler<Basis, n>::assemble_stiffness(
 
         condition.local_stiffness(values, shifted, weights, physical_normals,
                                   local);
-        add_to_stiffness(cell, local);
+        add_to_stiffness(space_.dof_map().dofs_on_element(cell), local);
     }
 }
 
@@ -250,12 +311,75 @@ void Assembler<Basis, n>::assemble_load(
 }
 
 template<typename Basis, std::size_t n>
-void Assembler<Basis, n>::add_to_stiffness(int cell,
+void Assembler<Basis, n>::assemble_stiffness(
+    const GhostPenalty<Basis, n>& penalty,
+    const FaceQuadrature<Scalar, dim>& quadrature) requires (dim == 2)
+{
+    // Without the faces coupled, the pattern would grow with each new face
+    if (!couple_faces_)
+        throw std::invalid_argument("Assembler: "
+                                    "a ghost penalty needs the faces coupled");
+
+    // Only on an affine map do the jumps of the derivatives across the knot
+    // lines give those of the physical normal derivatives
+    if (!patch_.is_affine())
+        throw std::invalid_argument("Assembler: "
+                                    "a ghost penalty needs an affine patch");
+
+    const DofMap& dof_map = space_.dof_map();
+    ElementValues<Basis, n> before(patch_, penalty.flags());
+    ElementValues<Basis, n> after(patch_, penalty.flags());
+    Eigen::MatrixX<Scalar> points;
+    Eigen::MatrixX<Scalar> normals;
+    Eigen::VectorX<Scalar> measures;
+    Eigen::VectorX<Scalar> weights;
+    Eigen::MatrixX<Scalar> local;
+    std::vector<int> dofs;
+
+    for (int face = 0; face < quadrature.num_faces(); ++face) {
+        const int first = quadrature.offsets()(face);
+        const int count = quadrature.offsets()(face + 1) - first;
+        const int cell_before = quadrature.cells()(face, 0);
+        const int cell_after = quadrature.cells()(face, 1);
+        const std::size_t direction =
+            static_cast<std::size_t>(quadrature.directions()(face));
+        const int degree = patch_.basis().grid().knots(direction).degree();
+
+        // The values of each cell, with its own polynomial, differentiated
+        // across the face at the same points
+        points = quadrature.points().middleRows(first, count);
+        before.reinit(cell_before, points);
+        after.reinit(cell_after, points);
+        differentiate_values(before, direction);
+        differentiate_values(after, direction);
+
+        // Face weights, the quadrature weights times the measure of the face
+        // through the map, which is continuous across it
+        normals = quadrature.normals().middleRows(first, count);
+        Patch<Basis, n>::boundary_measure_on_element(before.tangents(),
+                                                     normals, measures);
+        weights = quadrature.weights().segment(first, count);
+        weights = weights.cwiseProduct(measures);
+
+        penalty.local_stiffness(before, after, weights, degree, local);
+
+        // The rows follow the cell before the face, then the cell after it
+        const std::span<const int> before_dofs =
+            dof_map.dofs_on_element(cell_before);
+        const std::span<const int> after_dofs =
+            dof_map.dofs_on_element(cell_after);
+        dofs.assign(before_dofs.begin(), before_dofs.end());
+        dofs.insert(dofs.end(), after_dofs.begin(), after_dofs.end());
+
+        add_to_stiffness(dofs, local);
+    }
+}
+
+template<typename Basis, std::size_t n>
+void Assembler<Basis, n>::add_to_stiffness(std::span<const int> dofs,
                                            const Eigen::MatrixX<Scalar>& local)
 {
-    // The k-th degree of freedom of the cell pairs with row k
-    const std::span<const int> dofs = space_.dof_map().dofs_on_element(cell);
-
+    // The k-th degree of freedom pairs with row k
     for (std::size_t row = 0; row < dofs.size(); ++row) {
         for (std::size_t col = 0; col < dofs.size(); ++col)
             stiffness_.coeffRef(dofs[row], dofs[col]) += local(row, col);

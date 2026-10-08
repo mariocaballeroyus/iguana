@@ -16,6 +16,7 @@
 #include "grid/tensor_grid_iterator.hpp"
 #include "embedding/cell_classification.hpp"
 #include "embedding/embedded_boundary.hpp"
+#include "embedding/ghost_faces.hpp"
 #include "embedding/nurbs/volume_fractions.hpp"
 #include "embedding/surrogate_boundary.hpp"
 #include "fspace/dof_map.hpp"
@@ -28,6 +29,7 @@
 #include "quadrature/boundary_quadrature.hpp"
 #include "quadrature/box_rule.hpp"
 #include "quadrature/domain_quadrature.hpp"
+#include "quadrature/face_quadrature.hpp"
 #include "quadrature/gauss_legendre/gauss_legendre.hpp"
 #include "quadrature/moment_fitting/moment_fitting.hpp"
 #include "quadrature/moment_fitting/moments.hpp"
@@ -43,5 +45,6 @@
 #include "condition/penalty_condition.hpp"
 #include "condition/nitsche_condition.hpp"
 #include "condition/neumann_condition.hpp"
+#include "stabilization/ghost_penalty.hpp"
 
 #endif // IGUANA_IGUANA_HPP

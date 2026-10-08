@@ -24,8 +24,14 @@ using PoissonElement3d = PoissonElement<TensorBSpline<double, 3>, 3>;
 using PenaltyCondition2d = PenaltyCondition<TensorBSpline<double, 2>, 2>;
 using NeumannCondition2d = NeumannCondition<TensorBSpline<double, 2>, 2>;
 using NitscheCondition2d = NitscheCondition<TensorBSpline<double, 2>, 2>;
+using GhostPenalty2d = GhostPenalty<TensorBSpline<double, 2>, 2>;
 using Assembler2d = Assembler<TensorBSpline<double, 2>, 2>;
 using Assembler3d = Assembler<TensorBSpline<double, 3>, 3>;
+
+/// @brief Assembly of a ghost penalty over faces, the one overload of
+///        assemble_stiffness that is not a template
+using AssembleFaces2d = void (Assembler2d::*)(const GhostPenalty2d&,
+                                              const FaceQuadrature<double, 2>&);
 
 } // namespace
 
@@ -68,12 +74,17 @@ void assembly(py::module_& module)
              py::arg("trace"), py::arg("flux"), py::arg("penalty"),
              py::keep_alive<1, 2>(), py::keep_alive<1, 3>());
 
+    py::class_<GhostPenalty2d>(module, "GhostPenalty2d")
+        .def(py::init<const Trace2d&, double>(), py::arg("trace"),
+             py::arg("penalty"), py::keep_alive<1, 2>());
+
     // An assembler keeps references to its space and patch, which Python
     // keeps alive with it. The wrapper of the solve drives it
     py::class_<Assembler2d>(module, "Assembler2d")
         .def(py::init<const FunctionSpace<TensorBSpline<double, 2>>&,
-                      const Patch<TensorBSpline<double, 2>, 2>&>(),
-             py::arg("space"), py::arg("patch"), py::keep_alive<1, 2>(),
+                      const Patch<TensorBSpline<double, 2>, 2>&, bool>(),
+             py::arg("space"), py::arg("patch"),
+             py::arg("couple_faces") = false, py::keep_alive<1, 2>(),
              py::keep_alive<1, 3>())
         .def("assemble_stiffness",
              &Assembler2d::assemble_stiffness<PoissonElement2d>,
@@ -95,6 +106,9 @@ void assembly(py::module_& module)
         .def("assemble_load",
              &Assembler2d::assemble_load<NitscheCondition2d>,
              py::arg("condition"), py::arg("quadrature"), py::arg("data"))
+        .def("assemble_stiffness",
+             static_cast<AssembleFaces2d>(&Assembler2d::assemble_stiffness),
+             py::arg("penalty"), py::arg("quadrature"))
         .def_property_readonly("stiffness", &Assembler2d::stiffness, copy)
         .def_property_readonly("load", &Assembler2d::load, copy);
 

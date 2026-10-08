@@ -20,12 +20,13 @@ from iguana.patch import (CurvePatch, PlanarPatch, SurfacePatch, VolumePatch,
                           create_surface)
 from iguana.quadrature import BoundaryQuadrature, DomainQuadrature
 from iguana.solver import solve
+from iguana.stabilization import GhostPenalty
 
 __version__ = cpp.__version__
 
 __all__ = ['Boundary', 'BoundaryQuadrature', 'CellType', 'CurvePatch',
-           'DomainQuadrature', 'FunctionSpace', 'HierarchicalGrid',
-           'NeumannCondition', 'NitscheCondition', 'PenaltyCondition',
-           'PlanarPatch', 'PoissonElement', 'SurfacePatch',
+           'DomainQuadrature', 'FunctionSpace', 'GhostPenalty',
+           'HierarchicalGrid', 'NeumannCondition', 'NitscheCondition',
+           'PenaltyCondition', 'PlanarPatch', 'PoissonElement', 'SurfacePatch',
            'SurrogateBoundary', 'VolumePatch', 'classify_cells', 'create_box',
            'create_curve', 'create_rectangle', 'create_surface', 'solve']

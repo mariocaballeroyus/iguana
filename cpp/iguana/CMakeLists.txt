@@ -9,6 +9,7 @@ add_library(iguana
     grid/tensor_grid_iterator.cpp
     embedding/cell_classification.cpp
     embedding/embedded_boundary.cpp
+    embedding/ghost_faces.cpp
     embedding/nurbs/grid_crossings.cpp
     embedding/nurbs/volume_fractions.cpp
     embedding/surrogate_boundary.cpp
@@ -20,6 +21,7 @@ add_library(iguana
     quadrature/boundary_quadrature.cpp
     quadrature/box_rule.cpp
     quadrature/domain_quadrature.cpp
+    quadrature/face_quadrature.cpp
     quadrature/gauss_legendre/gauss_legendre.cpp
     quadrature/gauss_legendre/gauss_legendre_tables.cpp
     quadrature/moment_fitting/moment_fitting.cpp
@@ -31,7 +33,8 @@ add_library(iguana
     element/poisson/poisson_element.cpp
     condition/penalty_condition.cpp
     condition/nitsche_condition.cpp
-    condition/neumann_condition.cpp)
+    condition/neumann_condition.cpp
+    stabilization/ghost_penalty.cpp)
 
 add_library(IGUANA::iguana ALIAS iguana)
 

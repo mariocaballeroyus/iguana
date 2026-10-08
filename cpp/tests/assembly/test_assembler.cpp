@@ -5,6 +5,7 @@
 
 #include <iguana/iguana.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <stdexcept>
@@ -38,12 +39,46 @@ Basis uneven()
          KnotVector<double>(2, {0., 0., 0., .7, 1., 1., 1.})}));
 }
 
-/// @brief Greville abscissa of a quadratic B-spline, (t_{i+1} + t_{i+2}) / 2
+/// @brief Basis cubic along the first direction and quadratic along the
+///        second, over the knot spans of uneven()
+Basis cubic_by_quadratic()
+{
+    return Basis(TensorGrid<double, 2>(
+        {KnotVector<double>(3, {0., 0., 0., 0., .2, .6, 1., 1., 1., 1.}),
+         KnotVector<double>(2, {0., 0., 0., .7, 1., 1., 1.})}));
+}
+
+/// @brief Greville abscissa of a B-spline of degree p, the mean of the p
+///        knots t_{i+1}, ..., t_{i+p}
 double greville(const KnotVector<double>& knot_vector, int function)
 {
     const std::vector<double>& t = knot_vector.values();
+    const int degree = knot_vector.degree();
+    double sum = 0.;
 
-    return (t[function + 1] + t[function + 2]) / 2.;
+    for (int k = 1; k <= degree; ++k)
+        sum += t[function + k];
+
+    return sum / degree;
+}
+
+/// @brief Coefficients of (xi - s)_+^p in a univariate basis of degree p,
+///        the products of (t_{i+k} - s)_+ over k = 1, ..., p by Marsden's
+///        identity, for s a simple knot or the start of the knot vector,
+///        where it gives those of (xi - s)^p
+Eigen::VectorXd truncated_power(const KnotVector<double>& knot_vector,
+                                double s)
+{
+    const std::vector<double>& t = knot_vector.values();
+    const int degree = knot_vector.degree();
+    const int count = static_cast<int>(t.size()) - degree - 1;
+    Eigen::VectorXd coefficients = Eigen::VectorXd::Ones(count);
+
+    for (int function = 0; function < count; ++function)
+        for (int k = 1; k <= degree; ++k)
+            coefficients(function) *= std::max(t[function + k] - s, 0.);
+
+    return coefficients;
 }
 
 /// @brief Rectangle [0, width] x [0, height] over a basis, whose control
@@ -63,6 +98,12 @@ iguana::Patch<Basis, 2> rectangle(const Basis& basis)
     }
 
     return {basis, points};
+}
+
+/// @brief Classification of the six cells of uneven() as one type
+CellClassification<double, 2> all_cells(CellType type)
+{
+    return CellClassification<double, 2>(std::vector<CellType>(6, type));
 }
 
 /// @brief Inside cells, except those of the last column along the first
@@ -492,5 +533,132 @@ TEST_CASE("A shifted Nitsche condition imposes a field of the space "
                 .maxCoeff() > 1e-2);
 
     REQUIRE_THROWS_AS((iguana::NitscheCondition<Basis, 2>(trace, flux, 0.)),
+                      std::invalid_argument);
+}
+
+TEST_CASE("A ghost penalty penalizes the jumps of the highest derivatives "
+          "across faces", "[assembler]")
+{
+    const Basis basis = cubic_by_quadratic();
+    const iguana::Patch<Basis, 2> patch = rectangle(basis);
+    const KnotVector<double>& along_x = basis.axis(0).knots();
+    const KnotVector<double>& along_y = basis.axis(1).knots();
+    const int count = basis.axis(0).num_functions();
+
+    // With every cell cut, every interior face is a ghost face, and with
+    // every cell inside, each function keeps its own index
+    const iguana::FunctionSpace<Basis> space(basis,
+                                             all_cells(CellType::inside));
+    const iguana::GhostFaces<double, 2> faces(basis.grid(),
+                                              all_cells(CellType::cut));
+
+    // Four points integrate the squared jumps, of degree six along the faces
+    const iguana::FaceQuadrature<double, 2> quadrature(
+        faces, iguana::GaussLegendre<double, 1>(4));
+
+    const iguana::PoissonElement<Basis, 2>::U trace;
+    const double penalty = .3;
+    const iguana::GhostPenalty<Basis, 2> ghost(trace, penalty);
+
+    iguana::Assembler<Basis, 2> assembler(space, patch, true);
+    const Eigen::Index entries = assembler.stiffness().nonZeros();
+    assembler.assemble_stiffness(ghost, quadrature);
+
+    // The faces were coupled beforehand, so the pattern holds
+    REQUIRE(assembler.stiffness().nonZeros() == entries);
+
+    const Eigen::SparseMatrix<double, Eigen::RowMajor>& stiffness =
+        assembler.stiffness();
+
+    // xi^3 eta^2 is one polynomial across every face, so it has no jumps
+    const Eigen::VectorXd xs = truncated_power(along_x, 0.);
+    const Eigen::VectorXd ys = truncated_power(along_y, 0.);
+    Eigen::VectorXd u(basis.num_functions());
+
+    for (int function = 0; function < basis.num_functions(); ++function)
+        u(function) = xs(function % count) * ys(function / count);
+
+    REQUIRE((stiffness * u).cwiseAbs().maxCoeff() < 1e-12);
+
+    // (xi - .6)_+^3 + (eta - .7)_+^2, each basis summing to one, jumps in
+    // its third derivative across xi = .6, by 3! / width^3 in physical
+    // space, and in its second across eta = .7, by 2 / height^2
+    const Eigen::VectorXd x_kink = truncated_power(along_x, .6);
+    const Eigen::VectorXd y_kink = truncated_power(along_y, .7);
+    Eigen::VectorXd v(basis.num_functions());
+
+    for (int function = 0; function < basis.num_functions(); ++function)
+        v(function) = x_kink(function % count) + y_kink(function / count);
+
+    const double x_jump = 6. / std::pow(width, 3);
+    const double y_jump = 2. / std::pow(height, 2);
+    double expected = 0.;
+
+    // gamma h^5 x_jump^2 over the faces of xi = .6, between cells of width
+    // .4 on either side, then gamma h^3 y_jump^2 over those of eta = .7,
+    // between cells of heights .7 and .3, h being the mean of their sizes
+    for (const double span : {.7, .3}) {
+        const double size = std::sqrt(width * .4 * height * span);
+        expected += penalty * std::pow(size, 5) * x_jump * x_jump * height
+                    * span;
+    }
+
+    for (const double span : {.2, .4, .4}) {
+        const double size = (std::sqrt(width * span * height * .7)
+                             + std::sqrt(width * span * height * .3)) / 2.;
+        expected += penalty * std::pow(size, 3) * y_jump * y_jump * width
+                    * span;
+    }
+
+    REQUIRE_THAT(v.dot(stiffness * v), WithinRel(expected, 1e-12));
+}
+
+TEST_CASE("A ghost penalty needs coupled faces and an affine B-spline patch",
+          "[assembler]")
+{
+    const Basis basis = cubic_by_quadratic();
+    const iguana::Patch<Basis, 2> patch = rectangle(basis);
+    const iguana::FunctionSpace<Basis> space(basis,
+                                             all_cells(CellType::inside));
+    const iguana::FaceQuadrature<double, 2> quadrature(
+        iguana::GhostFaces<double, 2>(basis.grid(), all_cells(CellType::cut)),
+        iguana::GaussLegendre<double, 1>(4));
+
+    const iguana::PoissonElement<Basis, 2>::U trace;
+    const iguana::GhostPenalty<Basis, 2> ghost(trace, 1.);
+
+    REQUIRE_THROWS_AS((iguana::GhostPenalty<Basis, 2>(trace, 0.)),
+                      std::invalid_argument);
+
+    // Faces left out of the pattern
+    iguana::Assembler<Basis, 2> uncoupled(space, patch);
+
+    REQUIRE_THROWS_AS(uncoupled.assemble_stiffness(ghost, quadrature),
+                      std::invalid_argument);
+
+    // A control point moved off the rectangle bends the map
+    iguana::PointMatrix<double, 2> bent = patch.coefficients();
+    bent(7, 1) += .1;
+    const iguana::Patch<Basis, 2> curved(basis, bent);
+    iguana::Assembler<Basis, 2> on_curved(space, curved, true);
+
+    REQUIRE_THROWS_AS(on_curved.assemble_stiffness(ghost, quadrature),
+                      std::invalid_argument);
+
+    // A NURBS patch, affine with unit weights
+    using Rational = iguana::TensorNURBS<double, 2>;
+    const Rational rational(basis,
+                            Eigen::VectorXd::Ones(basis.num_functions()));
+    const iguana::Patch<Rational, 2> rational_patch(rational,
+                                                    patch.coefficients());
+    const iguana::FunctionSpace<Rational> rational_space(
+        rational, all_cells(CellType::inside));
+    const iguana::PoissonElement<Rational, 2>::U rational_trace;
+    const iguana::GhostPenalty<Rational, 2> rational_ghost(rational_trace, 1.);
+    iguana::Assembler<Rational, 2> on_rational(rational_space, rational_patch,
+                                               true);
+
+    REQUIRE_THROWS_AS(on_rational.assemble_stiffness(rational_ghost,
+                                                     quadrature),
                       std::invalid_argument);
 }

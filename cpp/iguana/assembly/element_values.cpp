@@ -79,6 +79,31 @@ void ElementValues<Basis, n>::shift(const Eigen::MatrixX<Scalar>& shifts,
                                      values_);
 }
 
+template<typename Basis, std::size_t n>
+void ElementValues<Basis, n>::differentiate(std::size_t direction)
+    requires std::same_as<Basis, TensorBSpline<Scalar, dim>>
+{
+    const int degree = patch_.basis().grid().knots(direction).degree();
+
+    patch_.basis().deriv_on_element(first_active_, points_, direction, degree,
+                                    values_);
+
+    // |J^-T e_k| is the measure of a knot line of the direction over that of
+    // the patch, by Nanson's formula with the normal e_k
+    Eigen::MatrixX<Scalar> normals =
+        Eigen::MatrixX<Scalar>::Zero(points_.rows(), dim);
+    normals.col(static_cast<Eigen::Index>(direction)).setOnes();
+
+    Eigen::VectorX<Scalar> line_measures;
+    Patch<Basis, n>::boundary_measure_on_element(tangents_, normals,
+                                                 line_measures);
+
+    const Eigen::VectorX<Scalar> scales =
+        (line_measures.array() / measures_.array())
+            .pow(static_cast<Scalar>(degree));
+    values_ *= scales.asDiagonal();
+}
+
 template class ElementValues<TensorBSpline<double, 1>, 2>;
 template class ElementValues<TensorBSpline<double, 1>, 3>;
 template class ElementValues<TensorBSpline<double, 2>, 2>;

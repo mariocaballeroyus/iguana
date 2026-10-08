@@ -104,6 +104,27 @@ public:
     void shift(const Eigen::MatrixX<Scalar>& shifts, int order)
         requires std::same_as<Basis, TensorBSpline<Scalar, dim>>;
 
+    /**
+     * @brief Replaces the values by their derivatives across the knot lines
+     *        of a direction, of the order of the degree there, in physical
+     *        space
+     *
+     * Across a knot line of maximal continuity, these are the only
+     * derivatives that jump, as a ghost penalty compares them. The
+     * derivative of order p along the direction is scaled by |J^-T e_k|^p,
+     * the length of the physical gradient of its parameter. On an affine map
+     * its jump across the knot line is then that of the physical normal
+     * derivative of order p, and with orthogonal parametric directions, as
+     * on a rectangle, it is that derivative itself. The gradients, tangents,
+     * measures and physical gradients stay those of the last reinit()
+     *
+     * @param direction Direction across the knot lines
+     *
+     * @pre reinit() was called, and @p direction lies in [0, dim)
+     */
+    void differentiate(std::size_t direction)
+        requires std::same_as<Basis, TensorBSpline<Scalar, dim>>;
+
     /// @brief Values of the active functions, of size
     ///        (num_active, num_points)
     constexpr const Eigen::MatrixX<Scalar>& values() const noexcept

@@ -23,6 +23,7 @@ using CellClassification2d = CellClassification<double, 2>;
 using CellClassification3d = CellClassification<double, 3>;
 using EmbeddedBoundary2d = EmbeddedBoundary<double, 2>;
 using SurrogateBoundary2d = SurrogateBoundary<double, 2>;
+using GhostFaces2d = GhostFaces<double, 2>;
 using PlanarPatch = Patch<TensorBSpline<double, 2>, 2>;
 
 /// @brief Element of the grid holding each piece, in the order of the
@@ -80,6 +81,13 @@ SurrogateBoundary2d surrogate_boundary(
     return {patch.basis().grid(), classification};
 }
 
+/// @brief Faces where a ghost penalty acts among the elements of a patch
+GhostFaces2d ghost_faces(const PlanarPatch& patch,
+                         const CellClassification2d& classification)
+{
+    return {patch.basis().grid(), classification};
+}
+
 /// @brief Element of the grid holding each face, in the order of the faces
 Eigen::VectorXi face_elements(const SurrogateBoundary2d& boundary)
 {
@@ -133,6 +141,11 @@ void embedding(py::module_& module)
              py::arg("classification"))
         .def_property_readonly("num_faces", &SurrogateBoundary2d::num_faces)
         .def_property_readonly("elements", &face_elements);
+
+    py::class_<GhostFaces2d>(module, "GhostFaces2d")
+        .def(py::init(&ghost_faces), py::arg("patch"),
+             py::arg("classification"))
+        .def_property_readonly("num_faces", &GhostFaces2d::num_faces);
 }
 
 } // namespace iguana::bindings
