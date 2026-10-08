@@ -28,7 +28,9 @@ namespace iguana
  *
  * The sparsity pattern of the stiffness is fixed by the space, an entry
  * for every pair of degrees of freedom sharing an element, so it is built
- * once and each assembly adds values into it. Assemblies add up, so that
+ * once and each assembly adds values into it. With the faces coupled, it
+ * also has an entry for every pair on the two cells of an interior face of
+ * the grid, as terms on faces need. Assemblies add up, so that
  * several terms, such as a domain and a boundary one, build one system.
  * The assembler does not tell linear from nonlinear or transient problems,
  * which the elements and the solvers that drive it do
@@ -55,12 +57,16 @@ public:
      *
      * @param space Space whose degrees of freedom number the system
      * @param patch Patch that maps the points of the quadratures
+     * @param couple_faces Whether to couple the degrees of freedom of the
+     *        two cells of every interior face of the grid. Every face is
+     *        coupled, so that the pattern holds whichever faces a term acts
+     *        on, as they change with a moving boundary
      *
      * @pre @p space and @p patch share one basis, and both outlive the
      *      assembler, which keeps references to them
      */
     Assembler(const FunctionSpace<Basis>& space,
-              const Patch<Basis, n>& patch);
+              const Patch<Basis, n>& patch, bool couple_faces = false);
 
     /**
      * @brief Adds the stiffness of an element over the points of a
@@ -187,7 +193,7 @@ private:
     const Patch<Basis, n>& patch_;
 
     /// @brief Stiffness, with an entry for every pair of degrees of freedom
-    ///        sharing an element
+    ///        sharing an element, or the cells of a face when coupled
     Eigen::SparseMatrix<Scalar, Eigen::RowMajor> stiffness_;
 
     /// @brief Load

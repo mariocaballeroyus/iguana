@@ -5,7 +5,9 @@
 
 #include "assembler.hpp"
 
+#include <array>
 #include <concepts>
+#include <cstddef>
 #include <span>
 #include <stdexcept>
 #include <vector>
@@ -17,6 +19,7 @@
 #include "iguana/condition/nitsche_condition.hpp"
 #include "iguana/condition/penalty_condition.hpp"
 #include "iguana/element/poisson/poisson_element.hpp"
+#include "iguana/utils/multi_index.hpp"
 
 namespace iguana
 {
@@ -54,7 +57,8 @@ void shift_values(ElementValues<Basis, n>& values,
 
 template<typename Basis, std::size_t n>
 Assembler<Basis, n>::Assembler(const FunctionSpace<Basis>& space,
-                               const Patch<Basis, n>& patch)
+                               const Patch<Basis, n>& patch,
+                               bool couple_faces)
     : space_(space), patch_(patch)
 {
     const DofMap& dof_map = space.dof_map();
@@ -71,6 +75,40 @@ Assembler<Basis, n>::Assembler(const FunctionSpace<Basis>& space,
         for (const int row : dofs) {
             for (const int col : dofs)
                 entries.emplace_back(row, col, Scalar{0});
+        }
+    }
+
+    // A term on a face pairs the functions of its two cells, so with the
+    // faces coupled, every interior face of the grid adds those pairs, each
+    // face found once from the cell before it
+    if (couple_faces) {
+        std::array<int, dim> counts{};
+
+        for (std::size_t direction = 0; direction < dim; ++direction)
+            counts[direction] =
+                space.basis().grid().knots(direction).num_elements();
+
+        for (int cell = 0; cell < dof_map.num_elements(); ++cell) {
+            const std::array<int, dim> index = unflatten(cell, counts);
+            const std::span<const int> before = dof_map.dofs_on_element(cell);
+
+            for (std::size_t direction = 0; direction < dim; ++direction) {
+                std::array<int, dim> next = index;
+                next[direction] += 1;
+
+                if (next[direction] == counts[direction])
+                    continue;
+
+                const std::span<const int> after =
+                    dof_map.dofs_on_element(flatten(next, counts));
+
+                for (const int row : before) {
+                    for (const int col : after) {
+                        entries.emplace_back(row, col, Scalar{0});
+                        entries.emplace_back(col, row, Scalar{0});
+                    }
+                }
+            }
         }
     }
 
