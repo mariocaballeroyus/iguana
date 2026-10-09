@@ -207,6 +207,37 @@ def test_face_nitsche_condition_imposes_a_linear_field():
     assert np.abs(u - space.control_points @ GRADIENT).max() < 1e-9
 
 
+def test_face_nitsche_condition_steps_a_field_linear_in_time():
+    """With the volume fractions of the square weighting the mass like the
+    other volume terms, steps of backward Euler of u = t (b . x) from zero,
+    imposed on the faces where the fractions jump, reproduce it at every
+    degree of freedom."""
+    patch = rectangle()
+    cell_types, fractions = classify_cells(patch, square_sides())
+    space = FunctionSpace(patch, [CellType.inside] * len(cell_types))
+
+    quadrature = DomainQuadrature(patch, cell_types)
+
+    for cell_type in (CellType.inside, CellType.cut, CellType.outside):
+        quadrature.fill_gauss_legendre(cell_type, 3)
+
+    element = PoissonElement()
+    ghost = GhostPenalty(element.u, patch, cell_types, .1)
+    field = space.control_points @ GRADIENT
+    u = np.zeros(space.num_dofs)
+
+    # du/dt = b . x, and the Laplacian vanishes
+    for time in np.arange(1, 6) / 5.:
+        condition = FaceNitscheCondition(
+            element.u, patch, cell_types, square_sides(),
+            lambda x, time=time: time * (x @ GRADIENT), 40.)
+        u = solve(element, space, quadrature, lambda x: x @ GRADIENT,
+                  cell_weights=fractions, conditions=[condition],
+                  stabilizations=[ghost], step=.2, previous=u)
+
+        assert np.abs(u - time * field).max() < 1e-9
+
+
 def test_data_at_the_closest_points():
     """On a shifted quadrature, a condition takes its data where the points
     are shifted to, the sides of the square, half a cell away from the

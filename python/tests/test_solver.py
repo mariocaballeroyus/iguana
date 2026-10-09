@@ -76,6 +76,54 @@ def test_fixed_values_reproduce_a_linear_field():
     assert np.allclose(u, space.control_points @ b, rtol=0., atol=1e-12)
 
 
+def test_backward_euler_steps_a_field_linear_in_time():
+    """Backward Euler is exact for a field linear in time, and the space
+    holds a field linear in space, so steps of u = t (b . x) from zero, its
+    boundary held at the field, reproduce it at every step."""
+    patch = rectangle()
+    space = FunctionSpace(patch)
+    quadrature = gauss_quadrature(patch)
+    fixed = space.boundary_dofs
+    b = np.array([1., -2.])
+    field = space.control_points @ b
+    u = np.zeros(space.num_dofs)
+
+    # du/dt = b . x, and the Laplacian vanishes
+    for time in np.arange(1, 11) / 10.:
+        u = solve(PoissonElement(), space, quadrature, lambda x: x @ b,
+                  fixed=fixed, values=time * field[fixed], step=.1,
+                  previous=u)
+
+        assert np.allclose(u, time * field, rtol=0., atol=1e-12)
+
+
+def test_backward_euler_is_first_order_in_time():
+    """For u = t^2 (b . x), held on the boundary, the space adds no error,
+    so the error at time one is that of backward Euler, which halves with
+    the time step."""
+    patch = rectangle()
+    space = FunctionSpace(patch)
+    quadrature = gauss_quadrature(patch)
+    fixed = space.boundary_dofs
+    b = np.array([1., -2.])
+    field = space.control_points @ b
+    errors = []
+
+    for step in (.1, .05, .025):
+        u = np.zeros(space.num_dofs)
+
+        # du/dt = 2 t (b . x), and the Laplacian vanishes
+        for time in step * np.arange(1, round(1. / step) + 1):
+            u = solve(PoissonElement(), space, quadrature,
+                      lambda x, time=time: 2. * time * (x @ b), fixed=fixed,
+                      values=time**2 * field[fixed], step=step, previous=u)
+
+        errors.append(np.abs(u - field).max())
+
+    assert errors[0] / errors[1] == pytest.approx(2., rel=.01)
+    assert errors[1] / errors[2] == pytest.approx(2., rel=.01)
+
+
 def test_invalid_arguments():
     patch = rectangle()
     space = FunctionSpace(patch)
@@ -125,6 +173,23 @@ def test_invalid_arguments():
 
     with pytest.raises(ValueError):
         solve(element, space, quadrature, ones, fixed=[0, 1], values=[1.])
+
+    # A time step and the previous solution go together, the step being
+    # positive and the solution one coefficient per degree of freedom
+    previous = np.zeros(space.num_dofs)
+
+    with pytest.raises(ValueError):
+        solve(element, space, quadrature, ones, step=.1)
+
+    with pytest.raises(ValueError):
+        solve(element, space, quadrature, ones, previous=previous)
+
+    with pytest.raises(ValueError):
+        solve(element, space, quadrature, ones, step=0., previous=previous)
+
+    with pytest.raises(ValueError):
+        solve(element, space, quadrature, ones, step=.1,
+              previous=previous[:-1])
 
     # One weight short of the six cells
     with pytest.raises(ValueError):
