@@ -15,6 +15,7 @@
 #include "iguana/assembly/element_values.hpp"
 #include "iguana/basis/tensor_bspline.hpp"
 #include "iguana/basis/tensor_nurbs.hpp"
+#include "iguana/condition/face_nitsche_condition.hpp"
 #include "iguana/condition/neumann_condition.hpp"
 #include "iguana/condition/nitsche_condition.hpp"
 #include "iguana/condition/penalty_condition.hpp"
@@ -28,19 +29,20 @@ namespace
 {
 
 /**
- * @brief Expands the values at the points of one element of a shifted
- *        quadrature towards the boundary it is shifted onto
+ * @brief Expands the values at the points of one element or face of a
+ *        shifted quadrature towards the boundary it is shifted onto
+ *
+ * @tparam Quadrature BoundaryQuadrature or FaceQuadrature
  *
  * @throws std::invalid_argument If the patch is not a B-spline one, whose
  *         basis alone provides the Taylor series
  */
-template<typename Basis, std::size_t n, std::size_t dim>
+template<typename Basis, std::size_t n, typename Quadrature>
 void shift_values(ElementValues<Basis, n>& values,
-                  const BoundaryQuadrature<typename Basis::Scalar, dim>&
-                      quadrature,
-                  int first, int count)
+                  const Quadrature& quadrature, int first, int count)
 {
     using Scalar = typename Basis::Scalar;
+    constexpr std::size_t dim = Basis::dimension;
 
     if constexpr (std::same_as<Basis, TensorBSpline<Scalar, dim>>) {
         values.shift(quadrature.distances().middleRows(first, count),
@@ -248,7 +250,7 @@ void Assembler<Basis, n>::assemble_load(
 
         sources = source.segment(first, count);
         element.local_load(values, weights, sources, local);
-        add_to_load(cell, local);
+        add_to_load(space_.dof_map().dofs_on_element(cell), local);
     }
 }
 
@@ -357,7 +359,7 @@ void Assembler<Basis, n>::assemble_load(
         imposed = data.segment(first, count);
         condition.local_load(values, shifted, weights, physical_normals,
                              imposed, local);
-        add_to_load(cell, local);
+        add_to_load(space_.dof_map().dofs_on_element(cell), local);
     }
 }
 
@@ -377,7 +379,6 @@ void Assembler<Basis, n>::assemble_stiffness(
         throw std::invalid_argument("Assembler: "
                                     "a ghost penalty needs an affine patch");
 
-    const DofMap& dof_map = space_.dof_map();
     ElementValues<Basis, n> before(patch_, penalty.flags());
     ElementValues<Basis, n> after(patch_, penalty.flags());
     Eigen::MatrixX<Scalar> points;
@@ -414,15 +415,174 @@ void Assembler<Basis, n>::assemble_stiffness(
 
         penalty.local_stiffness(before, after, weights, degree, local);
 
-        // The rows follow the cell before the face, then the cell after it
-        const std::span<const int> before_dofs =
-            dof_map.dofs_on_element(cell_before);
-        const std::span<const int> after_dofs =
-            dof_map.dofs_on_element(cell_after);
-        dofs.assign(before_dofs.begin(), before_dofs.end());
-        dofs.insert(dofs.end(), after_dofs.begin(), after_dofs.end());
-
+        face_dofs(cell_before, cell_after, dofs);
         add_to_stiffness(dofs, local);
+    }
+}
+
+template<typename Basis, std::size_t n>
+template<std::derived_from<FaceCondition<Basis, n>> C>
+void Assembler<Basis, n>::assemble_stiffness(
+    const C& condition, const FaceQuadrature<Scalar, dim>& quadrature,
+    const Eigen::VectorX<Scalar>& cell_weights) requires (dim == 2)
+{
+    // Without the faces coupled, the pattern would grow with each new face
+    if (!couple_faces_)
+        throw std::invalid_argument("Assembler: "
+                                    "a face condition needs the faces "
+                                    "coupled");
+
+    if (cell_weights.size() != space_.dof_map().num_elements())
+        throw std::invalid_argument("Assembler: "
+                                    "the cell weights must have one value "
+                                    "per element");
+
+    ElementValues<Basis, n> before(patch_, condition.flags());
+    ElementValues<Basis, n> after(patch_, condition.flags());
+    ElementValues<Basis, n> shifted_before(patch_, condition.flags());
+    ElementValues<Basis, n> shifted_after(patch_, condition.flags());
+    Eigen::MatrixX<Scalar> points;
+    Eigen::MatrixX<Scalar> normals;
+    Eigen::VectorX<Scalar> measures;
+    Eigen::VectorX<Scalar> weights;
+    PointMatrix<Scalar, n> physical_normals;
+    Eigen::MatrixX<Scalar> local;
+    std::vector<int> dofs;
+
+    for (int face = 0; face < quadrature.num_faces(); ++face) {
+        const int cell_before = quadrature.cells()(face, 0);
+        const int cell_after = quadrature.cells()(face, 1);
+        const std::array<Scalar, 2> side_weights{cell_weights(cell_before),
+                                                 cell_weights(cell_after)};
+
+        // Without a jump of the test functions, the condition adds nothing
+        if (side_weights[0] == side_weights[1])
+            continue;
+
+        const int first = quadrature.offsets()(face);
+        const int count = quadrature.offsets()(face + 1) - first;
+
+        // The values of each cell, with its own polynomial, at the same
+        // points, and on a shifted quadrature also expanded towards the
+        // boundary along the same distances
+        points = quadrature.points().middleRows(first, count);
+        before.reinit(cell_before, points);
+        after.reinit(cell_after, points);
+
+        if (quadrature.is_shifted()) {
+            shifted_before.reinit(cell_before, points);
+            shifted_after.reinit(cell_after, points);
+            shift_values(shifted_before, quadrature, first, count);
+            shift_values(shifted_after, quadrature, first, count);
+        }
+
+        const bool shifted = quadrature.is_shifted();
+
+        // Face weights and physical normals through the map, which is
+        // continuous across the face, from the cell before to the cell after
+        normals = quadrature.normals().middleRows(first, count);
+        Patch<Basis, n>::boundary_measure_on_element(before.tangents(),
+                                                     normals, measures);
+        Patch<Basis, n>::physical_normal_on_element(before.tangents(),
+                                                    normals,
+                                                    physical_normals);
+        weights = quadrature.weights().segment(first, count);
+        weights = weights.cwiseProduct(measures);
+
+        condition.local_stiffness(before, after,
+                                  shifted ? shifted_before : before,
+                                  shifted ? shifted_after : after,
+                                  side_weights, weights, physical_normals,
+                                  local);
+
+        face_dofs(cell_before, cell_after, dofs);
+        add_to_stiffness(dofs, local);
+    }
+}
+
+template<typename Basis, std::size_t n>
+template<std::derived_from<FaceCondition<Basis, n>> C>
+void Assembler<Basis, n>::assemble_load(
+    const C& condition, const FaceQuadrature<Scalar, dim>& quadrature,
+    const Eigen::VectorX<Scalar>& data,
+    const Eigen::VectorX<Scalar>& cell_weights) requires (dim == 2)
+{
+    if (data.size() != quadrature.num_points())
+        throw std::invalid_argument("Assembler: "
+                                    "the data must have one value per point");
+
+    // Without the faces coupled, the pattern would grow with each new face
+    if (!couple_faces_)
+        throw std::invalid_argument("Assembler: "
+                                    "a face condition needs the faces "
+                                    "coupled");
+
+    if (cell_weights.size() != space_.dof_map().num_elements())
+        throw std::invalid_argument("Assembler: "
+                                    "the cell weights must have one value "
+                                    "per element");
+
+    ElementValues<Basis, n> before(patch_, condition.flags());
+    ElementValues<Basis, n> after(patch_, condition.flags());
+    ElementValues<Basis, n> shifted_before(patch_, condition.flags());
+    ElementValues<Basis, n> shifted_after(patch_, condition.flags());
+    Eigen::MatrixX<Scalar> points;
+    Eigen::MatrixX<Scalar> normals;
+    Eigen::VectorX<Scalar> measures;
+    Eigen::VectorX<Scalar> weights;
+    PointMatrix<Scalar, n> physical_normals;
+    Eigen::VectorX<Scalar> imposed;
+    Eigen::VectorX<Scalar> local;
+    std::vector<int> dofs;
+
+    for (int face = 0; face < quadrature.num_faces(); ++face) {
+        const int cell_before = quadrature.cells()(face, 0);
+        const int cell_after = quadrature.cells()(face, 1);
+        const std::array<Scalar, 2> side_weights{cell_weights(cell_before),
+                                                 cell_weights(cell_after)};
+
+        // Without a jump of the test functions, the condition adds nothing
+        if (side_weights[0] == side_weights[1])
+            continue;
+
+        const int first = quadrature.offsets()(face);
+        const int count = quadrature.offsets()(face + 1) - first;
+
+        // The values of each cell, with its own polynomial, at the same
+        // points, and on a shifted quadrature also expanded towards the
+        // boundary along the same distances
+        points = quadrature.points().middleRows(first, count);
+        before.reinit(cell_before, points);
+        after.reinit(cell_after, points);
+
+        if (quadrature.is_shifted()) {
+            shifted_before.reinit(cell_before, points);
+            shifted_after.reinit(cell_after, points);
+            shift_values(shifted_before, quadrature, first, count);
+            shift_values(shifted_after, quadrature, first, count);
+        }
+
+        const bool shifted = quadrature.is_shifted();
+
+        // Face weights and physical normals through the map, which is
+        // continuous across the face, from the cell before to the cell after
+        normals = quadrature.normals().middleRows(first, count);
+        Patch<Basis, n>::boundary_measure_on_element(before.tangents(),
+                                                     normals, measures);
+        Patch<Basis, n>::physical_normal_on_element(before.tangents(),
+                                                    normals,
+                                                    physical_normals);
+        weights = quadrature.weights().segment(first, count);
+        weights = weights.cwiseProduct(measures);
+
+        imposed = data.segment(first, count);
+        condition.local_load(before, after,
+                             shifted ? shifted_before : before,
+                             shifted ? shifted_after : after, side_weights,
+                             weights, physical_normals, imposed, local);
+
+        face_dofs(cell_before, cell_after, dofs);
+        add_to_load(dofs, local);
     }
 }
 
@@ -438,14 +598,25 @@ void Assembler<Basis, n>::add_to_stiffness(std::span<const int> dofs,
 }
 
 template<typename Basis, std::size_t n>
-void Assembler<Basis, n>::add_to_load(int cell,
+void Assembler<Basis, n>::add_to_load(std::span<const int> dofs,
                                       const Eigen::VectorX<Scalar>& local)
 {
-    // The k-th degree of freedom of the cell pairs with row k
-    const std::span<const int> dofs = space_.dof_map().dofs_on_element(cell);
-
+    // The k-th degree of freedom pairs with row k
     for (std::size_t row = 0; row < dofs.size(); ++row)
         load_(dofs[row]) += local(row);
+}
+
+template<typename Basis, std::size_t n>
+void Assembler<Basis, n>::face_dofs(int before, int after,
+                                    std::vector<int>& dofs) const
+{
+    const std::span<const int> before_dofs =
+        space_.dof_map().dofs_on_element(before);
+    const std::span<const int> after_dofs =
+        space_.dof_map().dofs_on_element(after);
+
+    dofs.assign(before_dofs.begin(), before_dofs.end());
+    dofs.insert(dofs.end(), after_dofs.begin(), after_dofs.end());
 }
 
 template<typename Basis, std::size_t n>
@@ -558,5 +729,21 @@ template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
     const NitscheCondition<TensorNURBS<double, 2>, 2>&,
     const BoundaryQuadrature<double, 2>&, const Eigen::VectorX<double>&);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_stiffness(
+    const FaceNitscheCondition<TensorBSpline<double, 2>, 2>&,
+    const FaceQuadrature<double, 2>&, const Eigen::VectorX<double>&);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_stiffness(
+    const FaceNitscheCondition<TensorNURBS<double, 2>, 2>&,
+    const FaceQuadrature<double, 2>&, const Eigen::VectorX<double>&);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
+    const FaceNitscheCondition<TensorBSpline<double, 2>, 2>&,
+    const FaceQuadrature<double, 2>&, const Eigen::VectorX<double>&,
+    const Eigen::VectorX<double>&);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
+    const FaceNitscheCondition<TensorNURBS<double, 2>, 2>&,
+    const FaceQuadrature<double, 2>&, const Eigen::VectorX<double>&,
+    const Eigen::VectorX<double>&);
 
 } // namespace iguana
