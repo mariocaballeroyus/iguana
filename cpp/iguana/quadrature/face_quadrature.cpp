@@ -6,7 +6,11 @@
 #include "face_quadrature.hpp"
 
 #include <cstddef>
+#include <stdexcept>
 
+#include "iguana/basis/tensor_bspline.hpp"
+#include "iguana/basis/tensor_nurbs.hpp"
+#include "iguana/geometry/boundary_projection.hpp"
 #include "iguana/quadrature/box_rule.hpp"
 
 namespace iguana
@@ -81,6 +85,41 @@ void FaceQuadrature<T, d>::place(const Faces& faces,
     }
 }
 
+template<std::floating_point T, std::size_t d>
+template<typename Basis>
+    requires (Basis::dimension == d)
+void FaceQuadrature<T, d>::shift(const Patch<Basis, 2>& patch,
+                                 const Boundary<T, 2>& boundary, int order)
+{
+    if (order < 0)
+        throw std::invalid_argument("FaceQuadrature: "
+                                    "the order must be non-negative");
+
+    if (!patch.is_affine())
+        throw std::invalid_argument("FaceQuadrature: "
+                                    "the map of the patch must be affine");
+
+    // Physical positions of the points through the map, x = a + A xi
+    PointMatrix<T, 2> positions = points_ * patch.linear_part().transpose();
+    positions.rowwise() += patch.offset().transpose();
+
+    // Closest points on the boundary, pulled back into parameter space
+    const BoundaryProjection<T> projection =
+        project_points(boundary, positions);
+    PointMatrix<T, 2> parameters;
+    patch.invert_points(projection.positions, parameters);
+
+    distances_ = parameters - points_;
+    order_ = order;
+}
+
 template class FaceQuadrature<double, 2>;
+
+template void FaceQuadrature<double, 2>::shift(
+    const Patch<TensorBSpline<double, 2>, 2>&, const Boundary<double, 2>&,
+    int);
+template void FaceQuadrature<double, 2>::shift(
+    const Patch<TensorNURBS<double, 2>, 2>&, const Boundary<double, 2>&,
+    int);
 
 } // namespace iguana

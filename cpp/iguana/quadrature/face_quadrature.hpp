@@ -13,6 +13,8 @@
 
 #include "iguana/embedding/ghost_faces.hpp"
 #include "iguana/embedding/jump_faces.hpp"
+#include "iguana/geometry/boundary.hpp"
+#include "iguana/geometry/patch.hpp"
 #include "iguana/quadrature/gauss_legendre/gauss_legendre.hpp"
 
 namespace iguana
@@ -69,6 +71,35 @@ public:
     FaceQuadrature(const JumpFaces<T, d>& faces,
                    const GaussLegendre<T, 1>& rule);
 
+    /**
+     * @brief Shifts the quadrature onto a boundary, keeping the distance
+     *        from each point to its closest point there and the order of the
+     *        Taylor series that cross it
+     *
+     * As for a BoundaryQuadrature, the points stay where they are, and so do
+     * the weights, normals and cells. Both cells of a face expand their own
+     * functions along the same distance. The closest points are found in
+     * physical space and pulled back through the map of the patch
+     *
+     * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
+     *
+     * @param patch Patch whose grid holds the points
+     * @param boundary Boundary of curves in the physical space of the patch,
+     *        the true one
+     * @param order Highest total order of the Taylor series, as in
+     *        ElementValues::shift()
+     *
+     * @throws std::invalid_argument If the order is negative, if the map of
+     *         the patch is not affine, or if the boundary has nothing to
+     *         project onto, as for project_points()
+     *
+     * @pre The points lie on the grid of @p patch
+     */
+    template<typename Basis>
+        requires (Basis::dimension == d)
+    void shift(const Patch<Basis, 2>& patch, const Boundary<T, 2>& boundary,
+               int order);
+
     /// @brief Number of faces
     constexpr int num_faces() const noexcept
     { return static_cast<int>(directions_.size()); }
@@ -104,6 +135,21 @@ public:
     constexpr const Eigen::MatrixX<T>& normals() const noexcept
     { return normals_; }
 
+    /// @brief Whether the quadrature is shifted onto a boundary
+    constexpr bool is_shifted() const noexcept
+    { return distances_.rows() > 0; }
+
+    /// @brief Distance from each point to its closest point on the boundary
+    ///        the quadrature is shifted onto, in parameter space, with size
+    ///        (num_points, d), empty unless shifted
+    constexpr const Eigen::MatrixX<T>& distances() const noexcept
+    { return distances_; }
+
+    /// @brief Highest total order of the Taylor series of a shifted
+    ///        quadrature, zero unless shifted
+    constexpr int order() const noexcept
+    { return order_; }
+
 private:
     /**
      * @brief Places a rule on every face of a list, the work of the
@@ -131,6 +177,13 @@ private:
 
     /// @brief Unit normals in parameter space, with size (num_points, d)
     Eigen::MatrixX<T> normals_;
+
+    /// @brief Distance from each point to its closest point, empty unless
+    ///        shifted
+    Eigen::MatrixX<T> distances_;
+
+    /// @brief Highest total order of the Taylor series
+    int order_ = 0;
 };
 
 } // namespace iguana
