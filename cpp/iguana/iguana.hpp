@@ -17,6 +17,7 @@
 #include "embedding/cell_classification.hpp"
 #include "embedding/embedded_boundary.hpp"
 #include "embedding/ghost_faces.hpp"
+#include "embedding/jump_faces.hpp"
 #include "embedding/nurbs/volume_fractions.hpp"
 #include "embedding/surrogate_boundary.hpp"
 #include "fspace/dof_map.hpp"
@@ -42,9 +43,11 @@
 #include "element/poisson/poisson_traces.hpp"
 #include "element/trace.hpp"
 #include "condition/condition.hpp"
+#include "condition/face_condition.hpp"
 #include "condition/penalty_condition.hpp"
 #include "condition/nitsche_condition.hpp"
 #include "condition/neumann_condition.hpp"
+#include "condition/face_nitsche_condition.hpp"
 #include "stabilization/ghost_penalty.hpp"
 
 #endif // IGUANA_IGUANA_HPP

@@ -24,6 +24,7 @@ using CellClassification3d = CellClassification<double, 3>;
 using EmbeddedBoundary2d = EmbeddedBoundary<double, 2>;
 using SurrogateBoundary2d = SurrogateBoundary<double, 2>;
 using GhostFaces2d = GhostFaces<double, 2>;
+using JumpFaces2d = JumpFaces<double, 2>;
 using PlanarPatch = Patch<TensorBSpline<double, 2>, 2>;
 
 /// @brief Element of the grid holding each piece, in the order of the
@@ -88,6 +89,14 @@ GhostFaces2d ghost_faces(const PlanarPatch& patch,
     return {patch.basis().grid(), classification};
 }
 
+/// @brief Faces across which the volume fraction may jump among the
+///        elements of a patch
+JumpFaces2d jump_faces(const PlanarPatch& patch,
+                       const CellClassification2d& classification)
+{
+    return {patch.basis().grid(), classification};
+}
+
 /// @brief Element of the grid holding each face, in the order of the faces
 Eigen::VectorXi face_elements(const SurrogateBoundary2d& boundary)
 {
@@ -146,6 +155,11 @@ void embedding(py::module_& module)
         .def(py::init(&ghost_faces), py::arg("patch"),
              py::arg("classification"))
         .def_property_readonly("num_faces", &GhostFaces2d::num_faces);
+
+    py::class_<JumpFaces2d>(module, "JumpFaces2d")
+        .def(py::init(&jump_faces), py::arg("patch"),
+             py::arg("classification"))
+        .def_property_readonly("num_faces", &JumpFaces2d::num_faces);
 }
 
 } // namespace iguana::bindings

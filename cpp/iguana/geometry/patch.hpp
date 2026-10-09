@@ -230,6 +230,10 @@ public:
     constexpr bool is_affine() const noexcept
     { return affine_; }
 
+    /// @brief Offset a of the map if it is affine, zero otherwise
+    constexpr const Eigen::Vector<Scalar, n>& offset() const noexcept
+    { return offset_; }
+
     /// @brief Linear part A of the map if it is affine, one column per
     ///        direction, zero otherwise
     constexpr const Eigen::Matrix<Scalar, n, dim>& linear_part() const

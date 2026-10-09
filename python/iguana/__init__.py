@@ -9,8 +9,8 @@ types that hold their C++ instance as _cpp_object
 
 from iguana import cpp
 from iguana.boundary import Boundary
-from iguana.condition import (NeumannCondition, NitscheCondition,
-                              PenaltyCondition)
+from iguana.condition import (FaceNitscheCondition, NeumannCondition,
+                              NitscheCondition, PenaltyCondition)
 from iguana.element import PoissonElement
 from iguana.embedding import CellType, SurrogateBoundary, classify_cells
 from iguana.fspace import FunctionSpace
@@ -25,8 +25,9 @@ from iguana.stabilization import GhostPenalty
 __version__ = cpp.__version__
 
 __all__ = ['Boundary', 'BoundaryQuadrature', 'CellType', 'CurvePatch',
-           'DomainQuadrature', 'FunctionSpace', 'GhostPenalty',
-           'HierarchicalGrid', 'NeumannCondition', 'NitscheCondition',
-           'PenaltyCondition', 'PlanarPatch', 'PoissonElement', 'SurfacePatch',
-           'SurrogateBoundary', 'VolumePatch', 'classify_cells', 'create_box',
-           'create_curve', 'create_rectangle', 'create_surface', 'solve']
+           'DomainQuadrature', 'FaceNitscheCondition', 'FunctionSpace',
+           'GhostPenalty', 'HierarchicalGrid', 'NeumannCondition',
+           'NitscheCondition', 'PenaltyCondition', 'PlanarPatch',
+           'PoissonElement', 'SurfacePatch', 'SurrogateBoundary',
+           'VolumePatch', 'classify_cells', 'create_box', 'create_curve',
+           'create_rectangle', 'create_surface', 'solve']

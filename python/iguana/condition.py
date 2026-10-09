@@ -7,19 +7,25 @@ A condition prescribes data along a boundary through a trace of an element:
 a penalty imposes values on the trace, Nitsche's method imposes them
 consistently through the flux conjugate to the trace, and a Neumann
 condition loads the trace of the test functions with natural data, such as
-a flux. It holds its data and where it applies, and the solve assembles it
-with the element.
+a flux. Nitsche's method on faces imposes them across the faces of the cells
+where their weights jump, as the generalized shifted boundary method does.
+It holds its data and where it applies, and the solve assembles it with the
+element.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 import numpy as np
 import numpy.typing as npt
 
 from iguana import cpp as _cpp
+from iguana.boundary import Boundary
 from iguana.element import PoissonElement
+from iguana.embedding import CellType
+from iguana.grid import HierarchicalGrid
+from iguana.patch import PlanarPatch
 from iguana.quadrature import BoundaryQuadrature
 
 
@@ -286,6 +292,153 @@ class NeumannCondition:
 
     def __repr__(self) -> str:
         return f'NeumannCondition({self._trace!r})'
+
+
+class FaceNitscheCondition:
+    """Values imposed on a trace of an element by Nitsche's method across the
+    faces of a patch where the weights of the cells jump, as the
+    generalized shifted boundary method does."""
+
+    def __init__(
+        self,
+        trace: PoissonElement.U,
+        patch: PlanarPatch,
+        cell_types: Sequence[CellType],
+        boundary: Boundary,
+        values: (npt.ArrayLike
+                 | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
+        penalty: float,
+        order: int | None = None,
+    ) -> None:
+        """Initialize the condition imposing values on a trace.
+
+        The condition acts on the faces between cells whose weights, the
+        volume fractions the solve takes as `cell_weights`, may differ:
+        those between cells of different types or between two cut cells.
+        On each, the jump of the weights scales Nitsche's terms, over the
+        means of the two cells weighted by them, and each cell expands its
+        own functions to the closest point on the boundary of every face
+        point, where the values apply. With weights of one inside and zero
+        elsewhere, it is Nitsche's condition on the surrogate boundary.
+
+        Only faces between two cells carry it, so the cells of non-zero
+        weight must stay off the edge of the patch.
+
+        Args:
+            trace: The trace whose values are imposed, such as
+                `PoissonElement().u`.
+            patch: The background patch, a planar patch with an affine map,
+                whose elements are the cells.
+            cell_types: The type of each element of the patch, with the
+                first direction running fastest.
+            boundary: The true boundary, made of curves in the plane of the
+                patch, where the values apply.
+            values: The value imposed at the closest point of each face
+                point, or a function that takes those closest points, of
+                shape `(num_points, 2)`, and returns their values.
+            penalty: The penalty, positive, which the size of the cells
+                scales, as for `NitscheCondition`.
+            order: Total order of the Taylor expansion towards the
+                boundary, nonnegative. Without it, the highest degree of
+                the patch.
+
+        Raises:
+            TypeError: If the trace is not the trace of an element, if the
+                patch is not a planar patch, or if the boundary is not a
+                boundary.
+            ValueError: If there is not one cell type per element, if the
+                map of the patch is not affine, if the values are not one per
+                point, if the penalty is not positive, or if the order is
+                negative.
+        """
+        if not isinstance(trace, PoissonElement.U):
+            raise TypeError('the trace must be the trace of an element')
+
+        if not isinstance(patch, PlanarPatch):
+            raise TypeError('the patch must be a planar patch')
+
+        if not isinstance(boundary, Boundary):
+            raise TypeError('the boundary must be a boundary')
+
+        cell_types = list(cell_types)
+        num_elements = HierarchicalGrid(patch.degrees,
+                                        patch.knots).num_elements
+
+        if len(cell_types) != num_elements:
+            raise ValueError('there must be one cell type per cell')
+
+        if not penalty > 0.:
+            raise ValueError('the penalty must be positive')
+
+        if order is None:
+            order = max(patch.degrees)
+
+        # The faces between cells whose weights may jump, with as many
+        # points as on those of a ghost penalty, shifted onto the boundary
+        faces = _cpp.JumpFaces2d(
+            patch=patch._cpp_object,
+            classification=_cpp.CellClassification2d(cell_types))
+        quadrature = _cpp.FaceQuadrature2d(
+            faces=faces, num_points=max(patch.degrees) + 1)
+        quadrature.shift(patch._cpp_object, boundary._cpp_object, order)
+
+        if callable(values):
+            values = values(quadrature.projections(patch._cpp_object))
+
+        values = np.asarray(values, dtype=np.float64)
+
+        if values.shape != (quadrature.num_points,):
+            raise ValueError('the values must be one per point')
+
+        self._trace = trace
+        self._patch = patch
+        self._quadrature = quadrature
+        self._values = values
+        self._penalty = float(penalty)
+
+    @property
+    def trace(self) -> PoissonElement.U:
+        """The trace whose values are imposed."""
+        return self._trace
+
+    @property
+    def patch(self) -> PlanarPatch:
+        """The background patch, whose cells the faces separate."""
+        return self._patch
+
+    @property
+    def num_faces(self) -> int:
+        """Number of faces between cells whose weights may jump."""
+        return self._quadrature.num_faces
+
+    @property
+    def values(self) -> npt.NDArray[np.float64]:
+        """Value imposed at the closest point of each face point, of shape
+        `(num_points,)`."""
+        return self._values.copy()
+
+    @property
+    def penalty(self) -> float:
+        """The penalty."""
+        return self._penalty
+
+    def _assemble(self, assembler: _cpp.Assembler2d,
+                  cell_weights: npt.NDArray[np.float64]) -> None:
+        """Add the stiffness and load of the condition into the compiled
+        assembler of a planar space, built with its faces coupled, with the
+        weights of the cells."""
+        condition = _cpp.FaceNitscheCondition2d(self._trace._cpp_trace(),
+                                                self._trace._cpp_flux(),
+                                                self._penalty)
+
+        assembler.assemble_stiffness(condition, self._quadrature,
+                                     cell_weights)
+        assembler.assemble_load(condition, self._quadrature, self._values,
+                                cell_weights)
+
+    def __repr__(self) -> str:
+        return (f'FaceNitscheCondition({self._trace!r}, '
+                f'penalty={self._penalty})')
 
 
 def _values(

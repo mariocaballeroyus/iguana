@@ -19,8 +19,8 @@ from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import spsolve
 
 from iguana import cpp as _cpp
-from iguana.condition import (NeumannCondition, NitscheCondition,
-                              PenaltyCondition)
+from iguana.condition import (FaceNitscheCondition, NeumannCondition,
+                              NitscheCondition, PenaltyCondition)
 from iguana.element import PoissonElement
 from iguana.fspace import FunctionSpace
 from iguana.patch import PlanarPatch, VolumePatch
@@ -38,7 +38,7 @@ def solve(
     values: npt.ArrayLike | None = None,
     cell_weights: npt.ArrayLike | None = None,
     conditions: Sequence[PenaltyCondition | NitscheCondition
-                         | NeumannCondition] = (),
+                         | NeumannCondition | FaceNitscheCondition] = (),
     stabilizations: Sequence[GhostPenalty] = (),
 ) -> npt.NDArray[np.float64]:
     """Solve the problem of an element on a space.
@@ -69,7 +69,9 @@ def solve(
             cell weighs one.
         conditions: Conditions along boundaries in the patch of the
             space, penalties or Nitsche conditions imposing values, or
-            Neumann conditions loading fluxes, which need a planar patch.
+            Neumann conditions loading fluxes, or Nitsche conditions on
+            the faces where the cell weights jump, which need them. All
+            need a planar patch.
         stabilizations: Ghost penalties across the faces of the cells of
             the patch of the space, which need a planar patch with an
             affine map. They extend the field beyond the physical domain,
@@ -82,16 +84,17 @@ def solve(
         TypeError: If the element is not a Poisson element, if the space
             is not a function space on a planar or volume patch, if the
             quadrature is not a domain quadrature, if a condition is neither
-            a penalty, a Nitsche nor a Neumann condition, if a
-            stabilization is not a ghost penalty, or if either is given on a
-            volume patch.
+            a penalty, a Nitsche, a Neumann nor a face Nitsche condition, if
+            a stabilization is not a ghost penalty, or if either is given on
+            a volume patch.
         ValueError: If the quadrature, the boundary of a condition or the
             cells of a stabilization do not lie on the elements of the patch
             of the space, if a stabilization is given on a patch whose map
             is not affine, if the source does not give one value per point,
             if a fixed degree of freedom lies outside the space or repeats,
-            if there is not one value per fixed one, or if the cell weights
-            are not one per cell.
+            if there is not one value per fixed one, if the cell weights are
+            not one per cell, or if a face Nitsche condition is given
+            without them.
     """
     stiffness, load = _assemble(element, space, quadrature, source,
                                 cell_weights, conditions, stabilizations)
@@ -117,7 +120,7 @@ def _assemble(
              | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
     cell_weights: npt.ArrayLike | None,
     conditions: Sequence[PenaltyCondition | NitscheCondition
-                         | NeumannCondition],
+                         | NeumannCondition | FaceNitscheCondition],
     stabilizations: Sequence[GhostPenalty],
 ) -> tuple[csr_matrix, npt.NDArray[np.float64]]:
     """Stiffness and load of an element over a quadrature, of conditions
@@ -132,10 +135,15 @@ def _assemble(
     patch = space.patch
     stabilizations = list(stabilizations)
 
+    conditions = list(conditions)
+    on_faces = any(isinstance(condition, FaceNitscheCondition)
+                   for condition in conditions)
+
     if isinstance(patch, PlanarPatch):
         # Terms across faces couple the cells on either side
         assembler = _cpp.Assembler2d(space._cpp_object, patch._cpp_object,
-                                     couple_faces=bool(stabilizations))
+                                     couple_faces=(on_faces
+                                                   or bool(stabilizations)))
         cpp_element = element._cpp_element(2)
     elif isinstance(patch, VolumePatch):
         assembler = _cpp.Assembler3d(space._cpp_object, patch._cpp_object)
@@ -165,6 +173,10 @@ def _assemble(
     # The quadrature lies on the elements of the patch, its cells
     num_cells = quadrature.grid.num_elements
 
+    # Without weights, every face condition would see no jump
+    if cell_weights is None and on_faces:
+        raise ValueError('face Nitsche conditions need cell weights')
+
     if cell_weights is None:
         cell_weights = np.ones(num_cells)
 
@@ -180,13 +192,22 @@ def _assemble(
 
     for condition in conditions:
         if not isinstance(condition, (PenaltyCondition, NitscheCondition,
-                                      NeumannCondition)):
-            raise TypeError('the conditions must be penalty, Nitsche or '
-                            'Neumann conditions')
+                                      NeumannCondition,
+                                      FaceNitscheCondition)):
+            raise TypeError('the conditions must be penalty, Nitsche, '
+                            'Neumann or face Nitsche conditions')
 
-        # Boundary quadratures lie in the plane
+        # Boundaries and faces lie in the plane
         if not isinstance(patch, PlanarPatch):
             raise TypeError('conditions need a planar patch')
+
+        if isinstance(condition, FaceNitscheCondition):
+            if condition.patch is not patch:
+                raise ValueError('the faces of a condition must lie on the '
+                                 'patch of the space')
+
+            condition._assemble(assembler, cell_weights)
+            continue
 
         if condition.quadrature.patch is not patch:
             raise ValueError('the boundary of a condition must lie on the '

@@ -13,6 +13,7 @@ add_executable(iguana_tests
     embedding/nurbs/test_volume_fractions.cpp
     embedding/test_embedded_boundary.cpp
     embedding/test_ghost_faces.cpp
+    embedding/test_jump_faces.cpp
     embedding/test_surrogate_boundary.cpp
     fspace/test_dof_map.cpp
     fspace/test_function_space.cpp
@@ -20,6 +21,7 @@ add_executable(iguana_tests
     geometry/test_patch.cpp
     quadrature/test_boundary_quadrature.cpp
     quadrature/test_domain_quadrature.cpp
+    quadrature/test_face_quadrature.cpp
     quadrature/gauss_legendre/test_gauss_legendre.cpp
     quadrature/moment_fitting/test_moment_fitting.cpp
     quadrature/moment_fitting/test_moments.cpp

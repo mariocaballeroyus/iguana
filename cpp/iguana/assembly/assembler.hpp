@@ -9,11 +9,13 @@
 #include <concepts>
 #include <cstddef>
 #include <span>
+#include <vector>
 
 #include <Eigen/Core>
 #include <Eigen/SparseCore>
 
 #include "iguana/condition/condition.hpp"
+#include "iguana/condition/face_condition.hpp"
 #include "iguana/element/element.hpp"
 #include "iguana/fspace/function_space.hpp"
 #include "iguana/geometry/patch.hpp"
@@ -239,6 +241,73 @@ public:
                             const FaceQuadrature<Scalar, dim>& quadrature)
         requires (dim == 2);
 
+    /**
+     * @brief Adds the stiffness of a face condition over the points of a
+     *        face quadrature, with the test functions of each cell weighted
+     *
+     * On each face whose two cells weigh differently, the values of the
+     * cells before and after it, each with its own polynomial, are filled
+     * at its points and, on a shifted quadrature, also expanded towards the
+     * boundary it is shifted onto. The patch maps the weights of the
+     * quadrature into face weights and its normals into physical ones,
+     * pointing from the cell before to the cell after. Faces whose cells
+     * weigh the same carry no jump of the test functions and are skipped.
+     * Only interior faces carry the condition, so the cells of non-zero
+     * weight must stay off the edge of the grid, or take conditions of
+     * their own there
+     *
+     * @tparam C Face condition, a final class derived from FaceCondition
+     *
+     * @param condition Face condition whose local stiffness is added
+     * @param quadrature Quadrature over interior faces of the grid of the
+     *        basis
+     * @param cell_weights Weight of the test functions on each element of
+     *        the grid, in its numbering
+     *
+     * @throws std::invalid_argument If the faces are not coupled, if
+     *         @p cell_weights does not have one value per element of the
+     *         grid, or if @p quadrature is shifted and the patch is not a
+     *         B-spline one
+     *
+     * @pre @p quadrature is built on the grid of the basis, and every cell
+     *      of a face across which the weights jump has its degrees of
+     *      freedom in the space
+     */
+    template<std::derived_from<FaceCondition<Basis, n>> C>
+    void assemble_stiffness(const C& condition,
+                            const FaceQuadrature<Scalar, dim>& quadrature,
+                            const Eigen::VectorX<Scalar>& cell_weights)
+        requires (dim == 2);
+
+    /**
+     * @brief Adds the load of a face condition over the points of a face
+     *        quadrature, from data given at them, with the test functions of
+     *        each cell weighted
+     *
+     * @tparam C Face condition, a final class derived from FaceCondition
+     *
+     * @param condition Face condition whose local load is added
+     * @param quadrature Quadrature over interior faces of the grid of the
+     *        basis
+     * @param data Value the condition imposes at each point of the
+     *        quadrature, in its order, given at its closest point on a
+     *        shifted quadrature
+     * @param cell_weights Weight of the test functions on each element of
+     *        the grid, in its numbering
+     *
+     * @throws std::invalid_argument If @p data does not have one value per
+     *         point of @p quadrature, or as for the stiffness of a face
+     *         condition
+     *
+     * @pre @p quadrature is built as for the stiffness of a face condition
+     */
+    template<std::derived_from<FaceCondition<Basis, n>> C>
+    void assemble_load(const C& condition,
+                       const FaceQuadrature<Scalar, dim>& quadrature,
+                       const Eigen::VectorX<Scalar>& data,
+                       const Eigen::VectorX<Scalar>& cell_weights)
+        requires (dim == 2);
+
     /// @brief Zeroes the stiffness and load, keeping the pattern
     void clear();
 
@@ -263,12 +332,25 @@ private:
                           const Eigen::MatrixX<Scalar>& local);
 
     /**
-     * @brief Adds a local load at the degrees of freedom of a cell, the only
-     *        place where the load is written
+     * @brief Adds a local load at degrees of freedom, those of a cell or of
+     *        the two cells of a face, the only place where the load is
+     *        written
      *
-     * @pre The rows of @p local follow the degrees of freedom of the cell
+     * @pre The rows of @p local follow @p dofs
      */
-    void add_to_load(int cell, const Eigen::VectorX<Scalar>& local);
+    void add_to_load(std::span<const int> dofs,
+                     const Eigen::VectorX<Scalar>& local);
+
+    /**
+     * @brief Degrees of freedom of the two cells of a face, those of the
+     *        cell before it followed by those of the cell after it, the order
+     *        of the rows of the terms on faces
+     *
+     * @param before Cell before the face
+     * @param after Cell after the face
+     * @param dofs Output, overwritten
+     */
+    void face_dofs(int before, int after, std::vector<int>& dofs) const;
 
     /// @brief Space whose degrees of freedom number the system
     const FunctionSpace<Basis>& space_;

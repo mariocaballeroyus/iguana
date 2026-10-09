@@ -10,6 +10,7 @@ add_library(iguana
     embedding/cell_classification.cpp
     embedding/embedded_boundary.cpp
     embedding/ghost_faces.cpp
+    embedding/jump_faces.cpp
     embedding/nurbs/grid_crossings.cpp
     embedding/nurbs/volume_fractions.cpp
     embedding/surrogate_boundary.cpp
@@ -33,6 +34,7 @@ add_library(iguana
     element/poisson/poisson_element.cpp
     condition/penalty_condition.cpp
     condition/nitsche_condition.cpp
+    condition/face_nitsche_condition.cpp
     condition/neumann_condition.cpp
     stabilization/ghost_penalty.cpp)
 

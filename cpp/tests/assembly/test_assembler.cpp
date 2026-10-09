@@ -149,6 +149,45 @@ std::array<Eigen::RowVector2d, 4> quadrilateral()
             Eigen::RowVector2d(1.5, 2.6), Eigen::RowVector2d(.4, 2.2)};
 }
 
+/// @brief Quadratic basis of five by five elements of the unit square
+Basis five_by_five()
+{
+    const KnotVector<double> fifths(
+        2, {0., 0., 0., .2, .4, .6, .8, 1., 1., 1.});
+
+    return Basis(TensorGrid<double, 2>({fifths, fifths}));
+}
+
+/// @brief Tilted quadrilateral inside the rectangle, counterclockwise, whose
+///        sides cross the knot lines of five_by_five() and stay a cell away
+///        from the edge of its grid, as the faces of the generalized shifted
+///        boundary method need
+iguana::Boundary<double, 2> inner_quadrilateral()
+{
+    const std::array<Eigen::RowVector2d, 4> corners{
+        Eigen::RowVector2d(.5, .7), Eigen::RowVector2d(1.5, .8),
+        Eigen::RowVector2d(1.4, 2.3), Eigen::RowVector2d(.6, 2.2)};
+    std::vector<iguana::Boundary<double, 2>::Face> faces;
+
+    for (std::size_t side = 0; side < 4; ++side)
+        faces.push_back(segment(corners[side], corners[(side + 1) % 4]));
+
+    return {faces, {1, 1, 1, 1}};
+}
+
+/// @brief Data of b . x at the closest points of a shifted quadrature, the
+///        points lying in parameter space, where the map scales each axis by
+///        its side
+template<typename Quadrature>
+Eigen::VectorXd linear_data(const Quadrature& quadrature,
+                            const Eigen::Vector2d& b)
+{
+    const Eigen::MatrixXd closest =
+        quadrature.points() + quadrature.distances();
+
+    return width * b(0) * closest.col(0) + height * b(1) * closest.col(1);
+}
+
 /// @brief Quadrature of the boundary of a quadrilateral in a patch, with
 ///        five points per piece, as biquadratic functions are of degree four
 ///        along a line and their products integrate exactly
@@ -723,5 +762,201 @@ TEST_CASE("A ghost penalty needs coupled faces and an affine B-spline patch",
 
     REQUIRE_THROWS_AS(on_rational.assemble_stiffness(rational_ghost,
                                                      quadrature),
+                      std::invalid_argument);
+}
+
+TEST_CASE("Face Nitsche conditions with binary weights are Nitsche "
+          "conditions on the surrogate boundary", "[assembler]")
+{
+    const Basis basis = five_by_five();
+    const iguana::Patch<Basis, 2> patch = rectangle(basis);
+    const iguana::Boundary<double, 2> boundary = inner_quadrilateral();
+    const int count = basis.grid().num_elements();
+
+    // Weights of one on the inside cells and zero elsewhere, on a space
+    // that keeps every function
+    const Eigen::VectorXd fractions =
+        iguana::volume_fractions(patch, boundary);
+    std::vector<CellType> cell_types(static_cast<std::size_t>(count));
+    Eigen::VectorXd cell_weights(count);
+
+    for (int cell = 0; cell < count; ++cell) {
+        const bool inside = fractions(cell) == 1.;
+        cell_types[static_cast<std::size_t>(cell)] =
+            inside ? CellType::inside : CellType::outside;
+        cell_weights(cell) = inside ? 1. : 0.;
+    }
+
+    const CellClassification<double, 2> classification(cell_types);
+    const iguana::FunctionSpace<Basis> space(
+        basis, CellClassification<double, 2>(
+                   std::vector<CellType>(cell_types.size(),
+                                         CellType::inside)));
+
+    iguana::BoundaryQuadrature<double, 2> surrogate(
+        iguana::SurrogateBoundary<double, 2>(basis.grid(), classification),
+        iguana::GaussLegendre<double, 1>(3));
+    surrogate.shift(patch, boundary, 2);
+
+    iguana::FaceQuadrature<double, 2> faces(
+        iguana::JumpFaces<double, 2>(basis.grid(), classification),
+        iguana::GaussLegendre<double, 1>(3));
+    faces.shift(patch, boundary, 2);
+
+    const iguana::PoissonElement<Basis, 2>::U trace;
+    const iguana::PoissonElement<Basis, 2>::Q flux;
+    const iguana::NitscheCondition<Basis, 2> nitsche(trace, flux, 40.);
+    const iguana::FaceNitscheCondition<Basis, 2> face(trace, flux, 40.);
+    const Eigen::Vector2d b(1., -2.);
+
+    iguana::Assembler<Basis, 2> on_surrogate(space, patch, true);
+    on_surrogate.assemble_stiffness(nitsche, surrogate);
+    on_surrogate.assemble_load(nitsche, surrogate, linear_data(surrogate, b));
+
+    iguana::Assembler<Basis, 2> on_faces(space, patch, true);
+    on_faces.assemble_stiffness(face, faces, cell_weights);
+    on_faces.assemble_load(face, faces, linear_data(faces, b), cell_weights);
+
+    // The jump selects the inside cell of every face of the surrogate
+    // boundary, whichever side it lies on, and with it its normal
+    const Eigen::MatrixXd stiffness = on_surrogate.stiffness().toDense();
+    const Eigen::MatrixXd difference =
+        (on_surrogate.stiffness() - on_faces.stiffness()).toDense();
+
+    REQUIRE(difference.cwiseAbs().maxCoeff()
+            < 1e-12 * stiffness.cwiseAbs().maxCoeff());
+    REQUIRE((on_surrogate.load() - on_faces.load()).cwiseAbs().maxCoeff()
+            < 1e-12 * on_surrogate.load().cwiseAbs().maxCoeff());
+}
+
+TEST_CASE("A linear field solves the weighted problem with Nitsche "
+          "conditions on faces", "[assembler]")
+{
+    const Basis basis = five_by_five();
+    const iguana::Patch<Basis, 2> patch = rectangle(basis);
+    const iguana::Boundary<double, 2> boundary = inner_quadrilateral();
+    const int count = basis.grid().num_elements();
+
+    // The volume fractions weigh the cells, of a space that keeps every
+    // function and a quadrature over every cell
+    const Eigen::VectorXd fractions =
+        iguana::volume_fractions(patch, boundary);
+    const CellClassification<double, 2> classification(
+        iguana::cell_types(fractions));
+    const iguana::FunctionSpace<Basis> space(
+        basis, CellClassification<double, 2>(std::vector<CellType>(
+                   static_cast<std::size_t>(count), CellType::inside)));
+
+    iguana::DomainQuadrature<double, 2> cells;
+
+    for (const CellType type :
+         {CellType::inside, CellType::cut, CellType::outside})
+        cells.fill(basis.grid(), classification, type,
+                   iguana::GaussLegendre<double, 2>(3));
+
+    iguana::FaceQuadrature<double, 2> faces(
+        iguana::JumpFaces<double, 2>(basis.grid(), classification),
+        iguana::GaussLegendre<double, 1>(3));
+    faces.shift(patch, boundary, 2);
+
+    const iguana::FaceQuadrature<double, 2> ghost_faces(
+        iguana::GhostFaces<double, 2>(basis.grid(), classification),
+        iguana::GaussLegendre<double, 1>(3));
+
+    const iguana::PoissonElement<Basis, 2> element;
+    const iguana::PoissonElement<Basis, 2>::U trace;
+    const iguana::PoissonElement<Basis, 2>::Q flux;
+    const iguana::FaceNitscheCondition<Basis, 2> face(trace, flux, 40.);
+    const iguana::GhostPenalty<Basis, 2> ghost(trace, .1);
+    const Eigen::Vector2d b(1., -2.);
+
+    iguana::Assembler<Basis, 2> assembler(space, patch, true);
+    assembler.assemble_stiffness(element, cells, fractions);
+    assembler.assemble_load(element, cells,
+                            Eigen::VectorXd::Zero(cells.num_points()),
+                            fractions);
+    assembler.assemble_stiffness(face, faces, fractions);
+    assembler.assemble_load(face, faces, linear_data(faces, b), fractions);
+    assembler.assemble_stiffness(ghost, ghost_faces);
+
+    // Cell by cell, the weighted volume terms of b . x leave the jumps of
+    // the weights times its flux on the faces, which the condition cancels,
+    // and its expansions reach the data exactly. With every cell inside,
+    // each function keeps its own index
+    const Eigen::VectorXd u = patch.coefficients() * b;
+
+    REQUIRE((assembler.stiffness() * u - assembler.load()).cwiseAbs()
+                .maxCoeff()
+            < 1e-12 * assembler.load().cwiseAbs().maxCoeff());
+}
+
+TEST_CASE("Face conditions need coupled faces and one weight per cell",
+          "[assembler]")
+{
+    const Basis basis = five_by_five();
+    const iguana::Patch<Basis, 2> patch = rectangle(basis);
+    const iguana::Boundary<double, 2> boundary = inner_quadrilateral();
+    const int count = basis.grid().num_elements();
+
+    const Eigen::VectorXd fractions =
+        iguana::volume_fractions(patch, boundary);
+    const std::vector<CellType> every(static_cast<std::size_t>(count),
+                                      CellType::inside);
+    const iguana::FunctionSpace<Basis> space(
+        basis, CellClassification<double, 2>(every));
+
+    iguana::FaceQuadrature<double, 2> faces(
+        iguana::JumpFaces<double, 2>(
+            basis.grid(),
+            CellClassification<double, 2>(iguana::cell_types(fractions))),
+        iguana::GaussLegendre<double, 1>(3));
+    faces.shift(patch, boundary, 2);
+
+    const iguana::PoissonElement<Basis, 2>::U trace;
+    const iguana::PoissonElement<Basis, 2>::Q flux;
+    const iguana::FaceNitscheCondition<Basis, 2> face(trace, flux, 40.);
+    const Eigen::VectorXd data = Eigen::VectorXd::Zero(faces.num_points());
+
+    REQUIRE_THROWS_AS(
+        (iguana::FaceNitscheCondition<Basis, 2>(trace, flux, 0.)),
+        std::invalid_argument);
+
+    // Faces left out of the pattern
+    iguana::Assembler<Basis, 2> uncoupled(space, patch);
+
+    REQUIRE_THROWS_AS(uncoupled.assemble_stiffness(face, faces, fractions),
+                      std::invalid_argument);
+
+    // One weight short of the cells, and one value short of the points
+    iguana::Assembler<Basis, 2> assembler(space, patch, true);
+    const Eigen::VectorXd short_weights = fractions.head(count - 1);
+
+    REQUIRE_THROWS_AS(assembler.assemble_stiffness(face, faces,
+                                                   short_weights),
+                      std::invalid_argument);
+    REQUIRE_THROWS_AS(assembler.assemble_load(face, faces, data,
+                                              short_weights),
+                      std::invalid_argument);
+    REQUIRE_THROWS_AS(assembler.assemble_load(face, faces, data.head(1),
+                                              fractions),
+                      std::invalid_argument);
+
+    // A NURBS patch has no Taylor series for a shifted quadrature
+    using Rational = iguana::TensorNURBS<double, 2>;
+    const Rational rational(basis,
+                            Eigen::VectorXd::Ones(basis.num_functions()));
+    const iguana::Patch<Rational, 2> rational_patch(rational,
+                                                    patch.coefficients());
+    const iguana::FunctionSpace<Rational> rational_space(
+        rational, CellClassification<double, 2>(every));
+    const iguana::PoissonElement<Rational, 2>::U rational_trace;
+    const iguana::PoissonElement<Rational, 2>::Q rational_flux;
+    const iguana::FaceNitscheCondition<Rational, 2> rational_face(
+        rational_trace, rational_flux, 40.);
+    iguana::Assembler<Rational, 2> on_rational(rational_space, rational_patch,
+                                               true);
+
+    REQUIRE_THROWS_AS(on_rational.assemble_stiffness(rational_face, faces,
+                                                     fractions),
                       std::invalid_argument);
 }
