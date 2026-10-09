@@ -37,6 +37,18 @@ void PoissonElement<Basis, n>::local_load(
     load = values.values() * weights.cwiseProduct(source);
 }
 
+template<typename Basis, std::size_t n>
+void PoissonElement<Basis, n>::local_mass(
+    const ElementValues<Basis, n>& values,
+    const Eigen::VectorX<Scalar>& weights,
+    Eigen::MatrixX<Scalar>& mass) const
+{
+    // M_ij = ∫ N_i N_j dx
+    //      ≈ Σ_q w_q N_i(x_q) N_j(x_q)
+    mass = values.values() * weights.asDiagonal()
+           * values.values().transpose();
+}
+
 template class PoissonElement<TensorBSpline<double, 2>, 2>;
 template class PoissonElement<TensorBSpline<double, 3>, 3>;
 template class PoissonElement<TensorNURBS<double, 2>, 2>;
