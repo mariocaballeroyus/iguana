@@ -24,6 +24,8 @@ using PoissonElement3d = PoissonElement<TensorBSpline<double, 3>, 3>;
 using PenaltyCondition2d = PenaltyCondition<TensorBSpline<double, 2>, 2>;
 using NeumannCondition2d = NeumannCondition<TensorBSpline<double, 2>, 2>;
 using NitscheCondition2d = NitscheCondition<TensorBSpline<double, 2>, 2>;
+using FaceNitscheCondition2d =
+    FaceNitscheCondition<TensorBSpline<double, 2>, 2>;
 using GhostPenalty2d = GhostPenalty<TensorBSpline<double, 2>, 2>;
 using Assembler2d = Assembler<TensorBSpline<double, 2>, 2>;
 using Assembler3d = Assembler<TensorBSpline<double, 3>, 3>;
@@ -70,6 +72,11 @@ void assembly(py::module_& module)
              py::keep_alive<1, 2>());
 
     py::class_<NitscheCondition2d>(module, "NitscheCondition2d")
+        .def(py::init<const Trace2d&, const Flux2d&, double>(),
+             py::arg("trace"), py::arg("flux"), py::arg("penalty"),
+             py::keep_alive<1, 2>(), py::keep_alive<1, 3>());
+
+    py::class_<FaceNitscheCondition2d>(module, "FaceNitscheCondition2d")
         .def(py::init<const Trace2d&, const Flux2d&, double>(),
              py::arg("trace"), py::arg("flux"), py::arg("penalty"),
              py::keep_alive<1, 2>(), py::keep_alive<1, 3>());
@@ -127,6 +134,14 @@ void assembly(py::module_& module)
         .def("assemble_load",
              &Assembler2d::assemble_load<NitscheCondition2d>,
              py::arg("condition"), py::arg("quadrature"), py::arg("data"))
+        .def("assemble_stiffness",
+             &Assembler2d::assemble_stiffness<FaceNitscheCondition2d>,
+             py::arg("condition"), py::arg("quadrature"),
+             py::arg("cell_weights"))
+        .def("assemble_load",
+             &Assembler2d::assemble_load<FaceNitscheCondition2d>,
+             py::arg("condition"), py::arg("quadrature"), py::arg("data"),
+             py::arg("cell_weights"))
         .def("assemble_stiffness",
              static_cast<AssembleFaces2d>(&Assembler2d::assemble_stiffness),
              py::arg("penalty"), py::arg("quadrature"))
