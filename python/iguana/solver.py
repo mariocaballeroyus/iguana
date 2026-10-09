@@ -6,7 +6,9 @@
 The solve assembles the stiffness and load of an element over a quadrature,
 of conditions along boundaries and of stabilizations across faces, in
 compiled code, holds some degrees of freedom at given values, and solves
-the sparse system for the others.
+the sparse system for the others. Given a time step and the previous
+solution, it takes a step of backward Euler of the transient problem
+instead, adding the mass of the element.
 """
 
 from __future__ import annotations
@@ -40,6 +42,8 @@ def solve(
     conditions: Sequence[PenaltyCondition | NitscheCondition
                          | NeumannCondition | FaceNitscheCondition] = (),
     stabilizations: Sequence[GhostPenalty] = (),
+    step: float | None = None,
+    previous: npt.ArrayLike | None = None,
 ) -> npt.NDArray[np.float64]:
     """Solve the problem of an element on a space.
 
@@ -48,6 +52,13 @@ def solve(
     boundaries of the conditions and across the faces of the
     stabilizations, and the fixed degrees of freedom held at their values
     u_c.
+
+    Given a time step and the previous solution, the solve takes one step
+    of backward Euler of the transient problem instead, from the previous
+    coefficients u_p: K becomes K + M / step and F becomes
+    F + M u_p / step, with the mass M of the element weighted by the cells
+    like its other terms. The source, values, conditions and stabilizations
+    are those at the new time.
 
     Args:
         element: The element stating the problem.
@@ -76,6 +87,13 @@ def solve(
             the patch of the space, which need a planar patch with an
             affine map. They extend the field beyond the physical domain,
             as a space keeping the functions of every cell needs.
+        step: The time step of one step of backward Euler from the
+            previous solution, positive. Without it, the problem is steady.
+        previous: The coefficient of each degree of freedom at the previous
+            time, of shape `(num_dofs,)`, which a time step needs. On a
+            space that keeps the functions of every cell, as the generalized
+            shifted boundary method does, the degrees of freedom stay the
+            same however the boundary moves.
 
     Returns:
         The coefficient of each degree of freedom, of shape `(num_dofs,)`.
@@ -93,12 +111,33 @@ def solve(
             is not affine, if the source does not give one value per point,
             if a fixed degree of freedom lies outside the space or repeats,
             if there is not one value per fixed one, if the cell weights are
-            not one per cell, or if a face Nitsche condition is given
-            without them.
+            not one per cell, if a face Nitsche condition is given without
+            them, if a time step comes without the previous solution or the
+            previous solution without a time step, if the time step is not
+            positive, or if the previous solution does not give one
+            coefficient per degree of freedom.
     """
-    stiffness, load = _assemble(element, space, quadrature, source,
-                                cell_weights, conditions, stabilizations)
+    if (step is None) != (previous is None):
+        raise ValueError('a time step and the previous solution go together')
+
+    if step is not None and not step > 0.:
+        raise ValueError('the time step must be positive')
+
+    stiffness, load, mass = _assemble(element, space, quadrature, source,
+                                      cell_weights, conditions,
+                                      stabilizations, step is not None)
     fixed, values = _fixed(space.num_dofs, fixed, values)
+
+    # Backward Euler: (K + M / step) u = F + M u_p / step
+    if step is not None:
+        previous = np.asarray(previous, dtype=np.float64)
+
+        if previous.shape != (space.num_dofs,):
+            raise ValueError('the previous solution must give one '
+                             'coefficient per degree of freedom')
+
+        stiffness = stiffness + mass / step
+        load = load + mass @ previous / step
 
     # The fixed degrees of freedom carry their part of the stiffness over to
     # the right-hand side of the free ones
@@ -122,10 +161,12 @@ def _assemble(
     conditions: Sequence[PenaltyCondition | NitscheCondition
                          | NeumannCondition | FaceNitscheCondition],
     stabilizations: Sequence[GhostPenalty],
-) -> tuple[csr_matrix, npt.NDArray[np.float64]]:
+    with_mass: bool,
+) -> tuple[csr_matrix, npt.NDArray[np.float64], csr_matrix | None]:
     """Stiffness and load of an element over a quadrature, of conditions
-    along boundaries and of stabilizations across faces, in the numbering
-    of the degrees of freedom of a space."""
+    along boundaries and of stabilizations across faces, and the mass of the
+    element if asked, in the numbering of the degrees of freedom of a
+    space."""
     if not isinstance(element, PoissonElement):
         raise TypeError('the element must be a Poisson element')
 
@@ -190,6 +231,11 @@ def _assemble(
     assembler.assemble_load(cpp_element, quadrature._cpp_object, source,
                             cell_weights)
 
+    # The time derivative is weighted by the cells like the other terms
+    if with_mass:
+        assembler.assemble_mass(cpp_element, quadrature._cpp_object,
+                                cell_weights)
+
     for condition in conditions:
         if not isinstance(condition, (PenaltyCondition, NitscheCondition,
                                       NeumannCondition,
@@ -229,7 +275,9 @@ def _assemble(
 
         stabilization._assemble(assembler)
 
-    return assembler.stiffness, assembler.load
+    mass = assembler.mass if with_mass else None
+
+    return assembler.stiffness, assembler.load, mass
 
 
 def _fixed(
