@@ -393,6 +393,64 @@ TEST_CASE("Cell weights weight the test functions of each cell",
                       std::invalid_argument);
 }
 
+TEST_CASE("The mass of an element shares the pattern of the stiffness",
+          "[assembler]")
+{
+    const Basis basis = uneven();
+    const iguana::Patch<Basis, 2> patch = rectangle(basis);
+    const CellClassification<double, 2> classification =
+        all_cells(CellType::inside);
+    const iguana::FunctionSpace<Basis> space(basis, classification);
+    const iguana::DomainQuadrature<double, 2> quadrature =
+        inside_quadrature(basis, classification);
+    const iguana::PoissonElement<Basis, 2> element;
+
+    // With every cell inside, each function keeps its own index, and the
+    // coefficients of x are the first coordinates of the control points
+    const Eigen::VectorXd x = patch.coefficients().col(0);
+
+    iguana::Assembler<Basis, 2> assembler(space, patch, true);
+    assembler.assemble_mass(element, quadrature);
+
+    // x^T M x is the integral of x^2 over the rectangle, into a matrix with
+    // the pattern of the stiffness, faces coupled included
+    REQUIRE_THAT(x.dot(assembler.mass() * x),
+                 WithinRel(height * std::pow(width, 3) / 3., 1e-12));
+    REQUIRE(assembler.mass().nonZeros() == assembler.stiffness().nonZeros());
+
+    // Weighted, each cell counts its integral of x^2 by its weight, its
+    // columns spanning .2, .4 and .4 along x and its rows .7 and .3 along y
+    Eigen::VectorXd cell_weights(6);
+    cell_weights << 1., .3, 0., .6, 1., 0.;
+    const std::array<double, 4> columns{0., .2 * width, .6 * width, width};
+    const std::array<double, 2> heights{.7 * height, .3 * height};
+    double expected = 0.;
+
+    for (std::size_t cell = 0; cell < 6; ++cell) {
+        const double from = columns[cell % 3];
+        const double to = columns[cell % 3 + 1];
+        expected += cell_weights(static_cast<Eigen::Index>(cell))
+                    * (to * to * to - from * from * from) / 3.
+                    * heights[cell / 3];
+    }
+
+    assembler.clear();
+
+    REQUIRE(assembler.mass().nonZeros() == assembler.stiffness().nonZeros());
+    REQUIRE(assembler.mass().norm() == 0.);
+
+    assembler.assemble_mass(element, quadrature, cell_weights);
+
+    REQUIRE_THAT(x.dot(assembler.mass() * x), WithinRel(expected, 1e-12));
+
+    // One weight short of the cells
+    const Eigen::VectorXd short_weights = cell_weights.head(5);
+
+    REQUIRE_THROWS_AS(assembler.assemble_mass(element, quadrature,
+                                              short_weights),
+                      std::invalid_argument);
+}
+
 TEST_CASE("A penalty on an embedded boundary imposes a field of the space",
           "[assembler]")
 {
