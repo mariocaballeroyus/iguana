@@ -16,7 +16,22 @@ template<std::floating_point T, std::size_t d>
 FaceQuadrature<T, d>::FaceQuadrature(const GhostFaces<T, d>& faces,
                                      const GaussLegendre<T, 1>& rule)
 {
-    using Face = typename GhostFaces<T, d>::Face;
+    place(faces, rule);
+}
+
+template<std::floating_point T, std::size_t d>
+FaceQuadrature<T, d>::FaceQuadrature(const JumpFaces<T, d>& faces,
+                                     const GaussLegendre<T, 1>& rule)
+{
+    place(faces, rule);
+}
+
+template<std::floating_point T, std::size_t d>
+template<typename Faces>
+void FaceQuadrature<T, d>::place(const Faces& faces,
+                                 const GaussLegendre<T, 1>& rule)
+{
+    using Face = typename Faces::Face;
 
     // Every face carries the whole rule
     const int count = rule.num_points();

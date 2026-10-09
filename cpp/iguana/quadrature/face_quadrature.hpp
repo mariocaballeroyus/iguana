@@ -12,6 +12,7 @@
 #include <Eigen/Core>
 
 #include "iguana/embedding/ghost_faces.hpp"
+#include "iguana/embedding/jump_faces.hpp"
 #include "iguana/quadrature/gauss_legendre/gauss_legendre.hpp"
 
 namespace iguana
@@ -55,6 +56,19 @@ public:
     FaceQuadrature(const GhostFaces<T, d>& faces,
                    const GaussLegendre<T, 1>& rule);
 
+    /**
+     * @brief Places a rule on every face across which the volume fraction
+     *        may jump
+     *
+     * The rule is placed as on the faces of a ghost penalty
+     *
+     * @param faces Faces of a grid across which the volume fraction may
+     *        jump
+     * @param rule Rule placed on every face
+     */
+    FaceQuadrature(const JumpFaces<T, d>& faces,
+                   const GaussLegendre<T, 1>& rule);
+
     /// @brief Number of faces
     constexpr int num_faces() const noexcept
     { return static_cast<int>(directions_.size()); }
@@ -91,6 +105,15 @@ public:
     { return normals_; }
 
 private:
+    /**
+     * @brief Places a rule on every face of a list, the work of the
+     *        constructors
+     *
+     * @tparam Faces Faces of a grid, as GhostFaces and JumpFaces list them
+     */
+    template<typename Faces>
+    void place(const Faces& faces, const GaussLegendre<T, 1>& rule);
+
     /// @brief Direction normal to each face
     Eigen::VectorXi directions_;
 
