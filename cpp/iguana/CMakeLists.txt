@@ -34,6 +34,7 @@ add_library(iguana
     element/poisson/poisson_element.cpp
     condition/penalty_condition.cpp
     condition/nitsche_condition.cpp
+    condition/face_nitsche_condition.cpp
     condition/neumann_condition.cpp
     stabilization/ghost_penalty.cpp)
 
