@@ -8,9 +8,10 @@ import pytest
 
 import iguana
 from iguana import (Boundary, BoundaryQuadrature, CellType, DomainQuadrature,
-                    FunctionSpace, HierarchicalGrid, NeumannCondition,
-                    NitscheCondition, PenaltyCondition, PoissonElement,
-                    SurrogateBoundary, solve)
+                    FaceNitscheCondition, FunctionSpace, GhostPenalty,
+                    HierarchicalGrid, NeumannCondition, NitscheCondition,
+                    PenaltyCondition, PoissonElement, SurrogateBoundary,
+                    classify_cells, cpp, solve)
 
 # Sides of the rectangle, and of the square inside it, whose edges halve
 # the cells they cut, so that no cut is a sliver
@@ -177,6 +178,35 @@ def test_nitsche_condition_imposes_a_linear_field():
     assert np.abs(u - exact).max() > 1e-2
 
 
+def test_face_nitsche_condition_imposes_a_linear_field():
+    """With the volume fractions of the square weighting the cells, of a
+    space that keeps every function and a quadrature over every cell,
+    Nitsche's condition on the faces where they jump and a ghost penalty
+    impose the linear field at every degree of freedom, as the generalized
+    shifted boundary method does."""
+    patch = rectangle()
+    cell_types, fractions = classify_cells(patch, square_sides())
+    space = FunctionSpace(patch, [CellType.inside] * len(cell_types))
+
+    quadrature = DomainQuadrature(patch, cell_types)
+
+    for cell_type in (CellType.inside, CellType.cut, CellType.outside):
+        quadrature.fill_gauss_legendre(cell_type, 3)
+
+    element = PoissonElement()
+    condition = FaceNitscheCondition(element.u, patch, cell_types,
+                                     square_sides(), lambda x: x @ GRADIENT,
+                                     40.)
+    ghost = GhostPenalty(element.u, patch, cell_types, .1)
+    u = solve(element, space, quadrature, np.zeros(quadrature.num_points),
+              cell_weights=fractions, conditions=[condition],
+              stabilizations=[ghost])
+
+    # Exact to round-off, which the conditioning of the cells the penalty
+    # alone determines amplifies
+    assert np.abs(u - space.control_points @ GRADIENT).max() < 1e-9
+
+
 def test_data_at_the_closest_points():
     """On a shifted quadrature, a condition takes its data where the points
     are shifted to, the sides of the square, half a cell away from the
@@ -255,3 +285,63 @@ def test_invalid_arguments():
     with pytest.raises(TypeError):
         solve(element, FunctionSpace(box), box_quadrature,
               np.zeros(box_quadrature.num_points), conditions=[condition])
+
+
+def test_invalid_face_nitsche_conditions():
+    patch = rectangle()
+    cell_types, fractions = classify_cells(patch, square_sides())
+    element = PoissonElement()
+    sides = square_sides()
+
+    with pytest.raises(TypeError):
+        FaceNitscheCondition('u', patch, cell_types, sides, 0., 1.)
+
+    with pytest.raises(TypeError):
+        FaceNitscheCondition(element.u, patch.isocurves()[0], cell_types,
+                             sides, 0., 1.)
+
+    with pytest.raises(TypeError):
+        FaceNitscheCondition(element.u, patch, cell_types, patch, 0., 1.)
+
+    with pytest.raises(ValueError):
+        FaceNitscheCondition(element.u, patch, cell_types[:-1], sides, 0.,
+                             1.)
+
+    with pytest.raises(ValueError):
+        FaceNitscheCondition(element.u, patch, cell_types, sides, [0.], 1.)
+
+    with pytest.raises(ValueError):
+        FaceNitscheCondition(element.u, patch, cell_types, sides,
+                             lambda x: x[:, 0], 0.)
+
+    with pytest.raises(ValueError):
+        FaceNitscheCondition(element.u, patch, cell_types, sides,
+                             lambda x: x[:, 0], 1., order=-1)
+
+    # The map of the patch must be affine
+    bent = patch.control_points.copy()
+    bent[20, 1] += .1
+    curved = iguana.PlanarPatch(cpp.PlanarPatch(
+        basis=patch._cpp_object.basis, coefficients=bent))
+
+    with pytest.raises(ValueError):
+        FaceNitscheCondition(element.u, curved, cell_types, sides,
+                             lambda x: x[:, 0], 1.)
+
+    # The solve gives the condition the weights of the cells, which it
+    # needs, and its faces must lie on the patch of the space
+    space = FunctionSpace(patch, [CellType.inside] * len(cell_types))
+    quadrature = DomainQuadrature(patch)
+    quadrature.fill_gauss_legendre(CellType.inside, 3)
+    source = np.zeros(quadrature.num_points)
+    condition = FaceNitscheCondition(element.u, patch, cell_types, sides,
+                                     lambda x: x[:, 0], 1.)
+    other = FaceNitscheCondition(element.u, rectangle(), cell_types, sides,
+                                 lambda x: x[:, 0], 1.)
+
+    with pytest.raises(ValueError):
+        solve(element, space, quadrature, source, conditions=[condition])
+
+    with pytest.raises(ValueError):
+        solve(element, space, quadrature, source, cell_weights=fractions,
+              conditions=[other])
