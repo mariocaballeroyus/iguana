@@ -17,11 +17,13 @@ namespace iguana
 {
 
 /**
- * @brief Element of the Poisson problem -div(grad u) = f
+ * @brief Element of the Poisson problem -div(grad u) = f, and of the heat
+ *        equation du/dt - div(grad u) = f with its mass
  *
  * Its stiffness pairs the physical gradients of the active functions,
- * K_AB = integral of grad N_A . grad N_B, and its load weights their values
- * by the source, F_A = integral of f N_A. It holds no state. The patch must
+ * K_AB = integral of grad N_A . grad N_B, its load weights their values by
+ * the source, F_A = integral of f N_A, and its mass pairs their values,
+ * M_AB = integral of N_A N_B. It holds no state. The patch must
  * be a domain, as only a domain has physical gradients. Its only trace is
  * the field, U, and its flux the normal derivative of the field, Q
  *
@@ -51,6 +53,10 @@ public:
                     const Eigen::VectorX<Scalar>& weights,
                     const Eigen::VectorX<Scalar>& source,
                     Eigen::VectorX<Scalar>& load) const override;
+
+    void local_mass(const ElementValues<Basis, n>& values,
+                    const Eigen::VectorX<Scalar>& weights,
+                    Eigen::MatrixX<Scalar>& mass) const override;
 
     /// @brief Trace of the field u, defined in poisson_traces.hpp
     class U;
