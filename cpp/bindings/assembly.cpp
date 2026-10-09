@@ -145,7 +145,20 @@ void assembly(py::module_& module)
         .def("assemble_stiffness",
              static_cast<AssembleFaces2d>(&Assembler2d::assemble_stiffness),
              py::arg("penalty"), py::arg("quadrature"))
+        .def("assemble_mass",
+             py::overload_cast<const PoissonElement2d&,
+                               const DomainQuadrature<double, 2>&>(
+                 &Assembler2d::assemble_mass<PoissonElement2d>),
+             py::arg("element"), py::arg("quadrature"))
+        .def("assemble_mass",
+             py::overload_cast<const PoissonElement2d&,
+                               const DomainQuadrature<double, 2>&,
+                               const Eigen::VectorXd&>(
+                 &Assembler2d::assemble_mass<PoissonElement2d>),
+             py::arg("element"), py::arg("quadrature"),
+             py::arg("cell_weights"))
         .def_property_readonly("stiffness", &Assembler2d::stiffness, copy)
+        .def_property_readonly("mass", &Assembler2d::mass, copy)
         .def_property_readonly("load", &Assembler2d::load, copy);
 
     py::class_<Assembler3d>(module, "Assembler3d")
@@ -179,7 +192,20 @@ void assembly(py::module_& module)
                  &Assembler3d::assemble_load<PoissonElement3d>),
              py::arg("element"), py::arg("quadrature"), py::arg("source"),
              py::arg("cell_weights"))
+        .def("assemble_mass",
+             py::overload_cast<const PoissonElement3d&,
+                               const DomainQuadrature<double, 3>&>(
+                 &Assembler3d::assemble_mass<PoissonElement3d>),
+             py::arg("element"), py::arg("quadrature"))
+        .def("assemble_mass",
+             py::overload_cast<const PoissonElement3d&,
+                               const DomainQuadrature<double, 3>&,
+                               const Eigen::VectorXd&>(
+                 &Assembler3d::assemble_mass<PoissonElement3d>),
+             py::arg("element"), py::arg("quadrature"),
+             py::arg("cell_weights"))
         .def_property_readonly("stiffness", &Assembler3d::stiffness, copy)
+        .def_property_readonly("mass", &Assembler3d::mass, copy)
         .def_property_readonly("load", &Assembler3d::load, copy);
 }
 
