@@ -18,14 +18,13 @@ namespace iguana
 {
 
 /**
- * @brief Condition loading a trace of an element with natural data h, such
- *        as a flux or a traction
+ * @brief Condition loading a trace with natural data, such as a flux or a
+ *        traction
  *
- * The data is the boundary term of the weak form where it is known, so the
- * condition adds a load and no stiffness, F_i = integral of h T(N_i) ds,
- * through the matrix B of the trace of the test functions it does work on.
- * With the field trace U of -div(grad u) = f, h is the outward flux du/dn.
- * Data that depends on the normal is given at the points
+ * @details The data is the boundary term of the weak form where it is
+ *          known, so the condition adds a load and no stiffness. With the
+ *          field trace of −div(grad u) = f, the data is the outward flux
+ *          du/dn
  *
  * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
  * @tparam n Dimension of the physical space of the patch

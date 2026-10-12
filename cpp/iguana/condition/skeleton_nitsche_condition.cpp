@@ -19,20 +19,25 @@ namespace
 {
 
 /**
- * @brief Rows of a quantity over the functions of both cells of a face,
- *        those of the cell before scaled by its share of the weights and
- *        those of the cell after by the rest
+ * @brief Weighted mean over the two cells of a face of a quantity of their
+ *        functions
  *
- * A function active on both cells gets the sum of its two rows, so that the
- * rows give the weighted mean {{w}} of the quantity
+ *     γ = α_{+} / (α_{+} + α_{-})
+ *     {{.}}_γ = γ (.)_{+} + (1 − γ) (.)_{-}
+ *
+ * @details @p gamma is the share of the cell before the face, the + side,
+ *          in the weights of the two cells. The rows of the cell before,
+ *          scaled by γ, are followed by those of the cell after, scaled by
+ *          1 − γ, so that a function active on both cells gets the mean once
+ *          its two rows are summed
  */
 template<typename Scalar>
-Eigen::MatrixX<Scalar> mean_rows(const Eigen::MatrixX<Scalar>& before,
-                                 const Eigen::MatrixX<Scalar>& after,
-                                 Scalar share)
+Eigen::MatrixX<Scalar> mean_operator(const Eigen::MatrixX<Scalar>& before,
+                                     const Eigen::MatrixX<Scalar>& after,
+                                     Scalar gamma)
 {
     Eigen::MatrixX<Scalar> rows(before.rows() + after.rows(), before.cols());
-    rows << share * before, (1 - share) * after;
+    rows << gamma * before, (1 - gamma) * after;
 
     return rows;
 }
@@ -60,36 +65,42 @@ void SkeletonNitscheCondition<Basis, n>::local_stiffness(
     const PointMatrix<Scalar, n>& normals,
     Eigen::MatrixX<Scalar>& stiffness) const
 {
-    // Jump of the weights along the normal, and the share of the cell before
+    // Jump of the weights along the normal, and γ of the weighted mean
     const Scalar jump = cell_weights[0] - cell_weights[1];
-    const Scalar share = cell_weights[0] / (cell_weights[0] + cell_weights[1]);
+    const Scalar gamma = cell_weights[0] / (cell_weights[0] + cell_weights[1]);
 
+    // Rows of each cell, reused for every quantity
     Eigen::MatrixX<Scalar> before_rows;
     Eigen::MatrixX<Scalar> after_rows;
 
+    // T(N_i), the traces of the test functions, continuous across the face,
+    // so that their mean is the traces themselves
     trace_.local_trace(before, before_rows);
     trace_.local_trace(after, after_rows);
     const Eigen::MatrixX<Scalar> trace =
-        mean_rows(before_rows, after_rows, share);
+        mean_operator(before_rows, after_rows, gamma);
 
+    // {{F(N_i)}}_γ, mean fluxes along the normal of the functions of each cell
     flux_.local_flux(before, normals, before_rows);
     flux_.local_flux(after, normals, after_rows);
     const Eigen::MatrixX<Scalar> flux =
-        mean_rows(before_rows, after_rows, share);
+        mean_operator(before_rows, after_rows, gamma);
 
+    // {{T(S N_i)}}_γ, mean traces of the functions of each cell
     trace_.local_trace(shifted_before, before_rows);
     trace_.local_trace(shifted_after, after_rows);
     const Eigen::MatrixX<Scalar> shifted =
-        mean_rows(before_rows, after_rows, share);
+        mean_operator(before_rows, after_rows, gamma);
 
     // h = {{h}}, the weighted mean of the sizes of the two cells
     const Eigen::VectorX<Scalar> sizes =
-        share * before.sizes() + (1 - share) * after.sizes();
+        gamma * before.sizes() + (1 - gamma) * after.sizes();
     const Eigen::VectorX<Scalar> penalized =
         penalty_ * std::abs(jump) * weights.cwiseQuotient(sizes);
 
-    // K_ij = − j ∫ T(N_i) {{F(N_j)}} ds − j ∫ {{F(N_i)}} {{T(S N_j)}} ds
-    //        + β |j| ∫ {{T(S N_i)}} {{T(S N_j)}} / h ds
+    // K_ij = − j ( T(N_i), {{F(N_j)}}_γ )_Γ
+    //        − j ( {{F(N_i)}}_γ, {{T(S N_j)}}_γ )_Γ
+    //        + β |j| ( {{T(S N_i)}}_γ, {{T(S N_j)}}_γ / h )_Γ
     //      ≈ Σ_q w_q (β |j| S_iq S_jq / h_q − j T_iq F_jq − j F_iq S_jq)
     stiffness =
         shifted * penalized.asDiagonal() * shifted.transpose()
@@ -108,30 +119,33 @@ void SkeletonNitscheCondition<Basis, n>::local_load(
     const PointMatrix<Scalar, n>& normals,
     const Eigen::VectorX<Scalar>& data, Eigen::VectorX<Scalar>& load) const
 {
-    // Jump of the weights along the normal, and the share of the cell before
+    // Jump of the weights along the normal, and γ of the weighted mean
     const Scalar jump = cell_weights[0] - cell_weights[1];
-    const Scalar share = cell_weights[0] / (cell_weights[0] + cell_weights[1]);
+    const Scalar gamma = cell_weights[0] / (cell_weights[0] + cell_weights[1]);
 
+    // Rows of each cell, reused for every quantity
     Eigen::MatrixX<Scalar> before_rows;
     Eigen::MatrixX<Scalar> after_rows;
 
+    // {{F(N_i)}}_γ, mean fluxes along the normal of the functions of each cell
     flux_.local_flux(before, normals, before_rows);
     flux_.local_flux(after, normals, after_rows);
     const Eigen::MatrixX<Scalar> flux =
-        mean_rows(before_rows, after_rows, share);
+        mean_operator(before_rows, after_rows, gamma);
 
+    // {{T(S N_i)}}_γ, mean traces of the functions of each cell
     trace_.local_trace(shifted_before, before_rows);
     trace_.local_trace(shifted_after, after_rows);
     const Eigen::MatrixX<Scalar> shifted =
-        mean_rows(before_rows, after_rows, share);
+        mean_operator(before_rows, after_rows, gamma);
 
     // h = {{h}}, the weighted mean of the sizes of the two cells
     const Eigen::VectorX<Scalar> sizes =
-        share * before.sizes() + (1 - share) * after.sizes();
+        gamma * before.sizes() + (1 - gamma) * after.sizes();
     const Eigen::VectorX<Scalar> penalized =
         penalty_ * std::abs(jump) * weights.cwiseQuotient(sizes);
 
-    // F_i = ∫ (β |j| {{T(S N_i)}} / h − j {{F(N_i)}}) g ds
+    // F_i = β |j| ( {{T(S N_i)}}_γ / h, g )_Γ − j ( {{F(N_i)}}_γ, g )_Γ
     //     ≈ Σ_q w_q g(x_q) (β |j| S_iq / h_q − j F_iq)
     load = shifted * penalized.cwiseProduct(data)
            - jump * flux * weights.cwiseProduct(data);

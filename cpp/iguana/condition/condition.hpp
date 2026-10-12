@@ -17,18 +17,12 @@ namespace iguana
 
 /**
  * @brief Condition on a boundary, giving its stiffness and load on the
- *        part of the boundary in one element, from the values at the points
- *        there
+ *        part of the boundary in one element
  *
- * A condition reads from ElementValues the values its flags() request and
- * integrates along the boundary with boundary weights, the quadrature
- * weights times the measure of the boundary in physical space, which the
- * assembler maps from the boundary quadrature. It receives the values at
- * the points and the shifted ones, expanded towards where the data is
- * given, as the shifted boundary method needs; both are the same without
- * a projection. It neither evaluates the basis nor adds into a global
- * system. The rows and columns follow the rows of the values, the
- * functions active on the element
+ * @details It reads the values its flags() request, at the points and
+ *          where the data is given, the same without a projection, and
+ *          integrates with the boundary weights the assembler maps. Its rows
+ *          and columns follow the functions active on the element
  *
  * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
  * @tparam n Dimension of the physical space of the patch

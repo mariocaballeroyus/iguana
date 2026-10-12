@@ -17,20 +17,14 @@ namespace iguana
 {
 
 /**
- * @brief Condition on interior faces of a grid, giving its stiffness and
- *        load on one face from the values of the two cells on either side
+ * @brief Condition on the interior faces of a grid, giving its stiffness
+ *        and load on one face from the two cells on either side
  *
- * The two-sided sibling of Condition: on a face between a cell before it
- * and a cell after it, along its direction, the condition reads the values
- * of each cell at the face points, each with the polynomial of its own
- * cell, and their shifted values, expanded towards where the data is
- * given. It also receives the weight of the test functions on each cell,
- * such as the volume fractions whose jump weights the conditions of the
- * generalized shifted boundary method. It integrates with face weights,
- * the quadrature weights times the measure of the face in physical space,
- * which the assembler maps. The rows and columns follow the functions
- * active on the cell before the face, then those active on the cell after
- * it, so that a function active on both gets the sum of its two rows
+ * @details The two-sided sibling of Condition: each cell gives its one-sided
+ *          values at the face and a weight for its test functions, such as
+ *          its volume fraction in the Generalized Shifted Boundary Method.
+ *          Rows and columns follow the functions active on the cell before
+ *          the face, then those of the cell after
  *
  * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
  * @tparam n Dimension of the physical space of the patch

@@ -18,14 +18,7 @@ namespace iguana
 {
 
 /**
- * @brief Condition imposing values g on a trace of an element through a
- *        penalty
- *
- * Its stiffness penalizes the trace of the active functions on the
- * boundary, K_ij = beta integral of T(N_i) T(N_j) ds, and its load the
- * imposed values, F_i = beta integral of g T(N_i) ds, both through the
- * matrix B of the trace. The error decays like 1 / beta, which a larger
- * penalty buys with a worse conditioning
+ * @brief Condition imposing values on a trace through a penalty
  *
  * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
  * @tparam n Dimension of the physical space of the patch
