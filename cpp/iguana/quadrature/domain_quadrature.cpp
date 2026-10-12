@@ -19,21 +19,13 @@ namespace iguana
 {
 
 template<std::floating_point T, std::size_t d>
-DomainQuadrature<T, d>::DomainQuadrature()
-    : offsets_(Eigen::VectorXi::Zero(1)),
-      points_(0, d)
-{
-}
-
-template<std::floating_point T, std::size_t d>
 DomainQuadrature<T, d>::DomainQuadrature(Eigen::VectorXi elements,
                                          Eigen::VectorXi offsets,
                                          Eigen::MatrixX<T> points,
                                          Eigen::VectorX<T> weights)
-    : elements_(std::move(elements)),
-      offsets_(std::move(offsets)),
-      points_(std::move(points)),
-      weights_(std::move(weights))
+    : Quadrature<T, d>(std::move(offsets), std::move(points),
+                       std::move(weights)),
+      elements_(std::move(elements))
 {
     if (points_.cols() != static_cast<Eigen::Index>(d))
         throw std::invalid_argument("DomainQuadrature: "
@@ -135,8 +127,8 @@ void DomainQuadrature<T, d>::fill(
 
     Eigen::MatrixX<T> points(num_total, d);
     Eigen::VectorX<T> weights(num_total);
-    points.topRows(num_points()) = points_;
-    weights.head(num_points()) = weights_;
+    points.topRows(points_.rows()) = points_;
+    weights.head(weights_.size()) = weights_;
 
     for (cell = 0; cell < num_cells; ++cell) {
         const int position = num_held + cell;

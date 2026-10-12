@@ -179,7 +179,7 @@ void BoundaryQuadrature<T, d>::project_to_closest(
     const Basis& basis = patch.basis();
 
     // Physical positions of the points, element by element
-    PointMatrix<T, 2> positions(num_points(), 2);
+    PointMatrix<T, 2> positions(points_.rows(), 2);
     Eigen::MatrixX<T> element_points;
     Eigen::MatrixX<T> values;
     Eigen::VectorXi actives;

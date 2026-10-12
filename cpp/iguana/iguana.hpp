@@ -32,6 +32,7 @@
 #include "quadrature/gauss_legendre/gauss_legendre.hpp"
 #include "quadrature/moment_fitting/moment_fitting.hpp"
 #include "quadrature/moment_fitting/moments.hpp"
+#include "quadrature/quadrature.hpp"
 #include "quadrature/skeleton_quadrature.hpp"
 #include "quadrature/xiao_gimbutas/xiao_gimbutas.hpp"
 #include "assembly/assembler.hpp"

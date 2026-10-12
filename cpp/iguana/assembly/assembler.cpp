@@ -32,14 +32,14 @@ namespace
  * @brief Expands the values at the points of one element or face of a
  *        projected quadrature towards the boundary it is projected onto
  *
- * @tparam Quadrature BoundaryQuadrature or SkeletonQuadrature
+ * @tparam Projected BoundaryQuadrature or SkeletonQuadrature
  *
  * @throws std::invalid_argument If the patch is not a B-spline one, whose
  *         basis alone provides the Taylor series
  */
-template<typename Basis, std::size_t n, typename Quadrature>
+template<typename Basis, std::size_t n, typename Projected>
 void shift_values(ElementValues<Basis, n>& values,
-                  const Quadrature& quadrature, int first, int count)
+                  const Projected& quadrature, int first, int count)
 {
     using Scalar = typename Basis::Scalar;
     constexpr std::size_t dim = Basis::dimension;

@@ -12,6 +12,7 @@
 #include <Eigen/Core>
 
 #include "iguana/embedding/cell_classification.hpp"
+#include "iguana/quadrature/quadrature.hpp"
 
 namespace iguana
 {
@@ -19,31 +20,26 @@ namespace iguana
 /**
  * @brief Quadrature over the elements of a grid
  *
- * The points and weights are stored element after element, and an offset
- * marks where the points of each element start. Elements may hold different
- * numbers of points, so that cut elements can carry rules of their own, and
+ * Its groups are the integrated elements, which may hold different numbers
+ * of points, so that cut elements can carry rules of their own, and
  * elements that are not integrated are left out
  *
  * A quadrature is filled one cell type at a time, each with a rule of its
  * own, such as Gauss-Legendre on inside cells and moment fitting on cut
  * cells
  *
- * The points lie in the parameter space of the grid. The weights include
- * the measure of their element in parameter space but not the Jacobian of
- * the geometry map, which the assembly applies
+ * The weights include the measure of their element in parameter space but
+ * not the Jacobian of the geometry map, which the assembly applies
  *
  * @tparam T Floating-point type
  * @tparam d Number of parametric directions
  */
 template<std::floating_point T, std::size_t d>
-class DomainQuadrature
+class DomainQuadrature : public Quadrature<T, d>
 {
 public:
-    /// @brief Number of parametric directions
-    static constexpr std::size_t dimension = d;
-
     /// @brief Constructs an empty quadrature, which integrates nothing
-    DomainQuadrature();
+    DomainQuadrature() = default;
 
     /**
      * @brief Constructs the quadrature from its flat arrays
@@ -97,38 +93,17 @@ public:
     constexpr int num_elements() const noexcept
     { return static_cast<int>(elements_.size()); }
 
-    /// @brief Number of points over all elements
-    constexpr int num_points() const noexcept
-    { return static_cast<int>(weights_.size()); }
-
     /// @brief Index of each integrated element, in the grid numbering
     constexpr const Eigen::VectorXi& elements() const noexcept
     { return elements_; }
 
-    /// @brief First point of each element, followed by the number of points
-    constexpr const Eigen::VectorXi& offsets() const noexcept
-    { return offsets_; }
-
-    /// @brief Points in parameter space, with size (num_points, d)
-    constexpr const Eigen::MatrixX<T>& points() const noexcept
-    { return points_; }
-
-    /// @brief Weights, one per point
-    constexpr const Eigen::VectorX<T>& weights() const noexcept
-    { return weights_; }
-
 private:
+    using Quadrature<T, d>::offsets_;
+    using Quadrature<T, d>::points_;
+    using Quadrature<T, d>::weights_;
+
     /// @brief Index of each integrated element, in the grid numbering
     Eigen::VectorXi elements_;
-
-    /// @brief First point of each element, followed by the number of points
-    Eigen::VectorXi offsets_;
-
-    /// @brief Points in parameter space, with size (num_points, d)
-    Eigen::MatrixX<T> points_;
-
-    /// @brief Weights, one per point
-    Eigen::VectorX<T> weights_;
 };
 
 } // namespace iguana

@@ -16,6 +16,7 @@
 #include "iguana/geometry/boundary.hpp"
 #include "iguana/geometry/patch.hpp"
 #include "iguana/quadrature/gauss_legendre/gauss_legendre.hpp"
+#include "iguana/quadrature/quadrature.hpp"
 
 namespace iguana
 {
@@ -26,9 +27,8 @@ namespace iguana
  *
  * Each piece of the boundary carries a rule of its own on its interval of
  * the face parameter, whose points the face maps into the parameter space
- * of the grid. The points are stored element after element, following the
- * pieces within one, and an offset marks where the points of each element
- * start. Only the elements holding a piece of the boundary are held. On a
+ * of the grid. Its groups are the elements holding a piece of the
+ * boundary, with the points following the pieces within one. On a
  * surrogate boundary, the pieces are whole faces of the inside cells
  *
  * The points, weights and normals lie in the parameter space of the grid,
@@ -43,12 +43,9 @@ namespace iguana
  *         a surrogate boundary are then segments
  */
 template<std::floating_point T, std::size_t d>
-class BoundaryQuadrature
+class BoundaryQuadrature : public Quadrature<T, d>
 {
 public:
-    /// @brief Number of parametric directions
-    static constexpr std::size_t dimension = d;
-
     /**
      * @brief Places a rule on every piece of an embedded boundary
      *
@@ -111,26 +108,10 @@ public:
     constexpr int num_elements() const noexcept
     { return static_cast<int>(elements_.size()); }
 
-    /// @brief Number of points over all elements
-    constexpr int num_points() const noexcept
-    { return static_cast<int>(weights_.size()); }
-
     /// @brief Index of each element holding a piece of the boundary, in
     ///        increasing order, in the grid numbering
     constexpr const Eigen::VectorXi& elements() const noexcept
     { return elements_; }
-
-    /// @brief First point of each element, followed by the number of points
-    constexpr const Eigen::VectorXi& offsets() const noexcept
-    { return offsets_; }
-
-    /// @brief Points in parameter space, with size (num_points, d)
-    constexpr const Eigen::MatrixX<T>& points() const noexcept
-    { return points_; }
-
-    /// @brief Weights, one per point, measuring length in parameter space
-    constexpr const Eigen::VectorX<T>& weights() const noexcept
-    { return weights_; }
 
     /// @brief Unit normals in parameter space, pointing out of the domain,
     ///        with size (num_points, d)
@@ -159,17 +140,12 @@ public:
     { return order_; }
 
 private:
+    using Quadrature<T, d>::offsets_;
+    using Quadrature<T, d>::points_;
+    using Quadrature<T, d>::weights_;
+
     /// @brief Index of each element holding a piece of the boundary
     Eigen::VectorXi elements_;
-
-    /// @brief First point of each element, followed by the number of points
-    Eigen::VectorXi offsets_;
-
-    /// @brief Points in parameter space, with size (num_points, d)
-    Eigen::MatrixX<T> points_;
-
-    /// @brief Weights, one per point
-    Eigen::VectorX<T> weights_;
 
     /// @brief Unit normals in parameter space, with size (num_points, d)
     Eigen::MatrixX<T> normals_;
@@ -177,8 +153,8 @@ private:
     /// @brief Face of the boundary holding each point
     Eigen::VectorXi faces_;
 
-    /// @brief Distance from each point to its closest point, empty unless
-    ///        shifted
+    /// @brief Distance vector from each point to its closest point, empty
+    ///        unless projected
     Eigen::MatrixX<T> distances_;
 
     /// @brief Highest total order of the Taylor series

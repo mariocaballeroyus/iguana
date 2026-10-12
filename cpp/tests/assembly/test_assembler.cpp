@@ -178,8 +178,8 @@ iguana::Boundary<double, 2> inner_quadrilateral()
 /// @brief Data of b . x at the closest points of a projected quadrature, the
 ///        points lying in parameter space, where the map scales each axis by
 ///        its side
-template<typename Quadrature>
-Eigen::VectorXd linear_data(const Quadrature& quadrature,
+template<typename Projected>
+Eigen::VectorXd linear_data(const Projected& quadrature,
                             const Eigen::Vector2d& b)
 {
     const Eigen::MatrixXd closest =

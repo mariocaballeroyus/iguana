@@ -16,6 +16,7 @@
 #include "iguana/geometry/patch.hpp"
 #include "iguana/grid/tensor_grid.hpp"
 #include "iguana/quadrature/gauss_legendre/gauss_legendre.hpp"
+#include "iguana/quadrature/quadrature.hpp"
 
 namespace iguana
 {
@@ -33,12 +34,9 @@ namespace iguana
  *         BoundaryQuadrature, so that the faces are segments
  */
 template<std::floating_point T, std::size_t d>
-class SkeletonQuadrature
+class SkeletonQuadrature : public Quadrature<T, d>
 {
 public:
-    /// @brief Number of parametric directions
-    static constexpr std::size_t dimension = d;
-
     /**
      * @brief Places a rule on every face of a list of interior faces of a
      *        grid
@@ -85,10 +83,6 @@ public:
     constexpr int num_faces() const noexcept
     { return static_cast<int>(directions_.size()); }
 
-    /// @brief Number of points over all faces
-    constexpr int num_points() const noexcept
-    { return static_cast<int>(weights_.size()); }
-
     /// @brief Direction normal to each face
     constexpr const Eigen::VectorXi& directions() const noexcept
     { return directions_; }
@@ -98,18 +92,6 @@ public:
     ///        it, in the numbering of the grid
     constexpr const Eigen::MatrixX2i& cells() const noexcept
     { return cells_; }
-
-    /// @brief First point of each face, followed by the number of points
-    constexpr const Eigen::VectorXi& offsets() const noexcept
-    { return offsets_; }
-
-    /// @brief Points in parameter space, with size (num_points, d)
-    constexpr const Eigen::MatrixX<T>& points() const noexcept
-    { return points_; }
-
-    /// @brief Weights, one per point, measuring length in parameter space
-    constexpr const Eigen::VectorX<T>& weights() const noexcept
-    { return weights_; }
 
     /// @brief Unit normals in parameter space, pointing from the cell before
     ///        each face to the cell after it, with size (num_points, d)
@@ -132,26 +114,21 @@ public:
     { return order_; }
 
 private:
+    using Quadrature<T, d>::offsets_;
+    using Quadrature<T, d>::points_;
+    using Quadrature<T, d>::weights_;
+
     /// @brief Direction normal to each face
     Eigen::VectorXi directions_;
 
     /// @brief Cells before and after each face
     Eigen::MatrixX2i cells_;
 
-    /// @brief First point of each face, followed by the number of points
-    Eigen::VectorXi offsets_;
-
-    /// @brief Points in parameter space, with size (num_points, d)
-    Eigen::MatrixX<T> points_;
-
-    /// @brief Weights, one per point
-    Eigen::VectorX<T> weights_;
-
     /// @brief Unit normals in parameter space, with size (num_points, d)
     Eigen::MatrixX<T> normals_;
 
-    /// @brief Distance from each point to its closest point, empty unless
-    ///        shifted
+    /// @brief Distance vector from each point to its closest point, empty
+    ///        unless projected
     Eigen::MatrixX<T> distances_;
 
     /// @brief Highest total order of the Taylor series
