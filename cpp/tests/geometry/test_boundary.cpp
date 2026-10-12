@@ -150,6 +150,23 @@ double radial_error(const Boundary<double, n>& boundary, int face)
     return error;
 }
 
+/// @brief Patch of one bilinear element mapped onto itself, so that its
+///        parameters are positions in the plane
+iguana::Patch<TensorBSpline<double, 2>, 2> identity()
+{
+    const BSpline<double> unit(1, {0., 0., 1., 1.});
+    const TensorBSpline<double, 2> basis({unit, unit});
+
+    // The corners, with the first direction running fastest
+    PointMatrix<double, 2> corners(4, 2);
+    corners << 0., 0.,
+               1., 0.,
+               0., 1.,
+               1., 1.;
+
+    return {basis, corners};
+}
+
 } // namespace
 
 TEST_CASE("Boundary requires one sign per face, each 1 or -1", "[boundary]")
@@ -204,7 +221,7 @@ TEST_CASE("Points project onto the closest point of a circle",
                                                 std::sin(angle));
 
     const iguana::BoundaryProjection<double> projection =
-        iguana::project_points(boundary, points);
+        iguana::project_closest_points(identity(), boundary, points);
 
     for (Eigen::Index point = 0; point < points.rows(); ++point) {
         const Eigen::RowVector2d radial =
@@ -241,7 +258,7 @@ TEST_CASE("Points project onto the sides and corners of a square",
               .25, -.5;
 
     const iguana::BoundaryProjection<double> projection =
-        iguana::project_points(square, points);
+        iguana::project_closest_points(identity(), square, points);
 
     // The corner is found first at the end of the right side, whose normal
     // it takes
@@ -271,8 +288,9 @@ TEST_CASE("Points project onto the sides and corners of a square",
                         ends}},
                       {1});
 
-    REQUIRE_THROWS_AS(iguana::project_points(Curves({}, {}), points),
-                      std::invalid_argument);
-    REQUIRE_THROWS_AS(iguana::project_points(open, points),
+    REQUIRE_THROWS_AS(
+        iguana::project_closest_points(identity(), Curves({}, {}), points),
+        std::invalid_argument);
+    REQUIRE_THROWS_AS(iguana::project_closest_points(identity(), open, points),
                       std::invalid_argument);
 }

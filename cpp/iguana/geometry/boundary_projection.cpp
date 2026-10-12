@@ -20,14 +20,24 @@
 namespace iguana
 {
 
+namespace
+{
+
+/**
+ * @brief Closest points of a boundary of curves to positions in the plane,
+ *        the search behind project_closest_points()
+ *
+ * @throws std::invalid_argument As project_closest_points() does for the
+ *         boundary
+ */
 template<std::floating_point T>
-BoundaryProjection<T> project_points(const Boundary<T, 2>& boundary,
-                                     const PointMatrix<T, 2>& points)
+BoundaryProjection<T> project_closest_phys(const Boundary<T, 2>& boundary,
+                                           const PointMatrix<T, 2>& positions)
 {
     using Face = typename Boundary<T, 2>::Face;
 
     if (boundary.num_faces() == 0)
-        throw std::invalid_argument("project_points: "
+        throw std::invalid_argument("project_closest_points: "
                                     "there must be a face to project onto");
 
     // Width below which sign changes pair up, as for the crossings
@@ -58,7 +68,7 @@ BoundaryProjection<T> project_points(const Boundary<T, 2>& boundary,
         }
     }
 
-    const Eigen::Index num_points = points.rows();
+    const Eigen::Index num_points = positions.rows();
 
     BoundaryProjection<T> projection;
     projection.faces.resize(num_points);
@@ -75,7 +85,7 @@ BoundaryProjection<T> project_points(const Boundary<T, 2>& boundary,
     PointMatrix<T, 2> normal;
 
     for (Eigen::Index point = 0; point < num_points; ++point) {
-        const Eigen::RowVectorX<T> target = points.row(point);
+        const Eigen::RowVectorX<T> target = positions.row(point);
 
         // Nearest element, the first of those at one distance
         const FaceElement* nearest = nullptr;
@@ -93,8 +103,7 @@ BoundaryProjection<T> project_points(const Boundary<T, 2>& boundary,
             }
         }
 
-        // Parameter of the face, the end of the element mapping to its knot
-        // exactly
+        // Parameter of the face
         const Face& curve = boundary.face(nearest->face);
         const BSpline<T>& bspline = curve.basis().bspline().axis(0);
         const T start = bspline.knots().element_start(nearest->element);
@@ -122,6 +131,8 @@ BoundaryProjection<T> project_points(const Boundary<T, 2>& boundary,
     return projection;
 }
 
+} // namespace
+
 template<typename Basis> requires (Basis::dimension == 2)
 BoundaryProjection<typename Basis::Scalar> project_closest_points(
     const Patch<Basis, 2>& patch,
@@ -139,7 +150,8 @@ BoundaryProjection<typename Basis::Scalar> project_closest_points(
     positions.rowwise() += patch.offset().transpose();
 
     // Closest points on the boundary in physical space
-    BoundaryProjection<T> projection = project_points(boundary, positions);
+    BoundaryProjection<T> projection =
+        project_closest_phys(boundary, positions);
 
     // Pulled back into parameter space
     PointMatrix<T, 2> closest;
@@ -149,9 +161,6 @@ BoundaryProjection<typename Basis::Scalar> project_closest_points(
 
     return projection;
 }
-
-template BoundaryProjection<double> project_points(
-    const Boundary<double, 2>&, const PointMatrix<double, 2>&);
 
 template BoundaryProjection<double> project_closest_points(
     const Patch<TensorBSpline<double, 2>, 2>&, const Boundary<double, 2>&,
