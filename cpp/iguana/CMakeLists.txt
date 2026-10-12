@@ -9,8 +9,7 @@ add_library(iguana
     grid/tensor_grid_iterator.cpp
     embedding/cell_classification.cpp
     embedding/embedded_boundary.cpp
-    embedding/ghost_faces.cpp
-    embedding/jump_faces.cpp
+    embedding/face_selection.cpp
     embedding/nurbs/grid_crossings.cpp
     embedding/nurbs/volume_fractions.cpp
     embedding/surrogate_boundary.cpp
