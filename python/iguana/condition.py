@@ -26,7 +26,7 @@ from iguana.element import PoissonElement
 from iguana.embedding import CellType
 from iguana.grid import HierarchicalGrid
 from iguana.patch import PlanarPatch
-from iguana.quadrature import BoundaryQuadrature
+from iguana.quadrature import QuadratureBoundary
 
 
 class PenaltyCondition:
@@ -36,7 +36,7 @@ class PenaltyCondition:
     def __init__(
         self,
         trace: PoissonElement.U,
-        quadrature: BoundaryQuadrature,
+        quadrature: QuadratureBoundary,
         values: (npt.ArrayLike
                  | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
         penalty: float,
@@ -74,7 +74,7 @@ class PenaltyCondition:
         if not isinstance(trace, PoissonElement.U):
             raise TypeError('the trace must be the trace of an element')
 
-        if not isinstance(quadrature, BoundaryQuadrature):
+        if not isinstance(quadrature, QuadratureBoundary):
             raise TypeError('the quadrature must be a boundary quadrature')
 
         values = _values(quadrature, values)
@@ -93,7 +93,7 @@ class PenaltyCondition:
         return self._trace
 
     @property
-    def quadrature(self) -> BoundaryQuadrature:
+    def quadrature(self) -> QuadratureBoundary:
         """The quadrature of the boundary the values are imposed along."""
         return self._quadrature
 
@@ -129,7 +129,7 @@ class NitscheCondition:
     def __init__(
         self,
         trace: PoissonElement.U,
-        quadrature: BoundaryQuadrature,
+        quadrature: QuadratureBoundary,
         values: (npt.ArrayLike
                  | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
         penalty: float,
@@ -170,7 +170,7 @@ class NitscheCondition:
         if not isinstance(trace, PoissonElement.U):
             raise TypeError('the trace must be the trace of an element')
 
-        if not isinstance(quadrature, BoundaryQuadrature):
+        if not isinstance(quadrature, QuadratureBoundary):
             raise TypeError('the quadrature must be a boundary quadrature')
 
         values = _values(quadrature, values)
@@ -189,7 +189,7 @@ class NitscheCondition:
         return self._trace
 
     @property
-    def quadrature(self) -> BoundaryQuadrature:
+    def quadrature(self) -> QuadratureBoundary:
         """The quadrature of the boundary the values are imposed along."""
         return self._quadrature
 
@@ -226,7 +226,7 @@ class NeumannCondition:
     def __init__(
         self,
         trace: PoissonElement.U,
-        quadrature: BoundaryQuadrature,
+        quadrature: QuadratureBoundary,
         values: (npt.ArrayLike
                  | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
     ) -> None:
@@ -257,7 +257,7 @@ class NeumannCondition:
         if not isinstance(trace, PoissonElement.U):
             raise TypeError('the trace must be the trace of an element')
 
-        if not isinstance(quadrature, BoundaryQuadrature):
+        if not isinstance(quadrature, QuadratureBoundary):
             raise TypeError('the quadrature must be a boundary quadrature')
 
         if quadrature.order is not None:
@@ -273,7 +273,7 @@ class NeumannCondition:
         return self._trace
 
     @property
-    def quadrature(self) -> BoundaryQuadrature:
+    def quadrature(self) -> QuadratureBoundary:
         """The quadrature of the boundary the data is given along."""
         return self._quadrature
 
@@ -444,7 +444,7 @@ class FaceNitscheCondition:
 
 
 def _values(
-    quadrature: BoundaryQuadrature,
+    quadrature: QuadratureBoundary,
     values: (npt.ArrayLike
              | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
 ) -> npt.NDArray[np.float64]:

@@ -24,7 +24,7 @@ from iguana.embedding import CellType, SurrogateBoundary
 from iguana.patch import PlanarPatch, SurfacePatch, VolumePatch
 
 
-class DomainQuadrature:
+class QuadratureDomain:
     """The quadrature points over the cells of a patch."""
 
     _cpp_object: _cpp.QuadratureDomain2d | _cpp.QuadratureDomain3d
@@ -210,11 +210,11 @@ class DomainQuadrature:
             parameters, np.asarray(facets, dtype=np.int32), order)
 
     def __repr__(self) -> str:
-        return (f'DomainQuadrature(num_elements={self.num_elements}, '
+        return (f'QuadratureDomain(num_elements={self.num_elements}, '
                 f'num_points={self.num_points})')
 
 
-class BoundaryQuadrature:
+class QuadratureBoundary:
     """The quadrature points along a boundary in the plane of a patch."""
 
     _cpp_object: _cpp.QuadratureBoundary2d
@@ -373,7 +373,7 @@ class BoundaryQuadrature:
         return self._cpp_object.physical_normals(self._patch._cpp_object)
 
     def __repr__(self) -> str:
-        return (f'BoundaryQuadrature(num_elements={self.num_elements}, '
+        return (f'QuadratureBoundary(num_elements={self.num_elements}, '
                 f'num_points={self.num_points})')
 
 

@@ -7,9 +7,9 @@ import numpy as np
 import pytest
 
 import iguana
-from iguana import (Boundary, BoundaryQuadrature, CellType, DomainQuadrature,
-                    FunctionSpace, GhostPenalty, NitscheCondition,
-                    PoissonElement, SurrogateBoundary, classify_cells, cpp,
+from iguana import (Boundary, CellType, FunctionSpace, GhostPenalty,
+                    NitscheCondition, PoissonElement, QuadratureBoundary,
+                    QuadratureDomain, SurrogateBoundary, classify_cells, cpp,
                     solve)
 
 # Centre and radius of a circle off the knot lines of the rectangle three by
@@ -49,9 +49,9 @@ def test_ghost_penalty_extends_a_shifted_problem():
     inside = [CellType.inside if cell == CellType.inside
               else CellType.outside for cell in cell_types]
 
-    quadrature = DomainQuadrature(patch, inside)
+    quadrature = QuadratureDomain(patch, inside)
     quadrature.fill_gauss_legendre(CellType.inside, 3)
-    boundary = BoundaryQuadrature(patch, SurrogateBoundary(patch, inside),
+    boundary = QuadratureBoundary(patch, SurrogateBoundary(patch, inside),
                                   3, shift=circle())
 
     space = FunctionSpace(patch, [CellType.inside] * len(cell_types))
@@ -85,7 +85,7 @@ def test_invalid_ghost_penalties():
     with pytest.raises(ValueError):
         GhostPenalty(element.u, patch, cell_types, 0.)
 
-    quadrature = DomainQuadrature(patch)
+    quadrature = QuadratureDomain(patch)
     quadrature.fill_gauss_legendre(CellType.inside, 3)
     source = np.zeros(quadrature.num_points)
 
@@ -105,7 +105,7 @@ def test_invalid_ghost_penalties():
     bent[20, 1] += .1
     curved = iguana.PlanarPatch(cpp.PlanarPatch(
         basis=patch._cpp_object.basis, coefficients=bent))
-    curved_quadrature = DomainQuadrature(curved)
+    curved_quadrature = QuadratureDomain(curved)
     curved_quadrature.fill_gauss_legendre(CellType.inside, 3)
     ghost = GhostPenalty(element.u, curved, cell_types, 1.)
 
@@ -115,7 +115,7 @@ def test_invalid_ghost_penalties():
 
     # Faces between cells lie in the plane, so a volume takes none
     box = iguana.create_box(lengths=(1., 1., 1.), elements=(1, 1, 1))
-    box_quadrature = DomainQuadrature(box)
+    box_quadrature = QuadratureDomain(box)
     box_quadrature.fill_gauss_legendre(CellType.inside, 3)
 
     with pytest.raises(TypeError):

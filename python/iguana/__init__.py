@@ -18,16 +18,16 @@ from iguana.grid import HierarchicalGrid
 from iguana.patch import (CurvePatch, PlanarPatch, SurfacePatch, VolumePatch,
                           create_box, create_curve, create_rectangle,
                           create_surface)
-from iguana.quadrature import BoundaryQuadrature, DomainQuadrature
+from iguana.quadrature import QuadratureBoundary, QuadratureDomain
 from iguana.solver import solve
 from iguana.stabilization import GhostPenalty
 
 __version__ = cpp.__version__
 
-__all__ = ['Boundary', 'BoundaryQuadrature', 'CellType', 'CurvePatch',
-           'DomainQuadrature', 'FaceNitscheCondition', 'FunctionSpace',
-           'GhostPenalty', 'HierarchicalGrid', 'NeumannCondition',
-           'NitscheCondition', 'PenaltyCondition', 'PlanarPatch',
-           'PoissonElement', 'SurfacePatch', 'SurrogateBoundary',
+__all__ = ['Boundary', 'CellType', 'CurvePatch', 'FaceNitscheCondition',
+           'FunctionSpace', 'GhostPenalty', 'HierarchicalGrid',
+           'NeumannCondition', 'NitscheCondition', 'PenaltyCondition',
+           'PlanarPatch', 'PoissonElement', 'QuadratureBoundary',
+           'QuadratureDomain', 'SurfacePatch', 'SurrogateBoundary',
            'VolumePatch', 'classify_cells', 'create_box', 'create_curve',
            'create_rectangle', 'create_surface', 'solve']

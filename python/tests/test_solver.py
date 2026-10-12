@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 
 import iguana
-from iguana import (CellType, DomainQuadrature, FunctionSpace,
-                    HierarchicalGrid, PoissonElement, solve)
+from iguana import (CellType, FunctionSpace, HierarchicalGrid, PoissonElement,
+                    QuadratureDomain, solve)
 
 
 def rectangle():
@@ -20,7 +20,7 @@ def rectangle():
 def gauss_quadrature(patch):
     """Gauss quadrature of a patch whose cells all lie inside, exact for the
     products of quadratic functions through an affine map."""
-    quadrature = DomainQuadrature(patch)
+    quadrature = QuadratureDomain(patch)
     quadrature.fill_gauss_legendre(CellType.inside, 3)
 
     return quadrature
@@ -154,7 +154,7 @@ def test_invalid_arguments():
     with pytest.raises(ValueError):
         solve(element, space, gauss_quadrature(rectangle()), ones)
 
-    refined = DomainQuadrature(
+    refined = QuadratureDomain(
         patch, grid=HierarchicalGrid(patch.degrees, patch.knots).refine([0]))
     refined.fill_gauss_legendre(CellType.inside, 3)
 

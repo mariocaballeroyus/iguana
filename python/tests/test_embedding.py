@@ -8,9 +8,9 @@ import numpy as np
 import pytest
 
 import iguana
-from iguana import (Boundary, BoundaryQuadrature, CellType, DomainQuadrature,
-                    FunctionSpace, GhostPenalty, NitscheCondition,
-                    PoissonElement, SurrogateBoundary, classify_cells, cpp,
+from iguana import (Boundary, CellType, FunctionSpace, GhostPenalty,
+                    NitscheCondition, PoissonElement, QuadratureBoundary,
+                    QuadratureDomain, SurrogateBoundary, classify_cells, cpp,
                     solve)
 
 # Centre and radius of a circle off the knot lines of the rectangle three by
@@ -114,7 +114,7 @@ def test_surrogate_boundary():
 
     # The weights give the perimeter, and the flux of the position, whose
     # divergence is two, twice the area
-    quadrature = BoundaryQuadrature(patch, surrogate, 2)
+    quadrature = QuadratureBoundary(patch, surrogate, 2)
     flux = quadrature.weights @ np.sum(quadrature.positions
                                        * quadrature.normals, axis=1)
 
@@ -142,7 +142,7 @@ def test_invalid_surrogate_boundaries():
     other = iguana.create_rectangle(lengths=(2., 3.), elements=(6, 6))
 
     with pytest.raises(ValueError):
-        BoundaryQuadrature(other, SurrogateBoundary(patch, cell_types), 2)
+        QuadratureBoundary(other, SurrogateBoundary(patch, cell_types), 2)
 
 
 def test_classify_cells():
@@ -166,9 +166,9 @@ def test_classified_cells_solve_a_shifted_problem():
                   else CellType.outside
                   for cell in classify_cells(patch, circle()).cell_types]
 
-    quadrature = DomainQuadrature(patch, cell_types)
+    quadrature = QuadratureDomain(patch, cell_types)
     quadrature.fill_gauss_legendre(CellType.inside, 3)
-    boundary = BoundaryQuadrature(patch, SurrogateBoundary(patch, cell_types),
+    boundary = QuadratureBoundary(patch, SurrogateBoundary(patch, cell_types),
                                   3, shift=circle())
 
     space = FunctionSpace(patch, cell_types)
@@ -194,7 +194,7 @@ def test_binary_cell_weights_reduce_to_the_shifted_problem():
     cell_types = [CellType.inside if cell == CellType.inside
                   else CellType.outside for cell in classified]
 
-    boundary = BoundaryQuadrature(patch, SurrogateBoundary(patch, cell_types),
+    boundary = QuadratureBoundary(patch, SurrogateBoundary(patch, cell_types),
                                   3, shift=circle())
     space = FunctionSpace(patch, [CellType.inside] * len(cell_types))
     element = PoissonElement()
@@ -202,12 +202,12 @@ def test_binary_cell_weights_reduce_to_the_shifted_problem():
                                    40.)]
     stabilizations = [GhostPenalty(element.u, patch, classified, .1)]
 
-    inside = DomainQuadrature(patch, cell_types)
+    inside = QuadratureDomain(patch, cell_types)
     inside.fill_gauss_legendre(CellType.inside, 3)
     shifted = solve(element, space, inside, np.ones(inside.num_points),
                     conditions=conditions, stabilizations=stabilizations)
 
-    every = DomainQuadrature(patch, cell_types)
+    every = QuadratureDomain(patch, cell_types)
     every.fill_gauss_legendre(CellType.inside, 3)
     every.fill_gauss_legendre(CellType.outside, 3)
     weights = [1. if cell == CellType.inside else 0. for cell in cell_types]

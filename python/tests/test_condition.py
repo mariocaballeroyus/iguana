@@ -7,10 +7,10 @@ import numpy as np
 import pytest
 
 import iguana
-from iguana import (Boundary, BoundaryQuadrature, CellType, DomainQuadrature,
-                    FaceNitscheCondition, FunctionSpace, GhostPenalty,
-                    HierarchicalGrid, NeumannCondition, NitscheCondition,
-                    PenaltyCondition, PoissonElement, SurrogateBoundary,
+from iguana import (Boundary, CellType, FaceNitscheCondition, FunctionSpace,
+                    GhostPenalty, HierarchicalGrid, NeumannCondition,
+                    NitscheCondition, PenaltyCondition, PoissonElement,
+                    QuadratureBoundary, QuadratureDomain, SurrogateBoundary,
                     classify_cells, cpp, solve)
 
 # Sides of the rectangle, and of the square inside it, whose edges halve
@@ -59,7 +59,7 @@ def square_sides(sides=range(4)):
 
 def square_boundary(patch, sides=range(4)):
     """Quadrature of sides of the square."""
-    return BoundaryQuadrature(patch, square_sides(sides), 5)
+    return QuadratureBoundary(patch, square_sides(sides), 5)
 
 
 def square_surrogate(patch):
@@ -67,7 +67,7 @@ def square_surrogate(patch):
     shifted towards its sides."""
     surrogate = SurrogateBoundary(patch, square_cell_types(patch))
 
-    return BoundaryQuadrature(patch, surrogate, 3, shift=square_sides())
+    return QuadratureBoundary(patch, surrogate, 3, shift=square_sides())
 
 
 def square_problem():
@@ -78,7 +78,7 @@ def square_problem():
     vertices = np.array([LOWER, [UPPER[0], LOWER[1]], UPPER,
                          [LOWER[0], UPPER[1]]])
 
-    quadrature = DomainQuadrature(patch, cell_types)
+    quadrature = QuadratureDomain(patch, cell_types)
     quadrature.fill_gauss_legendre(CellType.inside, 3)
     quadrature.fill_moment_fitting(CellType.cut, vertices,
                                    [[0, 1], [1, 2], [2, 3], [3, 0]], order=3)
@@ -93,7 +93,7 @@ def surrogate_problem():
     cell_types = [CellType.inside if cell == CellType.inside
                   else CellType.outside for cell in square_cell_types(patch)]
 
-    quadrature = DomainQuadrature(patch, cell_types)
+    quadrature = QuadratureDomain(patch, cell_types)
     quadrature.fill_gauss_legendre(CellType.inside, 3)
 
     return patch, FunctionSpace(patch, cell_types), quadrature
@@ -188,7 +188,7 @@ def test_face_nitsche_condition_imposes_a_linear_field():
     cell_types, fractions = classify_cells(patch, square_sides())
     space = FunctionSpace(patch, [CellType.inside] * len(cell_types))
 
-    quadrature = DomainQuadrature(patch, cell_types)
+    quadrature = QuadratureDomain(patch, cell_types)
 
     for cell_type in (CellType.inside, CellType.cut, CellType.outside):
         quadrature.fill_gauss_legendre(cell_type, 3)
@@ -216,7 +216,7 @@ def test_face_nitsche_condition_steps_a_field_linear_in_time():
     cell_types, fractions = classify_cells(patch, square_sides())
     space = FunctionSpace(patch, [CellType.inside] * len(cell_types))
 
-    quadrature = DomainQuadrature(patch, cell_types)
+    quadrature = QuadratureDomain(patch, cell_types)
 
     for cell_type in (CellType.inside, CellType.cut, CellType.outside):
         quadrature.fill_gauss_legendre(cell_type, 3)
@@ -309,7 +309,7 @@ def test_invalid_arguments():
 
     # Boundaries lie in the plane, so a volume takes no conditions
     box = iguana.create_box(lengths=(1., 1., 1.), elements=(1, 1, 1))
-    box_quadrature = DomainQuadrature(box)
+    box_quadrature = QuadratureDomain(box)
     box_quadrature.fill_gauss_legendre(CellType.inside, 3)
     condition = PenaltyCondition(element.u, boundary, values, 1.)
 
@@ -362,7 +362,7 @@ def test_invalid_face_nitsche_conditions():
     # The solve gives the condition the weights of the cells, which it
     # needs, and its faces must lie on the patch of the space
     space = FunctionSpace(patch, [CellType.inside] * len(cell_types))
-    quadrature = DomainQuadrature(patch)
+    quadrature = QuadratureDomain(patch)
     quadrature.fill_gauss_legendre(CellType.inside, 3)
     source = np.zeros(quadrature.num_points)
     condition = FaceNitscheCondition(element.u, patch, cell_types, sides,
