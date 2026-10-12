@@ -251,20 +251,13 @@ BoundaryQuadrature2d surrogate_gauss_legendre(
     return {boundary, GaussLegendre<double, 1>(num_points)};
 }
 
-/// @brief Places a Gauss-Legendre rule on every face where a ghost penalty
-///        acts, a rule Python never handles itself
-SkeletonQuadrature2d ghost_gauss_legendre(const GhostFaces<double, 2>& faces,
-                                          int num_points)
+/// @brief Places a Gauss-Legendre rule on every face of a list of interior
+///        faces of the grid of a patch, a rule Python never handles itself
+SkeletonQuadrature2d skeleton_gauss_legendre(const PlanarPatch& patch,
+                                             const std::vector<int>& faces,
+                                             int num_points)
 {
-    return {faces, GaussLegendre<double, 1>(num_points)};
-}
-
-/// @brief Places a Gauss-Legendre rule on every face across which the
-///        volume fraction may jump, a rule Python never handles itself
-SkeletonQuadrature2d jump_gauss_legendre(const JumpFaces<double, 2>& faces,
-                                         int num_points)
-{
-    return {faces, GaussLegendre<double, 1>(num_points)};
+    return {patch.basis().grid(), faces, GaussLegendre<double, 1>(num_points)};
 }
 
 /**
@@ -569,10 +562,8 @@ void quadrature(py::module_& module)
              py::arg("patch"));
 
     py::class_<SkeletonQuadrature2d>(module, "SkeletonQuadrature2d")
-        .def(py::init(&ghost_gauss_legendre), py::arg("faces"),
-             py::arg("num_points"))
-        .def(py::init(&jump_gauss_legendre), py::arg("faces"),
-             py::arg("num_points"))
+        .def(py::init(&skeleton_gauss_legendre), py::arg("patch"),
+             py::arg("faces"), py::arg("num_points"))
         .def_property_readonly("num_faces", &SkeletonQuadrature2d::num_faces)
         .def_property_readonly("num_points",
                                &SkeletonQuadrature2d::num_points)

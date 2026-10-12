@@ -23,8 +23,6 @@ using CellClassification2d = CellClassification<double, 2>;
 using CellClassification3d = CellClassification<double, 3>;
 using EmbeddedBoundary2d = EmbeddedBoundary<double, 2>;
 using SurrogateBoundary2d = SurrogateBoundary<double, 2>;
-using GhostFaces2d = GhostFaces<double, 2>;
-using JumpFaces2d = JumpFaces<double, 2>;
 using PlanarPatch = Patch<TensorBSpline<double, 2>, 2>;
 
 /// @brief Element of the grid holding each piece, in the order of the
@@ -82,19 +80,20 @@ SurrogateBoundary2d surrogate_boundary(
     return {patch.basis().grid(), classification};
 }
 
-/// @brief Faces where a ghost penalty acts among the elements of a patch
-GhostFaces2d ghost_faces(const PlanarPatch& patch,
-                         const CellClassification2d& classification)
+/// @brief Faces where a ghost penalty acts among the elements of a patch,
+///        in the numbering of its grid
+std::vector<int> ghost_faces(const PlanarPatch& patch,
+                             const CellClassification2d& classification)
 {
-    return {patch.basis().grid(), classification};
+    return iguana::ghost_faces(patch.basis().grid(), classification);
 }
 
 /// @brief Faces across which the volume fraction may jump among the
-///        elements of a patch
-JumpFaces2d jump_faces(const PlanarPatch& patch,
-                       const CellClassification2d& classification)
+///        elements of a patch, in the numbering of its grid
+std::vector<int> jump_faces(const PlanarPatch& patch,
+                            const CellClassification2d& classification)
 {
-    return {patch.basis().grid(), classification};
+    return iguana::jump_faces(patch.basis().grid(), classification);
 }
 
 /// @brief Element of the grid holding each face, in the order of the faces
@@ -151,15 +150,10 @@ void embedding(py::module_& module)
         .def_property_readonly("num_faces", &SurrogateBoundary2d::num_faces)
         .def_property_readonly("elements", &face_elements);
 
-    py::class_<GhostFaces2d>(module, "GhostFaces2d")
-        .def(py::init(&ghost_faces), py::arg("patch"),
-             py::arg("classification"))
-        .def_property_readonly("num_faces", &GhostFaces2d::num_faces);
-
-    py::class_<JumpFaces2d>(module, "JumpFaces2d")
-        .def(py::init(&jump_faces), py::arg("patch"),
-             py::arg("classification"))
-        .def_property_readonly("num_faces", &JumpFaces2d::num_faces);
+    module.def("ghost_faces", &ghost_faces, py::arg("patch"),
+               py::arg("classification"));
+    module.def("jump_faces", &jump_faces, py::arg("patch"),
+               py::arg("classification"));
 }
 
 } // namespace iguana::bindings

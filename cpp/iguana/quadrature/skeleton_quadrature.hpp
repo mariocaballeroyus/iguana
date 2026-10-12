@@ -8,13 +8,13 @@
 
 #include <concepts>
 #include <cstddef>
+#include <span>
 
 #include <Eigen/Core>
 
-#include "iguana/embedding/ghost_faces.hpp"
-#include "iguana/embedding/jump_faces.hpp"
 #include "iguana/geometry/boundary.hpp"
 #include "iguana/geometry/patch.hpp"
+#include "iguana/grid/tensor_grid.hpp"
 #include "iguana/quadrature/gauss_legendre/gauss_legendre.hpp"
 
 namespace iguana
@@ -47,28 +47,22 @@ public:
     static constexpr std::size_t dimension = d;
 
     /**
-     * @brief Places a rule on every face where a ghost penalty acts
+     * @brief Places a rule on every face of a list of interior faces of a
+     *        grid
      *
      * The rule maps from [-1, 1] onto the interval each face spans across
      * its direction, so that the weights measure length in parameter space
      *
-     * @param faces Faces of a grid where a ghost penalty acts
+     * @param grid Grid whose interior faces are listed
+     * @param faces Indices of the faces in the numbering of the grid, such
+     *        as ghost_faces() and jump_faces() select
      * @param rule Rule placed on every face
-     */
-    SkeletonQuadrature(const GhostFaces<T, d>& faces,
-                       const GaussLegendre<T, 1>& rule);
-
-    /**
-     * @brief Places a rule on every face across which the volume fraction
-     *        may jump
      *
-     * The rule is placed as on the faces of a ghost penalty
-     *
-     * @param faces Faces of a grid across which the volume fraction may
-     *        jump
-     * @param rule Rule placed on every face
+     * @throws std::invalid_argument If an index does not number an interior
+     *         face of @p grid
      */
-    SkeletonQuadrature(const JumpFaces<T, d>& faces,
+    SkeletonQuadrature(const TensorGrid<T, d>& grid,
+                       std::span<const int> faces,
                        const GaussLegendre<T, 1>& rule);
 
     /**
@@ -151,15 +145,6 @@ public:
     { return order_; }
 
 private:
-    /**
-     * @brief Places a rule on every face of a list, the work of the
-     *        constructors
-     *
-     * @tparam Faces Faces of a grid, as GhostFaces and JumpFaces list them
-     */
-    template<typename Faces>
-    void place(const Faces& faces, const GaussLegendre<T, 1>& rule);
-
     /// @brief Direction normal to each face
     Eigen::VectorXi directions_;
 

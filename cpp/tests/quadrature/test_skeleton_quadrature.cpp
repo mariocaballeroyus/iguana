@@ -99,10 +99,10 @@ TEST_CASE("A shifted skeleton quadrature reaches the closest points of a "
     std::vector<CellType> cell_types(9, CellType::cut);
     cell_types[4] = CellType::inside;
 
-    const iguana::JumpFaces<double, 2> faces(
+    const std::vector<int> faces = iguana::jump_faces(
         square.basis().grid(),
         iguana::CellClassification<double, 2>(cell_types));
-    const Quadrature unshifted(faces, Gauss(3));
+    const Quadrature unshifted(square.basis().grid(), faces, Gauss(3));
 
     const Eigen::RowVector2d center(.3, -.2);
     const Boundary<double, 2> boundary({circle(center + offset)}, {1});

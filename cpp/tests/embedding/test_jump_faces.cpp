@@ -16,7 +16,6 @@ namespace
 
 using iguana::CellClassification;
 using iguana::CellType;
-using iguana::JumpFaces;
 using iguana::KnotVector;
 using iguana::TensorGrid;
 
@@ -40,24 +39,28 @@ TEST_CASE("The jump faces separate cells whose fractions may differ",
          CellType::inside, CellType::cut, CellType::outside,
          CellType::outside, CellType::outside, CellType::outside});
 
-    const JumpFaces<double, 2> jump(grid, classification);
+    const std::vector<int> jump = iguana::jump_faces(grid, classification);
 
     // The faces between cells of different types, but none between two
     // inside or two outside cells, as direction, cell before and cell
-    // after, ordered by the cell before
+    // after, in the numbering of the grid
     const std::vector<std::array<int, 3>> expected{
-        {0, 1, 2}, {1, 1, 4}, {0, 3, 4}, {1, 3, 6}, {0, 4, 5}, {1, 4, 7}};
+        {0, 1, 2}, {0, 3, 4}, {0, 4, 5}, {1, 1, 4}, {1, 3, 6}, {1, 4, 7}};
     std::vector<std::array<int, 3>> found;
 
-    for (const JumpFaces<double, 2>::Face& face : jump.faces())
-        found.push_back({face.direction, face.before, face.after});
+    for (const int face : jump) {
+        const std::array<int, 2> cells = grid.face_elements(face);
+
+        found.push_back({static_cast<int>(grid.face_direction(face)),
+                         cells[0], cells[1]});
+    }
 
     REQUIRE(found == expected);
 
     // One cell type for nine elements
     const CellClassification<double, 2> one_cell({CellType::inside});
 
-    REQUIRE_THROWS_AS((JumpFaces<double, 2>(grid, one_cell)),
+    REQUIRE_THROWS_AS(iguana::jump_faces(grid, one_cell),
                       std::invalid_argument);
 }
 
@@ -75,18 +78,18 @@ TEST_CASE("With cells inside or outside, the jump faces are the surrogate "
         cell_types[element] = CellType::inside;
 
     const CellClassification<double, 2> classification(cell_types);
-    const JumpFaces<double, 2> jump(grid, classification);
+    const std::vector<int> jump = iguana::jump_faces(grid, classification);
     const iguana::SurrogateBoundary<double, 2> surrogate(grid,
                                                          classification);
 
-    REQUIRE(jump.num_faces() == 8);
+    REQUIRE(jump.size() == 8);
     REQUIRE(surrogate.num_faces() == 8);
 
     // Two cut cells may hold different fractions, and are both kept
     std::vector<CellType> two_cut(4, CellType::cut);
     const KnotVector<double> halves(1, {0., 0., .5, 1., 1.});
 
-    REQUIRE(JumpFaces<double, 2>(TensorGrid<double, 2>({halves, halves}),
-                                 CellClassification<double, 2>(two_cut))
-                .num_faces() == 4);
+    REQUIRE(iguana::jump_faces(TensorGrid<double, 2>({halves, halves}),
+                               CellClassification<double, 2>(two_cut))
+                .size() == 4);
 }

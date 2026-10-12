@@ -6,10 +6,8 @@
 #ifndef IGUANA_EMBEDDING_JUMP_FACES_HPP
 #define IGUANA_EMBEDDING_JUMP_FACES_HPP
 
-#include <array>
 #include <concepts>
 #include <cstddef>
-#include <span>
 #include <vector>
 
 #include "iguana/embedding/cell_classification.hpp"
@@ -32,62 +30,17 @@ namespace iguana
  *
  * @tparam T Floating-point type
  * @tparam d Number of parametric directions
+ *
+ * @param grid Grid whose elements are the cells
+ * @param classification Cell type of each element of the grid
+ * @return Indices of the faces in the numbering of the grid, increasing
+ *
+ * @throws std::invalid_argument If the classification does not have one
+ *         cell type per element of the grid
  */
 template<std::floating_point T, std::size_t d>
-class JumpFaces
-{
-public:
-    /// @brief Number of parametric directions
-    static constexpr std::size_t dimension = d;
-
-    /// @brief Face between two neighboring cells, a box of parameter space
-    ///        flat in its direction
-    struct Face
-    {
-        /// @brief Direction normal to the face
-        int direction;
-
-        /// @brief Cell before the face along its direction, in the numbering
-        ///        of the grid
-        int before;
-
-        /// @brief Cell after the face along its direction, in the numbering
-        ///        of the grid
-        int after;
-
-        /// @brief Corner of the face where every parameter is lowest
-        std::array<T, d> start;
-
-        /// @brief Corner of the face where every parameter is highest,
-        ///        equal to start in the direction of the face
-        std::array<T, d> end;
-    };
-
-    /**
-     * @brief Finds the faces of a grid across which the volume fraction
-     *        may jump
-     *
-     * @param grid Grid whose elements are the cells
-     * @param classification Cell type of each element of the grid
-     *
-     * @throws std::invalid_argument If the classification does not have one
-     *         cell type per element of the grid
-     */
-    JumpFaces(const TensorGrid<T, d>& grid,
-              const CellClassification<T, d>& classification);
-
-    /// @brief Number of faces
-    constexpr int num_faces() const noexcept
-    { return static_cast<int>(faces_.size()); }
-
-    /// @brief Faces, ordered by the cell before them and then by direction
-    constexpr std::span<const Face> faces() const noexcept
-    { return faces_; }
-
-private:
-    /// @brief Faces, ordered by the cell before them and then by direction
-    std::vector<Face> faces_;
-};
+std::vector<int> jump_faces(const TensorGrid<T, d>& grid,
+                            const CellClassification<T, d>& classification);
 
 } // namespace iguana
 

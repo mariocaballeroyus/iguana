@@ -5,6 +5,7 @@
 
 #include "skeleton_quadrature.hpp"
 
+#include <array>
 #include <cstddef>
 #include <stdexcept>
 
@@ -17,33 +18,24 @@ namespace iguana
 {
 
 template<std::floating_point T, std::size_t d>
-SkeletonQuadrature<T, d>::SkeletonQuadrature(const GhostFaces<T, d>& faces,
+SkeletonQuadrature<T, d>::SkeletonQuadrature(const TensorGrid<T, d>& grid,
+                                             std::span<const int> faces,
                                              const GaussLegendre<T, 1>& rule)
 {
-    place(faces, rule);
-}
-
-template<std::floating_point T, std::size_t d>
-SkeletonQuadrature<T, d>::SkeletonQuadrature(const JumpFaces<T, d>& faces,
-                                             const GaussLegendre<T, 1>& rule)
-{
-    place(faces, rule);
-}
-
-template<std::floating_point T, std::size_t d>
-template<typename Faces>
-void SkeletonQuadrature<T, d>::place(const Faces& faces,
-                                     const GaussLegendre<T, 1>& rule)
-{
-    using Face = typename Faces::Face;
+    for (const int face : faces) {
+        if (face < 0 || face >= grid.num_faces())
+            throw std::invalid_argument("SkeletonQuadrature: "
+                                        "the faces must be interior faces "
+                                        "of the grid");
+    }
 
     // Every face carries the whole rule
     const int count = rule.num_points();
-    const int num_total = faces.num_faces() * count;
+    const int num_total = static_cast<int>(faces.size()) * count;
 
-    directions_.resize(faces.num_faces());
-    cells_.resize(faces.num_faces(), 2);
-    offsets_.resize(faces.num_faces() + 1);
+    directions_.resize(faces.size());
+    cells_.resize(faces.size(), 2);
+    offsets_.resize(faces.size() + 1);
     points_.resize(num_total, d);
     weights_.resize(num_total);
     normals_.setZero(num_total, d);
@@ -57,27 +49,27 @@ void SkeletonQuadrature<T, d>::place(const Faces& faces,
     int index = 0;
     offsets_(0) = 0;
 
-    for (const Face& face : faces.faces()) {
+    for (const int face : faces) {
         // A segment, d being two, runs across its direction
-        const std::size_t direction = static_cast<std::size_t>(face.direction);
+        const std::size_t direction = grid.face_direction(face);
         const std::size_t across = 1 - direction;
+        const std::array<T, d> start = grid.face_start(face);
+        const std::array<T, d> end = grid.face_end(face);
+        const std::array<int, 2> cells = grid.face_elements(face);
 
         // The rule placed on the interval the face spans
         parameters = rule.points();
         weights = rule.weights();
-        BoxRule<T, 1>::map_to_parameter_space({face.start[across]},
-                                              {face.end[across]},
+        BoxRule<T, 1>::map_to_parameter_space({start[across]}, {end[across]},
                                               parameters, weights);
 
         points_.block(first, across, count, 1) = parameters;
-        points_.block(first, direction, count, 1)
-            .setConstant(face.start[direction]);
+        points_.block(first, direction, count, 1).setConstant(start[direction]);
         weights_.segment(first, count) = weights;
         normals_.block(first, direction, count, 1).setOnes();
 
-        directions_(index) = face.direction;
-        cells_(index, 0) = face.before;
-        cells_(index, 1) = face.after;
+        directions_(index) = static_cast<int>(direction);
+        cells_.row(index) << cells[0], cells[1];
 
         first += count;
         ++index;

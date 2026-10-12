@@ -79,7 +79,7 @@ class GhostPenalty:
         # Along a face, the squared jumps are polynomials of twice the degree
         # along it, which one point more than the degree integrates exactly
         # on an affine map
-        faces = _cpp.GhostFaces2d(
+        faces = _cpp.ghost_faces(
             patch=patch._cpp_object,
             classification=_cpp.CellClassification2d(cell_types))
 
@@ -87,7 +87,8 @@ class GhostPenalty:
         self._patch = patch
         self._penalty = float(penalty)
         self._quadrature = _cpp.SkeletonQuadrature2d(
-            faces=faces, num_points=max(patch.degrees) + 1)
+            patch=patch._cpp_object, faces=faces,
+            num_points=max(patch.degrees) + 1)
 
     @property
     def trace(self) -> PoissonElement.U:
