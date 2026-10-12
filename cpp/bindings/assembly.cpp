@@ -26,7 +26,8 @@ using NeumannCondition2d = NeumannCondition<TensorBSpline<double, 2>, 2>;
 using NitscheCondition2d = NitscheCondition<TensorBSpline<double, 2>, 2>;
 using SkeletonNitscheCondition2d =
     SkeletonNitscheCondition<TensorBSpline<double, 2>, 2>;
-using GhostPenalty2d = SkeletonGhostPenalty<TensorBSpline<double, 2>, 2>;
+using SkeletonGhostPenalty2d =
+    SkeletonGhostPenalty<TensorBSpline<double, 2>, 2>;
 using BoundaryProjection2d = BoundaryProjection<double>;
 using QuadratureBoundary2d = QuadratureBoundary<double, 2>;
 using QuadratureSkeleton2d = QuadratureSkeleton<double, 2>;
@@ -36,7 +37,7 @@ using Assembler3d = Assembler<TensorBSpline<double, 3>, 3>;
 /// @brief Assembly of a ghost penalty over faces, the one overload of
 ///        assemble_stiffness that is not a template
 using AssembleFaces2d = void (Assembler2d::*)(
-    const GhostPenalty2d&, const QuadratureSkeleton2d&);
+    const SkeletonGhostPenalty2d&, const QuadratureSkeleton2d&);
 
 } // namespace
 
@@ -84,7 +85,7 @@ void assembly(py::module_& module)
              py::arg("trace"), py::arg("flux"), py::arg("penalty"),
              py::keep_alive<1, 2>(), py::keep_alive<1, 3>());
 
-    py::class_<GhostPenalty2d>(module, "GhostPenalty2d")
+    py::class_<SkeletonGhostPenalty2d>(module, "SkeletonGhostPenalty2d")
         .def(py::init<const Trace2d&, double>(), py::arg("trace"),
              py::arg("penalty"), py::keep_alive<1, 2>());
 

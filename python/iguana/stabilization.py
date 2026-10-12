@@ -113,8 +113,8 @@ class GhostPenalty:
     def _assemble(self, assembler: _cpp.Assembler2d) -> None:
         """Add the stiffness of the penalty into the compiled assembler of
         a planar space, built with its faces coupled."""
-        penalty = _cpp.GhostPenalty2d(self._trace._cpp_trace(),
-                                      self._penalty)
+        penalty = _cpp.SkeletonGhostPenalty2d(self._trace._cpp_trace(),
+                                              self._penalty)
 
         assembler.assemble_stiffness(penalty, self._quadrature)
 
