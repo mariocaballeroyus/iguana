@@ -32,7 +32,7 @@ namespace
  * @brief Expands the values at the points of one element or face of a
  *        shifted quadrature towards the boundary it is shifted onto
  *
- * @tparam Quadrature BoundaryQuadrature or FaceQuadrature
+ * @tparam Quadrature BoundaryQuadrature or SkeletonQuadrature
  *
  * @throws std::invalid_argument If the patch is not a B-spline one, whose
  *         basis alone provides the Taylor series
@@ -421,7 +421,7 @@ void Assembler<Basis, n>::assemble_load(
 template<typename Basis, std::size_t n>
 void Assembler<Basis, n>::assemble_stiffness(
     const GhostPenalty<Basis, n>& penalty,
-    const FaceQuadrature<Scalar, dim>& quadrature) requires (dim == 2)
+    const SkeletonQuadrature<Scalar, dim>& quadrature) requires (dim == 2)
 {
     // Without the faces coupled, the pattern would grow with each new face
     if (!couple_faces_)
@@ -478,7 +478,7 @@ void Assembler<Basis, n>::assemble_stiffness(
 template<typename Basis, std::size_t n>
 template<std::derived_from<FaceCondition<Basis, n>> C>
 void Assembler<Basis, n>::assemble_stiffness(
-    const C& condition, const FaceQuadrature<Scalar, dim>& quadrature,
+    const C& condition, const SkeletonQuadrature<Scalar, dim>& quadrature,
     const Eigen::VectorX<Scalar>& cell_weights) requires (dim == 2)
 {
     // Without the faces coupled, the pattern would grow with each new face
@@ -558,7 +558,7 @@ void Assembler<Basis, n>::assemble_stiffness(
 template<typename Basis, std::size_t n>
 template<std::derived_from<FaceCondition<Basis, n>> C>
 void Assembler<Basis, n>::assemble_load(
-    const C& condition, const FaceQuadrature<Scalar, dim>& quadrature,
+    const C& condition, const SkeletonQuadrature<Scalar, dim>& quadrature,
     const Eigen::VectorX<Scalar>& data,
     const Eigen::VectorX<Scalar>& cell_weights) requires (dim == 2)
 {
@@ -815,18 +815,18 @@ template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_stiffness(
     const FaceNitscheCondition<TensorBSpline<double, 2>, 2>&,
-    const FaceQuadrature<double, 2>&, const Eigen::VectorX<double>&);
+    const SkeletonQuadrature<double, 2>&, const Eigen::VectorX<double>&);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_stiffness(
     const FaceNitscheCondition<TensorNURBS<double, 2>, 2>&,
-    const FaceQuadrature<double, 2>&, const Eigen::VectorX<double>&);
+    const SkeletonQuadrature<double, 2>&, const Eigen::VectorX<double>&);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
     const FaceNitscheCondition<TensorBSpline<double, 2>, 2>&,
-    const FaceQuadrature<double, 2>&, const Eigen::VectorX<double>&,
+    const SkeletonQuadrature<double, 2>&, const Eigen::VectorX<double>&,
     const Eigen::VectorX<double>&);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
     const FaceNitscheCondition<TensorNURBS<double, 2>, 2>&,
-    const FaceQuadrature<double, 2>&, const Eigen::VectorX<double>&,
+    const SkeletonQuadrature<double, 2>&, const Eigen::VectorX<double>&,
     const Eigen::VectorX<double>&);
 
 } // namespace iguana

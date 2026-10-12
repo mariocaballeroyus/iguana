@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef IGUANA_QUADRATURE_FACE_QUADRATURE_HPP
-#define IGUANA_QUADRATURE_FACE_QUADRATURE_HPP
+#ifndef IGUANA_QUADRATURE_SKELETON_QUADRATURE_HPP
+#define IGUANA_QUADRATURE_SKELETON_QUADRATURE_HPP
 
 #include <concepts>
 #include <cstddef>
@@ -40,7 +40,7 @@ namespace iguana
  *         BoundaryQuadrature, so that the faces are segments
  */
 template<std::floating_point T, std::size_t d>
-class FaceQuadrature
+class SkeletonQuadrature
 {
 public:
     /// @brief Number of parametric directions
@@ -55,8 +55,8 @@ public:
      * @param faces Faces of a grid where a ghost penalty acts
      * @param rule Rule placed on every face
      */
-    FaceQuadrature(const GhostFaces<T, d>& faces,
-                   const GaussLegendre<T, 1>& rule);
+    SkeletonQuadrature(const GhostFaces<T, d>& faces,
+                       const GaussLegendre<T, 1>& rule);
 
     /**
      * @brief Places a rule on every face across which the volume fraction
@@ -68,8 +68,8 @@ public:
      *        jump
      * @param rule Rule placed on every face
      */
-    FaceQuadrature(const JumpFaces<T, d>& faces,
-                   const GaussLegendre<T, 1>& rule);
+    SkeletonQuadrature(const JumpFaces<T, d>& faces,
+                       const GaussLegendre<T, 1>& rule);
 
     /**
      * @brief Shifts the quadrature onto a boundary, keeping the distance
@@ -188,4 +188,4 @@ private:
 
 } // namespace iguana
 
-#endif // IGUANA_QUADRATURE_FACE_QUADRATURE_HPP
+#endif // IGUANA_QUADRATURE_SKELETON_QUADRATURE_HPP

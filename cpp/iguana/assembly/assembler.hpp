@@ -21,7 +21,7 @@
 #include "iguana/geometry/patch.hpp"
 #include "iguana/quadrature/boundary_quadrature.hpp"
 #include "iguana/quadrature/domain_quadrature.hpp"
-#include "iguana/quadrature/face_quadrature.hpp"
+#include "iguana/quadrature/skeleton_quadrature.hpp"
 #include "iguana/stabilization/ghost_penalty.hpp"
 
 namespace iguana
@@ -253,8 +253,8 @@ public:
                        const Eigen::VectorX<Scalar>& data);
 
     /**
-     * @brief Adds the stiffness of a ghost penalty over the points of a face
-     *        quadrature
+     * @brief Adds the stiffness of a ghost penalty over the points of a
+     *        skeleton quadrature
      *
      * On each face, the values of the cells before and after it, each with
      * its own polynomial, are differentiated across it at the same points.
@@ -274,12 +274,13 @@ public:
      *      it holds has its degrees of freedom in the space
      */
     void assemble_stiffness(const GhostPenalty<Basis, n>& penalty,
-                            const FaceQuadrature<Scalar, dim>& quadrature)
+                            const SkeletonQuadrature<Scalar, dim>& quadrature)
         requires (dim == 2);
 
     /**
      * @brief Adds the stiffness of a face condition over the points of a
-     *        face quadrature, with the test functions of each cell weighted
+     *        skeleton quadrature, with the test functions of each cell
+     *        weighted
      *
      * On each face whose two cells weigh differently, the values of the
      * cells before and after it, each with its own polynomial, are filled
@@ -311,14 +312,14 @@ public:
      */
     template<std::derived_from<FaceCondition<Basis, n>> C>
     void assemble_stiffness(const C& condition,
-                            const FaceQuadrature<Scalar, dim>& quadrature,
+                            const SkeletonQuadrature<Scalar, dim>& quadrature,
                             const Eigen::VectorX<Scalar>& cell_weights)
         requires (dim == 2);
 
     /**
-     * @brief Adds the load of a face condition over the points of a face
-     *        quadrature, from data given at them, with the test functions of
-     *        each cell weighted
+     * @brief Adds the load of a face condition over the points of a
+     *        skeleton quadrature, from data given at them, with the test
+     *        functions of each cell weighted
      *
      * @tparam C Face condition, a final class derived from FaceCondition
      *
@@ -339,7 +340,7 @@ public:
      */
     template<std::derived_from<FaceCondition<Basis, n>> C>
     void assemble_load(const C& condition,
-                       const FaceQuadrature<Scalar, dim>& quadrature,
+                       const SkeletonQuadrature<Scalar, dim>& quadrature,
                        const Eigen::VectorX<Scalar>& data,
                        const Eigen::VectorX<Scalar>& cell_weights)
         requires (dim == 2);

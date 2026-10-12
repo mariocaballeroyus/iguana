@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-#include "face_quadrature.hpp"
+#include "skeleton_quadrature.hpp"
 
 #include <cstddef>
 #include <stdexcept>
@@ -17,23 +17,23 @@ namespace iguana
 {
 
 template<std::floating_point T, std::size_t d>
-FaceQuadrature<T, d>::FaceQuadrature(const GhostFaces<T, d>& faces,
-                                     const GaussLegendre<T, 1>& rule)
+SkeletonQuadrature<T, d>::SkeletonQuadrature(const GhostFaces<T, d>& faces,
+                                             const GaussLegendre<T, 1>& rule)
 {
     place(faces, rule);
 }
 
 template<std::floating_point T, std::size_t d>
-FaceQuadrature<T, d>::FaceQuadrature(const JumpFaces<T, d>& faces,
-                                     const GaussLegendre<T, 1>& rule)
+SkeletonQuadrature<T, d>::SkeletonQuadrature(const JumpFaces<T, d>& faces,
+                                             const GaussLegendre<T, 1>& rule)
 {
     place(faces, rule);
 }
 
 template<std::floating_point T, std::size_t d>
 template<typename Faces>
-void FaceQuadrature<T, d>::place(const Faces& faces,
-                                 const GaussLegendre<T, 1>& rule)
+void SkeletonQuadrature<T, d>::place(const Faces& faces,
+                                     const GaussLegendre<T, 1>& rule)
 {
     using Face = typename Faces::Face;
 
@@ -88,15 +88,15 @@ void FaceQuadrature<T, d>::place(const Faces& faces,
 template<std::floating_point T, std::size_t d>
 template<typename Basis>
     requires (Basis::dimension == d)
-void FaceQuadrature<T, d>::shift(const Patch<Basis, 2>& patch,
-                                 const Boundary<T, 2>& boundary, int order)
+void SkeletonQuadrature<T, d>::shift(const Patch<Basis, 2>& patch,
+                                     const Boundary<T, 2>& boundary, int order)
 {
     if (order < 0)
-        throw std::invalid_argument("FaceQuadrature: "
+        throw std::invalid_argument("SkeletonQuadrature: "
                                     "the order must be non-negative");
 
     if (!patch.is_affine())
-        throw std::invalid_argument("FaceQuadrature: "
+        throw std::invalid_argument("SkeletonQuadrature: "
                                     "the map of the patch must be affine");
 
     // Physical positions of the points through the map, x = a + A xi
@@ -113,12 +113,12 @@ void FaceQuadrature<T, d>::shift(const Patch<Basis, 2>& patch,
     order_ = order;
 }
 
-template class FaceQuadrature<double, 2>;
+template class SkeletonQuadrature<double, 2>;
 
-template void FaceQuadrature<double, 2>::shift(
+template void SkeletonQuadrature<double, 2>::shift(
     const Patch<TensorBSpline<double, 2>, 2>&, const Boundary<double, 2>&,
     int);
-template void FaceQuadrature<double, 2>::shift(
+template void SkeletonQuadrature<double, 2>::shift(
     const Patch<TensorNURBS<double, 2>, 2>&, const Boundary<double, 2>&,
     int);
 

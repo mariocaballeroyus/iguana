@@ -86,7 +86,7 @@ class GhostPenalty:
         self._trace = trace
         self._patch = patch
         self._penalty = float(penalty)
-        self._quadrature = _cpp.FaceQuadrature2d(
+        self._quadrature = _cpp.SkeletonQuadrature2d(
             faces=faces, num_points=max(patch.degrees) + 1)
 
     @property

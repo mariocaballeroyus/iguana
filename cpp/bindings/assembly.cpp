@@ -32,8 +32,8 @@ using Assembler3d = Assembler<TensorBSpline<double, 3>, 3>;
 
 /// @brief Assembly of a ghost penalty over faces, the one overload of
 ///        assemble_stiffness that is not a template
-using AssembleFaces2d = void (Assembler2d::*)(const GhostPenalty2d&,
-                                              const FaceQuadrature<double, 2>&);
+using AssembleFaces2d = void (Assembler2d::*)(
+    const GhostPenalty2d&, const SkeletonQuadrature<double, 2>&);
 
 } // namespace
 

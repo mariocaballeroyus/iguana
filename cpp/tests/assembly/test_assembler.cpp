@@ -713,7 +713,7 @@ TEST_CASE("A ghost penalty penalizes the jumps of the highest derivatives "
                                               all_cells(CellType::cut));
 
     // Four points integrate the squared jumps, of degree six along the faces
-    const iguana::FaceQuadrature<double, 2> quadrature(
+    const iguana::SkeletonQuadrature<double, 2> quadrature(
         faces, iguana::GaussLegendre<double, 1>(4));
 
     const iguana::PoissonElement<Basis, 2>::U trace;
@@ -780,7 +780,7 @@ TEST_CASE("A ghost penalty needs coupled faces and an affine B-spline patch",
     const iguana::Patch<Basis, 2> patch = rectangle(basis);
     const iguana::FunctionSpace<Basis> space(basis,
                                              all_cells(CellType::inside));
-    const iguana::FaceQuadrature<double, 2> quadrature(
+    const iguana::SkeletonQuadrature<double, 2> quadrature(
         iguana::GhostFaces<double, 2>(basis.grid(), all_cells(CellType::cut)),
         iguana::GaussLegendre<double, 1>(4));
 
@@ -856,7 +856,7 @@ TEST_CASE("Face Nitsche conditions with binary weights are Nitsche "
         iguana::GaussLegendre<double, 1>(3));
     surrogate.shift(patch, boundary, 2);
 
-    iguana::FaceQuadrature<double, 2> faces(
+    iguana::SkeletonQuadrature<double, 2> faces(
         iguana::JumpFaces<double, 2>(basis.grid(), classification),
         iguana::GaussLegendre<double, 1>(3));
     faces.shift(patch, boundary, 2);
@@ -912,12 +912,12 @@ TEST_CASE("A linear field solves the weighted problem with Nitsche "
         cells.fill(basis.grid(), classification, type,
                    iguana::GaussLegendre<double, 2>(3));
 
-    iguana::FaceQuadrature<double, 2> faces(
+    iguana::SkeletonQuadrature<double, 2> faces(
         iguana::JumpFaces<double, 2>(basis.grid(), classification),
         iguana::GaussLegendre<double, 1>(3));
     faces.shift(patch, boundary, 2);
 
-    const iguana::FaceQuadrature<double, 2> ghost_faces(
+    const iguana::SkeletonQuadrature<double, 2> ghost_faces(
         iguana::GhostFaces<double, 2>(basis.grid(), classification),
         iguana::GaussLegendre<double, 1>(3));
 
@@ -963,7 +963,7 @@ TEST_CASE("Face conditions need coupled faces and one weight per cell",
     const iguana::FunctionSpace<Basis> space(
         basis, CellClassification<double, 2>(every));
 
-    iguana::FaceQuadrature<double, 2> faces(
+    iguana::SkeletonQuadrature<double, 2> faces(
         iguana::JumpFaces<double, 2>(
             basis.grid(),
             CellClassification<double, 2>(iguana::cell_types(fractions))),

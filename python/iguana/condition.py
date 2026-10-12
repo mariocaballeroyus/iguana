@@ -378,7 +378,7 @@ class FaceNitscheCondition:
         faces = _cpp.JumpFaces2d(
             patch=patch._cpp_object,
             classification=_cpp.CellClassification2d(cell_types))
-        quadrature = _cpp.FaceQuadrature2d(
+        quadrature = _cpp.SkeletonQuadrature2d(
             faces=faces, num_points=max(patch.degrees) + 1)
         quadrature.shift(patch._cpp_object, boundary._cpp_object, order)
 
