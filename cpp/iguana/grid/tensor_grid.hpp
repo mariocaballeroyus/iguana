@@ -22,7 +22,11 @@ namespace iguana
  * @brief Elements of a tensor-product basis, the products of the elements
  *        of one knot vector per direction
  *
- * The elements are numbered with the first direction running fastest
+ * The elements are numbered with the first direction running fastest. The
+ * interior faces, each between two neighboring elements, are numbered
+ * direction by direction: first those normal to the first direction, and
+ * among those normal to one direction, as the elements before them, which
+ * stop one short of the last element along it
  *
  * @tparam T Floating-point type
  * @tparam d Number of parametric directions
@@ -55,6 +59,49 @@ public:
     constexpr int num_elements() const noexcept
     { return num_elements_; }
 
+    /// @brief Number of interior faces, each between two neighboring
+    ///        elements
+    constexpr int num_faces() const noexcept
+    { return face_offsets_[d]; }
+
+    /**
+     * @brief Direction normal to an interior face
+     *
+     * @param face Face index
+     *
+     * @pre @p face lies in [0, num_faces())
+     */
+    std::size_t face_direction(int face) const noexcept;
+
+    /**
+     * @brief Elements on either side of an interior face: the element
+     *        before it along its direction, then the element after it
+     *
+     * @param face Face index
+     *
+     * @pre @p face lies in [0, num_faces())
+     */
+    std::array<int, 2> face_elements(int face) const noexcept;
+
+    /**
+     * @brief Corner of an interior face where every parameter is lowest
+     *
+     * @param face Face index
+     *
+     * @pre @p face lies in [0, num_faces())
+     */
+    std::array<T, d> face_start(int face) const noexcept;
+
+    /**
+     * @brief Corner of an interior face where every parameter is highest,
+     *        equal to its start in its direction
+     *
+     * @param face Face index
+     *
+     * @pre @p face lies in [0, num_faces())
+     */
+    std::array<T, d> face_end(int face) const noexcept;
+
     /**
      * @brief Coordinates of the knot lines, or planes, of each direction,
      *        the boundaries of its elements in increasing order
@@ -73,11 +120,21 @@ public:
     { return std::default_sentinel; }
 
 private:
+    /// @brief Number of elements of each direction
+    std::array<int, d> element_counts() const noexcept;
+
+    /// @brief Multi-index of the element before an interior face
+    std::array<int, d> element_before(int face) const noexcept;
+
     /// @brief Knot vector of each parametric direction
     std::array<KnotVector<T>, d> knots_;
 
     /// @brief Product of the element counts of each direction
     int num_elements_;
+
+    /// @brief First face normal to each direction, followed by the number of
+    ///        faces
+    std::array<int, d + 1> face_offsets_{};
 };
 
 } // namespace iguana

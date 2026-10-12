@@ -9,8 +9,7 @@ add_library(iguana
     grid/tensor_grid_iterator.cpp
     embedding/cell_classification.cpp
     embedding/embedded_boundary.cpp
-    embedding/ghost_faces.cpp
-    embedding/jump_faces.cpp
+    embedding/face_selection.cpp
     embedding/nurbs/grid_crossings.cpp
     embedding/nurbs/volume_fractions.cpp
     embedding/surrogate_boundary.cpp
@@ -22,11 +21,11 @@ add_library(iguana
     quadrature/boundary_quadrature.cpp
     quadrature/box_rule.cpp
     quadrature/domain_quadrature.cpp
-    quadrature/face_quadrature.cpp
     quadrature/gauss_legendre/gauss_legendre.cpp
     quadrature/gauss_legendre/gauss_legendre_tables.cpp
     quadrature/moment_fitting/moment_fitting.cpp
     quadrature/moment_fitting/moments.cpp
+    quadrature/skeleton_quadrature.cpp
     quadrature/xiao_gimbutas/xiao_gimbutas.cpp
     quadrature/xiao_gimbutas/xiao_gimbutas_tables.cpp
     assembly/assembler.cpp

@@ -54,8 +54,8 @@ public:
      * @param after Values of the cell after the face at the same points
      * @param shifted_before Values of the cell before the face where the
      *        data is given: expanded towards the closest points on the
-     *        boundary of a shifted quadrature, and the values themselves on
-     *        a quadrature that is not shifted
+     *        boundary of a projected quadrature, and the values themselves on
+     *        a quadrature that is not projected
      * @param shifted_after Values of the cell after the face where the data
      *        is given, as for @p shifted_before
      * @param cell_weights Weights of the test functions on the cell before
@@ -97,7 +97,7 @@ public:
      *        from the cell before it to the cell after it, of size
      *        (num_points, n)
      * @param data Data of the condition at each point, such as the value it
-     *        imposes, given at its closest point on a shifted quadrature
+     *        imposes, given at its closest point on a projected quadrature
      * @param load Output of size num_active of both cells together,
      *        overwritten. It is resized when necessary
      *

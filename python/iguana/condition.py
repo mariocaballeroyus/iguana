@@ -375,12 +375,14 @@ class FaceNitscheCondition:
 
         # The faces between cells whose weights may jump, with as many
         # points as on those of a ghost penalty, shifted onto the boundary
-        faces = _cpp.JumpFaces2d(
+        faces = _cpp.jump_faces(
             patch=patch._cpp_object,
             classification=_cpp.CellClassification2d(cell_types))
-        quadrature = _cpp.FaceQuadrature2d(
-            faces=faces, num_points=max(patch.degrees) + 1)
-        quadrature.shift(patch._cpp_object, boundary._cpp_object, order)
+        quadrature = _cpp.SkeletonQuadrature2d(
+            patch=patch._cpp_object, faces=faces,
+            num_points=max(patch.degrees) + 1)
+        quadrature.project_to_closest(patch._cpp_object,
+                                      boundary._cpp_object, order)
 
         if callable(values):
             values = values(quadrature.projections(patch._cpp_object))

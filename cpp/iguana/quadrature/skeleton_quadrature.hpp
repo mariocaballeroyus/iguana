@@ -3,18 +3,18 @@
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef IGUANA_QUADRATURE_FACE_QUADRATURE_HPP
-#define IGUANA_QUADRATURE_FACE_QUADRATURE_HPP
+#ifndef IGUANA_QUADRATURE_SKELETON_QUADRATURE_HPP
+#define IGUANA_QUADRATURE_SKELETON_QUADRATURE_HPP
 
 #include <concepts>
 #include <cstddef>
+#include <span>
 
 #include <Eigen/Core>
 
-#include "iguana/embedding/ghost_faces.hpp"
-#include "iguana/embedding/jump_faces.hpp"
 #include "iguana/geometry/boundary.hpp"
 #include "iguana/geometry/patch.hpp"
+#include "iguana/grid/tensor_grid.hpp"
 #include "iguana/quadrature/gauss_legendre/gauss_legendre.hpp"
 
 namespace iguana
@@ -24,62 +24,44 @@ namespace iguana
  * @brief Quadrature over interior faces of a grid, each between two cells,
  *        grouped face by face
  *
- * A term on a face compares the functions of the cells on either side,
- * each evaluated with the polynomial of its own cell, so the quadrature
- * keeps both cells of every face. The points are stored face after face,
- * and an offset marks where the points of each face start
- *
- * The points, weights and normals lie in the parameter space of the grid,
- * where the weights measure length and the normal of a face is the unit
- * vector of its direction, pointing from the cell before it to the cell
- * after it. The geometry map turns them into physical ones by Nanson's
- * formula, as for a BoundaryQuadrature
+ * @details Used in the Generalized Shifted Boundary Method to integrate the
+ *          ghost penalty and the facet conditions, which couple the cells on
+ *          either side of each face
  *
  * @tparam T Floating-point type
  * @tparam d Number of parametric directions, two, as for a
  *         BoundaryQuadrature, so that the faces are segments
  */
 template<std::floating_point T, std::size_t d>
-class FaceQuadrature
+class SkeletonQuadrature
 {
 public:
     /// @brief Number of parametric directions
     static constexpr std::size_t dimension = d;
 
     /**
-     * @brief Places a rule on every face where a ghost penalty acts
+     * @brief Places a rule on every face of a list of interior faces of a
+     *        grid
      *
-     * The rule maps from [-1, 1] onto the interval each face spans across
-     * its direction, so that the weights measure length in parameter space
+     * @details The rule maps from [-1, 1] onto the interval each face spans
+     *          across its direction, so that the weights measure length in
+     *          parameter space
      *
-     * @param faces Faces of a grid where a ghost penalty acts
+     * @param grid Grid whose interior faces are listed
+     * @param faces Indices of the faces in the numbering of the grid
      * @param rule Rule placed on every face
+     *
+     * @throws std::invalid_argument If an index does not number an interior
+     *         face of @p grid
      */
-    FaceQuadrature(const GhostFaces<T, d>& faces,
-                   const GaussLegendre<T, 1>& rule);
+    SkeletonQuadrature(const TensorGrid<T, d>& grid,
+                       std::span<const int> faces,
+                       const GaussLegendre<T, 1>& rule);
 
     /**
-     * @brief Places a rule on every face across which the volume fraction
-     *        may jump
-     *
-     * The rule is placed as on the faces of a ghost penalty
-     *
-     * @param faces Faces of a grid across which the volume fraction may
-     *        jump
-     * @param rule Rule placed on every face
-     */
-    FaceQuadrature(const JumpFaces<T, d>& faces,
-                   const GaussLegendre<T, 1>& rule);
-
-    /**
-     * @brief Shifts the quadrature onto a boundary, keeping the distance
-     *        from each point to its closest point there and the order of the
-     *        Taylor series that cross it
-     *
-     * As for a BoundaryQuadrature, the points stay where they are, and so do
-     * the weights, normals and cells. Both cells of a face expand their own
-     * functions along the same distance. The closest points are found in
-     * physical space and pulled back through the map of the patch
+     * @brief Projects each point onto a boundary, keeping the distance vector
+     *        to its closest point there and the order of the Taylor series
+     *        along it
      *
      * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
      *
@@ -95,10 +77,9 @@ public:
      *
      * @pre The points lie on the grid of @p patch
      */
-    template<typename Basis>
-        requires (Basis::dimension == d)
-    void shift(const Patch<Basis, 2>& patch, const Boundary<T, 2>& boundary,
-               int order);
+    template<typename Basis> requires (Basis::dimension == d)
+    void project_to_closest(const Patch<Basis, 2>& patch,
+                            const Boundary<T, 2>& boundary, int order);
 
     /// @brief Number of faces
     constexpr int num_faces() const noexcept
@@ -135,31 +116,22 @@ public:
     constexpr const Eigen::MatrixX<T>& normals() const noexcept
     { return normals_; }
 
-    /// @brief Whether the quadrature is shifted onto a boundary
-    constexpr bool is_shifted() const noexcept
+    /// @brief Whether the quadrature is projected onto a boundary
+    constexpr bool is_projected() const noexcept
     { return distances_.rows() > 0; }
 
-    /// @brief Distance from each point to its closest point on the boundary
-    ///        the quadrature is shifted onto, in parameter space, with size
-    ///        (num_points, d), empty unless shifted
+    /// @brief Distance vector from each point to its closest point on the
+    ///        boundary the quadrature is projected onto, in parameter space,
+    ///        with size (num_points, d), empty unless projected
     constexpr const Eigen::MatrixX<T>& distances() const noexcept
     { return distances_; }
 
-    /// @brief Highest total order of the Taylor series of a shifted
-    ///        quadrature, zero unless shifted
+    /// @brief Highest total order of the Taylor series of a projected
+    ///        quadrature, zero unless projected
     constexpr int order() const noexcept
     { return order_; }
 
 private:
-    /**
-     * @brief Places a rule on every face of a list, the work of the
-     *        constructors
-     *
-     * @tparam Faces Faces of a grid, as GhostFaces and JumpFaces list them
-     */
-    template<typename Faces>
-    void place(const Faces& faces, const GaussLegendre<T, 1>& rule);
-
     /// @brief Direction normal to each face
     Eigen::VectorXi directions_;
 
@@ -188,4 +160,4 @@ private:
 
 } // namespace iguana
 
-#endif // IGUANA_QUADRATURE_FACE_QUADRATURE_HPP
+#endif // IGUANA_QUADRATURE_SKELETON_QUADRATURE_HPP

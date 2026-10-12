@@ -21,7 +21,7 @@
 #include "iguana/geometry/patch.hpp"
 #include "iguana/quadrature/boundary_quadrature.hpp"
 #include "iguana/quadrature/domain_quadrature.hpp"
-#include "iguana/quadrature/face_quadrature.hpp"
+#include "iguana/quadrature/skeleton_quadrature.hpp"
 #include "iguana/stabilization/ghost_penalty.hpp"
 
 namespace iguana
@@ -207,9 +207,9 @@ public:
      *
      * The patch maps the weights of the quadrature, which measure the
      * boundary in parameter space, into the boundary weights the condition
-     * takes, and its normals into physical ones. On a shifted quadrature
+     * takes, and its normals into physical ones. On a projected quadrature
      * the condition also receives the values expanded towards the boundary
-     * it is shifted onto, as the shifted boundary method needs, while the
+     * it is projected onto, as the shifted boundary method needs, while the
      * weights and normals stay those of its points
      *
      * @tparam C Condition, a final class derived from Condition
@@ -218,7 +218,7 @@ public:
      * @param quadrature Quadrature of a boundary embedded in the grid of the
      *        basis
      *
-     * @throws std::invalid_argument If @p quadrature is shifted and the patch
+     * @throws std::invalid_argument If @p quadrature is projected and the patch
      *         is not a B-spline one
      *
      * @pre @p quadrature is built on the grid of the basis, and every element
@@ -239,10 +239,10 @@ public:
      *        basis
      * @param data Value the condition imposes at each point of the
      *        quadrature, in its order, given at its closest point on a
-     *        shifted quadrature
+     *        projected quadrature
      *
      * @throws std::invalid_argument If @p data does not have one value per
-     *         point of @p quadrature, or if @p quadrature is shifted and the
+     *         point of @p quadrature, or if @p quadrature is projected and the
      *         patch is not a B-spline one
      *
      * @pre @p quadrature is built as for the stiffness of a condition
@@ -253,8 +253,8 @@ public:
                        const Eigen::VectorX<Scalar>& data);
 
     /**
-     * @brief Adds the stiffness of a ghost penalty over the points of a face
-     *        quadrature
+     * @brief Adds the stiffness of a ghost penalty over the points of a
+     *        skeleton quadrature
      *
      * On each face, the values of the cells before and after it, each with
      * its own polynomial, are differentiated across it at the same points.
@@ -274,17 +274,18 @@ public:
      *      it holds has its degrees of freedom in the space
      */
     void assemble_stiffness(const GhostPenalty<Basis, n>& penalty,
-                            const FaceQuadrature<Scalar, dim>& quadrature)
+                            const SkeletonQuadrature<Scalar, dim>& quadrature)
         requires (dim == 2);
 
     /**
      * @brief Adds the stiffness of a face condition over the points of a
-     *        face quadrature, with the test functions of each cell weighted
+     *        skeleton quadrature, with the test functions of each cell
+     *        weighted
      *
      * On each face whose two cells weigh differently, the values of the
      * cells before and after it, each with its own polynomial, are filled
-     * at its points and, on a shifted quadrature, also expanded towards the
-     * boundary it is shifted onto. The patch maps the weights of the
+     * at its points and, on a projected quadrature, also expanded towards the
+     * boundary it is projected onto. The patch maps the weights of the
      * quadrature into face weights and its normals into physical ones,
      * pointing from the cell before to the cell after. Faces whose cells
      * weigh the same carry no jump of the test functions and are skipped.
@@ -302,7 +303,7 @@ public:
      *
      * @throws std::invalid_argument If the faces are not coupled, if
      *         @p cell_weights does not have one value per element of the
-     *         grid, or if @p quadrature is shifted and the patch is not a
+     *         grid, or if @p quadrature is projected and the patch is not a
      *         B-spline one
      *
      * @pre @p quadrature is built on the grid of the basis, and every cell
@@ -311,14 +312,14 @@ public:
      */
     template<std::derived_from<FaceCondition<Basis, n>> C>
     void assemble_stiffness(const C& condition,
-                            const FaceQuadrature<Scalar, dim>& quadrature,
+                            const SkeletonQuadrature<Scalar, dim>& quadrature,
                             const Eigen::VectorX<Scalar>& cell_weights)
         requires (dim == 2);
 
     /**
-     * @brief Adds the load of a face condition over the points of a face
-     *        quadrature, from data given at them, with the test functions of
-     *        each cell weighted
+     * @brief Adds the load of a face condition over the points of a
+     *        skeleton quadrature, from data given at them, with the test
+     *        functions of each cell weighted
      *
      * @tparam C Face condition, a final class derived from FaceCondition
      *
@@ -327,7 +328,7 @@ public:
      *        basis
      * @param data Value the condition imposes at each point of the
      *        quadrature, in its order, given at its closest point on a
-     *        shifted quadrature
+     *        projected quadrature
      * @param cell_weights Weight of the test functions on each element of
      *        the grid, in its numbering
      *
@@ -339,7 +340,7 @@ public:
      */
     template<std::derived_from<FaceCondition<Basis, n>> C>
     void assemble_load(const C& condition,
-                       const FaceQuadrature<Scalar, dim>& quadrature,
+                       const SkeletonQuadrature<Scalar, dim>& quadrature,
                        const Eigen::VectorX<Scalar>& data,
                        const Eigen::VectorX<Scalar>& cell_weights)
         requires (dim == 2);

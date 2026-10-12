@@ -26,7 +26,7 @@ namespace iguana
  * assembler maps from the boundary quadrature. It receives the values at
  * the points and the shifted ones, expanded towards where the data is
  * given, as the shifted boundary method needs; both are the same on a
- * quadrature that is not shifted. It neither evaluates the basis nor adds
+ * quadrature that is not projected. It neither evaluates the basis nor adds
  * into a global system. The rows and columns follow the rows of the
  * values, the functions active on the element
  *
@@ -51,8 +51,8 @@ public:
      *
      * @param values Values at the boundary points in the element
      * @param shifted Values where the data is given: expanded towards the
-     *        closest points on the boundary of a shifted quadrature, and
-     *        the values themselves on a quadrature that is not shifted
+     *        closest points on the boundary of a projected quadrature, and
+     *        the values themselves on a quadrature that is not projected
      * @param weights Boundary weights, one per point
      * @param normals Unit normals of the boundary in physical space,
      *        pointing out of the domain, of size (num_points, n)
@@ -74,8 +74,8 @@ public:
      *
      * @param values Values at the boundary points in the element
      * @param shifted Values where the data is given: expanded towards the
-     *        closest points on the boundary of a shifted quadrature, and
-     *        the values themselves on a quadrature that is not shifted
+     *        closest points on the boundary of a projected quadrature, and
+     *        the values themselves on a quadrature that is not projected
      * @param weights Boundary weights, one per point
      * @param normals Unit normals of the boundary in physical space,
      *        pointing out of the domain, of size (num_points, n)

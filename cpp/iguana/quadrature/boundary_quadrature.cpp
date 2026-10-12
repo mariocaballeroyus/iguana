@@ -169,9 +169,8 @@ BoundaryQuadrature<T, d>::BoundaryQuadrature(
 template<std::floating_point T, std::size_t d>
 template<typename Basis>
     requires (Basis::dimension == d)
-void BoundaryQuadrature<T, d>::shift(const Patch<Basis, 2>& patch,
-                                     const Boundary<T, 2>& boundary,
-                                     int order)
+void BoundaryQuadrature<T, d>::project_to_closest(
+    const Patch<Basis, 2>& patch, const Boundary<T, 2>& boundary, int order)
 {
     if (order < 0)
         throw std::invalid_argument("BoundaryQuadrature: "
@@ -225,10 +224,10 @@ void BoundaryQuadrature<T, d>::shift(const Patch<Basis, 2>& patch,
 
 template class BoundaryQuadrature<double, 2>;
 
-template void BoundaryQuadrature<double, 2>::shift(
+template void BoundaryQuadrature<double, 2>::project_to_closest(
     const Patch<TensorBSpline<double, 2>, 2>&, const Boundary<double, 2>&,
     int);
-template void BoundaryQuadrature<double, 2>::shift(
+template void BoundaryQuadrature<double, 2>::project_to_closest(
     const Patch<TensorNURBS<double, 2>, 2>&, const Boundary<double, 2>&,
     int);
 

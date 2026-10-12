@@ -175,7 +175,7 @@ iguana::Boundary<double, 2> inner_quadrilateral()
     return {faces, {1, 1, 1, 1}};
 }
 
-/// @brief Data of b . x at the closest points of a shifted quadrature, the
+/// @brief Data of b . x at the closest points of a projected quadrature, the
 ///        points lying in parameter space, where the map scales each axis by
 ///        its side
 template<typename Quadrature>
@@ -572,15 +572,15 @@ TEST_CASE("A shifted penalty imposes a field of the space from its closest "
 
     const iguana::Boundary<double, 2> boundary(faces, {1, 1, 1, 1});
 
-    const iguana::BoundaryQuadrature<double, 2> unshifted(
+    const iguana::BoundaryQuadrature<double, 2> unprojected(
         surrogate, iguana::GaussLegendre<double, 1>(3));
-    iguana::BoundaryQuadrature<double, 2> shifted = unshifted;
-    shifted.shift(patch, boundary, 2);
+    iguana::BoundaryQuadrature<double, 2> projected = unprojected;
+    projected.project_to_closest(patch, boundary, 2);
 
     // The data of b . x at the closest points, the points lying in parameter
     // space, where the map scales each axis by its side
     const Eigen::Vector2d b(1., -2.);
-    const Eigen::MatrixXd closest = shifted.points() + shifted.distances();
+    const Eigen::MatrixXd closest = projected.points() + projected.distances();
     const Eigen::VectorXd data = width * b(0) * closest.col(0)
                                  + height * b(1) * closest.col(1);
 
@@ -594,8 +594,8 @@ TEST_CASE("A shifted penalty imposes a field of the space from its closest "
     // The series of b . x from each point reaches the closest point exactly,
     // so the shifted penalty imposes it consistently
     iguana::Assembler<Basis, 2> assembler(space, patch);
-    assembler.assemble_stiffness(condition, shifted);
-    assembler.assemble_load(condition, shifted, data);
+    assembler.assemble_stiffness(condition, projected);
+    assembler.assemble_load(condition, projected, data);
 
     REQUIRE((assembler.stiffness() * u - assembler.load()).cwiseAbs()
                 .maxCoeff() < 1e-12);
@@ -603,8 +603,8 @@ TEST_CASE("A shifted penalty imposes a field of the space from its closest "
     // Without the shift, the data is imposed a distance away from where it
     // belongs
     assembler.clear();
-    assembler.assemble_stiffness(condition, unshifted);
-    assembler.assemble_load(condition, unshifted, data);
+    assembler.assemble_stiffness(condition, unprojected);
+    assembler.assemble_load(condition, unprojected, data);
 
     REQUIRE((assembler.stiffness() * u - assembler.load()).cwiseAbs()
                 .maxCoeff() > 1e-2);
@@ -637,8 +637,8 @@ TEST_CASE("A shifted Nitsche condition imposes a field of the space "
 
     iguana::BoundaryQuadrature<double, 2> quadrature(
         surrogate, iguana::GaussLegendre<double, 1>(3));
-    quadrature.shift(patch, iguana::Boundary<double, 2>(faces, {1, 1, 1, 1}),
-                     2);
+    quadrature.project_to_closest(
+        patch, iguana::Boundary<double, 2>(faces, {1, 1, 1, 1}), 2);
 
     // The data of b . x at the closest points, the points lying in parameter
     // space, where the map scales each axis by its side
@@ -709,12 +709,12 @@ TEST_CASE("A ghost penalty penalizes the jumps of the highest derivatives "
     // every cell inside, each function keeps its own index
     const iguana::FunctionSpace<Basis> space(basis,
                                              all_cells(CellType::inside));
-    const iguana::GhostFaces<double, 2> faces(basis.grid(),
-                                              all_cells(CellType::cut));
+    const std::vector<int> faces =
+        iguana::ghost_faces(basis.grid(), all_cells(CellType::cut));
 
     // Four points integrate the squared jumps, of degree six along the faces
-    const iguana::FaceQuadrature<double, 2> quadrature(
-        faces, iguana::GaussLegendre<double, 1>(4));
+    const iguana::SkeletonQuadrature<double, 2> quadrature(
+        basis.grid(), faces, iguana::GaussLegendre<double, 1>(4));
 
     const iguana::PoissonElement<Basis, 2>::U trace;
     const double penalty = .3;
@@ -780,8 +780,9 @@ TEST_CASE("A ghost penalty needs coupled faces and an affine B-spline patch",
     const iguana::Patch<Basis, 2> patch = rectangle(basis);
     const iguana::FunctionSpace<Basis> space(basis,
                                              all_cells(CellType::inside));
-    const iguana::FaceQuadrature<double, 2> quadrature(
-        iguana::GhostFaces<double, 2>(basis.grid(), all_cells(CellType::cut)),
+    const iguana::SkeletonQuadrature<double, 2> quadrature(
+        basis.grid(),
+        iguana::ghost_faces(basis.grid(), all_cells(CellType::cut)),
         iguana::GaussLegendre<double, 1>(4));
 
     const iguana::PoissonElement<Basis, 2>::U trace;
@@ -854,12 +855,12 @@ TEST_CASE("Face Nitsche conditions with binary weights are Nitsche "
     iguana::BoundaryQuadrature<double, 2> surrogate(
         iguana::SurrogateBoundary<double, 2>(basis.grid(), classification),
         iguana::GaussLegendre<double, 1>(3));
-    surrogate.shift(patch, boundary, 2);
+    surrogate.project_to_closest(patch, boundary, 2);
 
-    iguana::FaceQuadrature<double, 2> faces(
-        iguana::JumpFaces<double, 2>(basis.grid(), classification),
+    iguana::SkeletonQuadrature<double, 2> faces(
+        basis.grid(), iguana::jump_faces(basis.grid(), classification),
         iguana::GaussLegendre<double, 1>(3));
-    faces.shift(patch, boundary, 2);
+    faces.project_to_closest(patch, boundary, 2);
 
     const iguana::PoissonElement<Basis, 2>::U trace;
     const iguana::PoissonElement<Basis, 2>::Q flux;
@@ -912,13 +913,13 @@ TEST_CASE("A linear field solves the weighted problem with Nitsche "
         cells.fill(basis.grid(), classification, type,
                    iguana::GaussLegendre<double, 2>(3));
 
-    iguana::FaceQuadrature<double, 2> faces(
-        iguana::JumpFaces<double, 2>(basis.grid(), classification),
+    iguana::SkeletonQuadrature<double, 2> faces(
+        basis.grid(), iguana::jump_faces(basis.grid(), classification),
         iguana::GaussLegendre<double, 1>(3));
-    faces.shift(patch, boundary, 2);
+    faces.project_to_closest(patch, boundary, 2);
 
-    const iguana::FaceQuadrature<double, 2> ghost_faces(
-        iguana::GhostFaces<double, 2>(basis.grid(), classification),
+    const iguana::SkeletonQuadrature<double, 2> ghost_faces(
+        basis.grid(), iguana::ghost_faces(basis.grid(), classification),
         iguana::GaussLegendre<double, 1>(3));
 
     const iguana::PoissonElement<Basis, 2> element;
@@ -963,12 +964,13 @@ TEST_CASE("Face conditions need coupled faces and one weight per cell",
     const iguana::FunctionSpace<Basis> space(
         basis, CellClassification<double, 2>(every));
 
-    iguana::FaceQuadrature<double, 2> faces(
-        iguana::JumpFaces<double, 2>(
+    iguana::SkeletonQuadrature<double, 2> faces(
+        basis.grid(),
+        iguana::jump_faces(
             basis.grid(),
             CellClassification<double, 2>(iguana::cell_types(fractions))),
         iguana::GaussLegendre<double, 1>(3));
-    faces.shift(patch, boundary, 2);
+    faces.project_to_closest(patch, boundary, 2);
 
     const iguana::PoissonElement<Basis, 2>::U trace;
     const iguana::PoissonElement<Basis, 2>::Q flux;
@@ -999,7 +1001,7 @@ TEST_CASE("Face conditions need coupled faces and one weight per cell",
                                               fractions),
                       std::invalid_argument);
 
-    // A NURBS patch has no Taylor series for a shifted quadrature
+    // A NURBS patch has no Taylor series for a projected quadrature
     using Rational = iguana::TensorNURBS<double, 2>;
     const Rational rational(basis,
                             Eigen::VectorXd::Ones(basis.num_functions()));

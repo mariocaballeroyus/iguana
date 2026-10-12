@@ -29,7 +29,7 @@ namespace
 using DomainQuadrature2d = DomainQuadrature<double, 2>;
 using DomainQuadrature3d = DomainQuadrature<double, 3>;
 using BoundaryQuadrature2d = BoundaryQuadrature<double, 2>;
-using FaceQuadrature2d = FaceQuadrature<double, 2>;
+using SkeletonQuadrature2d = SkeletonQuadrature<double, 2>;
 using PlanarPatch = Patch<TensorBSpline<double, 2>, 2>;
 
 /// @brief Fills the cells of one type with a Gauss-Legendre rule, which
@@ -251,20 +251,13 @@ BoundaryQuadrature2d surrogate_gauss_legendre(
     return {boundary, GaussLegendre<double, 1>(num_points)};
 }
 
-/// @brief Places a Gauss-Legendre rule on every face where a ghost penalty
-///        acts, a rule Python never handles itself
-FaceQuadrature2d ghost_gauss_legendre(const GhostFaces<double, 2>& faces,
-                                      int num_points)
+/// @brief Places a Gauss-Legendre rule on every face of a list of interior
+///        faces of the grid of a patch, a rule Python never handles itself
+SkeletonQuadrature2d skeleton_gauss_legendre(const PlanarPatch& patch,
+                                             const std::vector<int>& faces,
+                                             int num_points)
 {
-    return {faces, GaussLegendre<double, 1>(num_points)};
-}
-
-/// @brief Places a Gauss-Legendre rule on every face across which the
-///        volume fraction may jump, a rule Python never handles itself
-FaceQuadrature2d jump_gauss_legendre(const JumpFaces<double, 2>& faces,
-                                     int num_points)
-{
-    return {faces, GaussLegendre<double, 1>(num_points)};
+    return {patch.basis().grid(), faces, GaussLegendre<double, 1>(num_points)};
 }
 
 /**
@@ -343,36 +336,36 @@ PointMatrix<double, 2> boundary_positions(
  * @brief Closest points of the points of a boundary quadrature, in the
  *        plane: their positions moved by their distances, which an affine
  *        map carries by its linear part, or the positions themselves on a
- *        quadrature that is not shifted
+ *        quadrature that is not projected
  *
  * @throws std::invalid_argument As walk_held_elements() does
  *
- * @pre A shifted quadrature was shifted through @p patch
+ * @pre A projected quadrature was projected through @p patch
  */
 PointMatrix<double, 2> boundary_projections(
     const BoundaryQuadrature2d& quadrature, const PlanarPatch& patch)
 {
     PointMatrix<double, 2> result = boundary_positions(quadrature, patch);
 
-    if (quadrature.is_shifted())
+    if (quadrature.is_projected())
         result += quadrature.distances() * patch.linear_part().transpose();
 
     return result;
 }
 
 /**
- * @brief Closest points of the points of a face quadrature, in the plane:
+ * @brief Closest points of the points of a skeleton quadrature, in the plane:
  *        their positions, through the cell before each face, moved by their
  *        distances, which an affine map carries by its linear part, or the
- *        positions themselves on a quadrature that is not shifted
+ *        positions themselves on a quadrature that is not projected
  *
  * @throws std::invalid_argument If a cell of a face lies outside the grid
  *         of the patch
  *
- * @pre A shifted quadrature was shifted through @p patch
+ * @pre A projected quadrature was projected through @p patch
  */
-PointMatrix<double, 2> face_projections(const FaceQuadrature2d& quadrature,
-                                        const PlanarPatch& patch)
+PointMatrix<double, 2> skeleton_projections(
+    const SkeletonQuadrature2d& quadrature, const PlanarPatch& patch)
 {
     const TensorBSpline<double, 2>& basis = patch.basis();
     const TensorGrid<double, 2>& grid = basis.grid();
@@ -390,7 +383,7 @@ PointMatrix<double, 2> face_projections(const FaceQuadrature2d& quadrature,
         const int cell = quadrature.cells()(face, 0);
 
         if (cell < 0 || cell >= grid.num_elements())
-            throw std::invalid_argument("FaceQuadrature: "
+            throw std::invalid_argument("SkeletonQuadrature: "
                                         "the faces must lie in the grid of "
                                         "the patch");
 
@@ -410,7 +403,7 @@ PointMatrix<double, 2> face_projections(const FaceQuadrature2d& quadrature,
         result.middleRows(first, count) = face_positions;
     }
 
-    if (quadrature.is_shifted())
+    if (quadrature.is_projected())
         result += quadrature.distances() * patch.linear_part().transpose();
 
     return result;
@@ -556,10 +549,12 @@ void quadrature(py::module_& module)
                                &BoundaryQuadrature2d::num_elements)
         .def_property_readonly("num_points", &BoundaryQuadrature2d::num_points)
         .def_property_readonly("faces", &BoundaryQuadrature2d::faces)
-        .def("shift", &BoundaryQuadrature2d::shift<TensorBSpline<double, 2>>,
+        .def("project_to_closest",
+             &BoundaryQuadrature2d::project_to_closest<
+                 TensorBSpline<double, 2>>,
              py::arg("patch"), py::arg("boundary"), py::arg("order"))
-        .def_property_readonly("is_shifted",
-                               &BoundaryQuadrature2d::is_shifted)
+        .def_property_readonly("is_projected",
+                               &BoundaryQuadrature2d::is_projected)
         .def_property_readonly("distances", &BoundaryQuadrature2d::distances)
         .def_property_readonly("order", &BoundaryQuadrature2d::order)
         .def("positions", &boundary_positions, py::arg("patch"))
@@ -568,19 +563,21 @@ void quadrature(py::module_& module)
         .def("physical_normals", &physical_boundary_normals,
              py::arg("patch"));
 
-    py::class_<FaceQuadrature2d>(module, "FaceQuadrature2d")
-        .def(py::init(&ghost_gauss_legendre), py::arg("faces"),
-             py::arg("num_points"))
-        .def(py::init(&jump_gauss_legendre), py::arg("faces"),
-             py::arg("num_points"))
-        .def_property_readonly("num_faces", &FaceQuadrature2d::num_faces)
-        .def_property_readonly("num_points", &FaceQuadrature2d::num_points)
-        .def("shift", &FaceQuadrature2d::shift<TensorBSpline<double, 2>>,
+    py::class_<SkeletonQuadrature2d>(module, "SkeletonQuadrature2d")
+        .def(py::init(&skeleton_gauss_legendre), py::arg("patch"),
+             py::arg("faces"), py::arg("num_points"))
+        .def_property_readonly("num_faces", &SkeletonQuadrature2d::num_faces)
+        .def_property_readonly("num_points",
+                               &SkeletonQuadrature2d::num_points)
+        .def("project_to_closest",
+             &SkeletonQuadrature2d::project_to_closest<
+                 TensorBSpline<double, 2>>,
              py::arg("patch"), py::arg("boundary"), py::arg("order"))
-        .def_property_readonly("is_shifted", &FaceQuadrature2d::is_shifted)
-        .def_property_readonly("distances", &FaceQuadrature2d::distances)
-        .def_property_readonly("order", &FaceQuadrature2d::order)
-        .def("projections", &face_projections, py::arg("patch"));
+        .def_property_readonly("is_projected",
+                               &SkeletonQuadrature2d::is_projected)
+        .def_property_readonly("distances", &SkeletonQuadrature2d::distances)
+        .def_property_readonly("order", &SkeletonQuadrature2d::order)
+        .def("projections", &skeleton_projections, py::arg("patch"));
 }
 
 } // namespace iguana::bindings
