@@ -16,6 +16,7 @@
 
 #include "iguana/condition/condition.hpp"
 #include "iguana/condition/skeleton_condition.hpp"
+#include "iguana/condition/skeleton_ghost_penalty.hpp"
 #include "iguana/element/element.hpp"
 #include "iguana/fspace/function_space.hpp"
 #include "iguana/geometry/boundary_projection.hpp"
@@ -23,7 +24,6 @@
 #include "iguana/quadrature/quadrature_boundary.hpp"
 #include "iguana/quadrature/quadrature_domain.hpp"
 #include "iguana/quadrature/quadrature_skeleton.hpp"
-#include "iguana/stabilization/ghost_penalty.hpp"
 
 namespace iguana
 {
@@ -329,7 +329,7 @@ public:
      * @pre @p quadrature is built on the grid of the basis, and every cell
      *      it holds has its degrees of freedom in the space
      */
-    void assemble_stiffness(const GhostPenalty<Basis, n>& penalty,
+    void assemble_stiffness(const SkeletonGhostPenalty<Basis, n>& penalty,
                             const QuadratureSkeleton<Scalar, dim>& quadrature)
         requires (dim == 2);
 

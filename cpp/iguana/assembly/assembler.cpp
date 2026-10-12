@@ -489,7 +489,7 @@ void Assembler<Basis, n>::add_condition_load(
 
 template<typename Basis, std::size_t n>
 void Assembler<Basis, n>::assemble_stiffness(
-    const GhostPenalty<Basis, n>& penalty,
+    const SkeletonGhostPenalty<Basis, n>& penalty,
     const QuadratureSkeleton<Scalar, dim>& quadrature) requires (dim == 2)
 {
     // Without the faces coupled, the pattern would grow with each new face

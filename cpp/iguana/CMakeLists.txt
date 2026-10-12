@@ -35,7 +35,7 @@ add_library(iguana
     condition/nitsche_condition.cpp
     condition/skeleton_nitsche_condition.cpp
     condition/neumann_condition.cpp
-    stabilization/ghost_penalty.cpp)
+    condition/skeleton_ghost_penalty.cpp)
 
 add_library(IGUANA::iguana ALIAS iguana)
 
