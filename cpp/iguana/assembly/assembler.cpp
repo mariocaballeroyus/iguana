@@ -139,6 +139,7 @@ Assembler<Basis, n>::Assembler(const FunctionSpace<Basis>& space,
 
     stiffness_.resize(num_dofs, num_dofs);
     stiffness_.setFromTriplets(entries.begin(), entries.end());
+    mass_ = stiffness_;
     load_.setZero(num_dofs);
 }
 
@@ -190,7 +191,8 @@ void Assembler<Basis, n>::assemble_stiffness(
         weights = cell_weight * weights.cwiseProduct(values.measures());
 
         element.local_stiffness(values, weights, local);
-        add_to_stiffness(space_.dof_map().dofs_on_element(cell), local);
+        add_to_matrix(stiffness_, space_.dof_map().dofs_on_element(cell),
+                      local);
     }
 }
 
@@ -255,6 +257,58 @@ void Assembler<Basis, n>::assemble_load(
 }
 
 template<typename Basis, std::size_t n>
+template<std::derived_from<Element<Basis, n>> E>
+void Assembler<Basis, n>::assemble_mass(
+    const E& element, const DomainQuadrature<Scalar, dim>& quadrature)
+{
+    // Every cell weighted by one
+    const Eigen::VectorX<Scalar> ones =
+        Eigen::VectorX<Scalar>::Ones(space_.dof_map().num_elements());
+
+    assemble_mass(element, quadrature, ones);
+}
+
+template<typename Basis, std::size_t n>
+template<std::derived_from<Element<Basis, n>> E>
+void Assembler<Basis, n>::assemble_mass(
+    const E& element, const DomainQuadrature<Scalar, dim>& quadrature,
+    const Eigen::VectorX<Scalar>& cell_weights)
+{
+    if (cell_weights.size() != space_.dof_map().num_elements())
+        throw std::invalid_argument("Assembler: "
+                                    "the cell weights must have one value "
+                                    "per element");
+
+    ElementValues<Basis, n> values(patch_, element.flags());
+    Eigen::MatrixX<Scalar> points;
+    Eigen::VectorX<Scalar> weights;
+    Eigen::MatrixX<Scalar> local;
+
+    for (int held = 0; held < quadrature.num_elements(); ++held) {
+        const int cell = quadrature.elements()(held);
+        const Scalar cell_weight = cell_weights(cell);
+
+        // A cell of weight zero adds nothing
+        if (cell_weight == 0)
+            continue;
+
+        const int first = quadrature.offsets()(held);
+        const int count = quadrature.offsets()(held + 1) - first;
+
+        points = quadrature.points().middleRows(first, count);
+        values.reinit(cell, points);
+
+        // Physical weights, the quadrature weights times the measure, times
+        // the weight of the test functions of the cell, constant on it
+        weights = quadrature.weights().segment(first, count);
+        weights = cell_weight * weights.cwiseProduct(values.measures());
+
+        element.local_mass(values, weights, local);
+        add_to_matrix(mass_, space_.dof_map().dofs_on_element(cell), local);
+    }
+}
+
+template<typename Basis, std::size_t n>
 template<std::derived_from<Condition<Basis, n>> C>
 void Assembler<Basis, n>::assemble_stiffness(
     const C& condition, const BoundaryQuadrature<Scalar, dim>& quadrature)
@@ -301,7 +355,8 @@ void Assembler<Basis, n>::assemble_stiffness(
 
         condition.local_stiffness(values, shifted, weights, physical_normals,
                                   local);
-        add_to_stiffness(space_.dof_map().dofs_on_element(cell), local);
+        add_to_matrix(stiffness_, space_.dof_map().dofs_on_element(cell),
+                      local);
     }
 }
 
@@ -416,7 +471,7 @@ void Assembler<Basis, n>::assemble_stiffness(
         penalty.local_stiffness(before, after, weights, degree, local);
 
         face_dofs(cell_before, cell_after, dofs);
-        add_to_stiffness(dofs, local);
+        add_to_matrix(stiffness_, dofs, local);
     }
 }
 
@@ -496,7 +551,7 @@ void Assembler<Basis, n>::assemble_stiffness(
                                   local);
 
         face_dofs(cell_before, cell_after, dofs);
-        add_to_stiffness(dofs, local);
+        add_to_matrix(stiffness_, dofs, local);
     }
 }
 
@@ -587,13 +642,14 @@ void Assembler<Basis, n>::assemble_load(
 }
 
 template<typename Basis, std::size_t n>
-void Assembler<Basis, n>::add_to_stiffness(std::span<const int> dofs,
-                                           const Eigen::MatrixX<Scalar>& local)
+void Assembler<Basis, n>::add_to_matrix(
+    Eigen::SparseMatrix<Scalar, Eigen::RowMajor>& matrix,
+    std::span<const int> dofs, const Eigen::MatrixX<Scalar>& local)
 {
     // The k-th degree of freedom pairs with row k
     for (std::size_t row = 0; row < dofs.size(); ++row) {
         for (std::size_t col = 0; col < dofs.size(); ++col)
-            stiffness_.coeffRef(dofs[row], dofs[col]) += local(row, col);
+            matrix.coeffRef(dofs[row], dofs[col]) += local(row, col);
     }
 }
 
@@ -624,6 +680,7 @@ void Assembler<Basis, n>::clear()
 {
     // Only the stored values, so that the pattern stays
     stiffness_.coeffs().setZero();
+    mass_.coeffs().setZero();
     load_.setZero();
 }
 
@@ -687,6 +744,32 @@ template void Assembler<TensorNURBS<double, 3>, 3>::assemble_load(
     const PoissonElement<TensorNURBS<double, 3>, 3>&,
     const DomainQuadrature<double, 3>&, const Eigen::VectorX<double>&,
     const Eigen::VectorX<double>&);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_mass(
+    const PoissonElement<TensorBSpline<double, 2>, 2>&,
+    const DomainQuadrature<double, 2>&);
+template void Assembler<TensorBSpline<double, 3>, 3>::assemble_mass(
+    const PoissonElement<TensorBSpline<double, 3>, 3>&,
+    const DomainQuadrature<double, 3>&);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_mass(
+    const PoissonElement<TensorNURBS<double, 2>, 2>&,
+    const DomainQuadrature<double, 2>&);
+template void Assembler<TensorNURBS<double, 3>, 3>::assemble_mass(
+    const PoissonElement<TensorNURBS<double, 3>, 3>&,
+    const DomainQuadrature<double, 3>&);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_mass(
+    const PoissonElement<TensorBSpline<double, 2>, 2>&,
+    const DomainQuadrature<double, 2>&, const Eigen::VectorX<double>&);
+template void Assembler<TensorBSpline<double, 3>, 3>::assemble_mass(
+    const PoissonElement<TensorBSpline<double, 3>, 3>&,
+    const DomainQuadrature<double, 3>&, const Eigen::VectorX<double>&);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_mass(
+    const PoissonElement<TensorNURBS<double, 2>, 2>&,
+    const DomainQuadrature<double, 2>&, const Eigen::VectorX<double>&);
+template void Assembler<TensorNURBS<double, 3>, 3>::assemble_mass(
+    const PoissonElement<TensorNURBS<double, 3>, 3>&,
+    const DomainQuadrature<double, 3>&, const Eigen::VectorX<double>&);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_stiffness(
     const PenaltyCondition<TensorBSpline<double, 2>, 2>&,

@@ -81,6 +81,14 @@ TEST_CASE("A Poisson element integrates its forms on a rectangle exactly",
 
     REQUIRE((stiffness - expected).cwiseAbs().maxCoeff() < 1e-14);
 
+    // The mass is that of each direction, scaled by the area
+    Eigen::MatrixXd mass;
+    element.local_mass(values, weights, mass);
+
+    REQUIRE((mass - width * height * kroneckerProduct(m, m)).cwiseAbs()
+                .maxCoeff()
+            < 1e-14);
+
     // The source f = y, with y = height times the second parameter. The
     // functions sum to one, so the load sums to the integral of y
     const Eigen::VectorXd source = height * points.col(1);

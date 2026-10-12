@@ -76,6 +76,23 @@ public:
                             const Eigen::VectorX<Scalar>& weights,
                             const Eigen::VectorX<Scalar>& source,
                             Eigen::VectorX<Scalar>& load) const = 0;
+
+    /**
+     * @brief Mass matrix of the element, the matrix of the time derivative
+     *        of its unknowns
+     *
+     * @param values Values at the points of the element
+     * @param weights Physical weights, one per point, scaled by the
+     *        weight of the test functions on the cell when the
+     *        assembly gives one
+     * @param mass Output of size (num_active, num_active), overwritten. It
+     *        is resized when necessary
+     *
+     * @pre @p values were filled with flags(), at the points of @p weights
+     */
+    virtual void local_mass(const ElementValues<Basis, n>& values,
+                            const Eigen::VectorX<Scalar>& weights,
+                            Eigen::MatrixX<Scalar>& mass) const = 0;
 };
 
 } // namespace iguana

@@ -28,12 +28,13 @@ namespace iguana
 {
 
 /**
- * @brief Global stiffness and load of a space, assembled from the local
- *        ones of elements over the points of quadratures
+ * @brief Global stiffness, mass and load of a space, assembled from the
+ *        local ones of elements over the points of quadratures
  *
  * The sparsity pattern of the stiffness is fixed by the space, an entry
  * for every pair of degrees of freedom sharing an element, so it is built
- * once and each assembly adds values into it. With the faces coupled, it
+ * once and each assembly adds values into it. The mass shares it, so that
+ * time integrators combine the two entry by entry. With the faces coupled, it
  * also has an entry for every pair on the two cells of an interior face of
  * the grid, as terms on faces need. Assemblies add up, so that
  * several terms, such as a domain and a boundary one, build one system.
@@ -163,6 +164,41 @@ public:
     void assemble_load(const E& element,
                        const DomainQuadrature<Scalar, dim>& quadrature,
                        const Eigen::VectorX<Scalar>& source,
+                       const Eigen::VectorX<Scalar>& cell_weights);
+
+    /**
+     * @brief Adds the mass of an element over the points of a quadrature
+     *
+     * @tparam E Element, a final class derived from Element
+     *
+     * @param element Element whose local mass is added
+     * @param quadrature Quadrature over elements of the grid of the basis
+     *
+     * @pre @p quadrature is built as for assemble_stiffness()
+     */
+    template<std::derived_from<Element<Basis, n>> E>
+    void assemble_mass(const E& element,
+                       const DomainQuadrature<Scalar, dim>& quadrature);
+
+    /**
+     * @brief Adds the mass of an element over the points of a quadrature,
+     *        with the test functions of each cell weighted
+     *
+     * @tparam E Element, a final class derived from Element
+     *
+     * @param element Element whose local mass is added
+     * @param quadrature Quadrature over elements of the grid of the basis
+     * @param cell_weights Weight of the test functions on each element of
+     *        the grid, in its numbering
+     *
+     * @throws std::invalid_argument If @p cell_weights does not have one
+     *         value per element of the grid
+     *
+     * @pre @p quadrature is built as for the weighted assemble_stiffness()
+     */
+    template<std::derived_from<Element<Basis, n>> E>
+    void assemble_mass(const E& element,
+                       const DomainQuadrature<Scalar, dim>& quadrature,
                        const Eigen::VectorX<Scalar>& cell_weights);
 
     /**
@@ -308,7 +344,7 @@ public:
                        const Eigen::VectorX<Scalar>& cell_weights)
         requires (dim == 2);
 
-    /// @brief Zeroes the stiffness and load, keeping the pattern
+    /// @brief Zeroes the stiffness, mass and load, keeping the pattern
     void clear();
 
     /// @brief Stiffness, of size (num_dofs, num_dofs)
@@ -316,20 +352,28 @@ public:
     stiffness() const noexcept
     { return stiffness_; }
 
+    /// @brief Mass, of size (num_dofs, num_dofs), with the pattern of the
+    ///        stiffness
+    constexpr const Eigen::SparseMatrix<Scalar, Eigen::RowMajor>&
+    mass() const noexcept
+    { return mass_; }
+
     /// @brief Load, of size num_dofs
     constexpr const Eigen::VectorX<Scalar>& load() const noexcept
     { return load_; }
 
 private:
     /**
-     * @brief Adds a local stiffness at degrees of freedom, those of a cell
-     *        or of the two cells of a face, the only place where the
-     *        stiffness is written
+     * @brief Adds a local matrix at degrees of freedom, those of a cell or
+     *        of the two cells of a face, into the stiffness or the mass, the
+     *        only place where they are written
      *
-     * @pre The rows of @p local follow @p dofs
+     * @pre The rows of @p local follow @p dofs, and @p matrix is the
+     *      stiffness or the mass
      */
-    void add_to_stiffness(std::span<const int> dofs,
-                          const Eigen::MatrixX<Scalar>& local);
+    void add_to_matrix(Eigen::SparseMatrix<Scalar, Eigen::RowMajor>& matrix,
+                       std::span<const int> dofs,
+                       const Eigen::MatrixX<Scalar>& local);
 
     /**
      * @brief Adds a local load at degrees of freedom, those of a cell or of
@@ -364,6 +408,9 @@ private:
     /// @brief Stiffness, with an entry for every pair of degrees of freedom
     ///        sharing an element, or the cells of a face when coupled
     Eigen::SparseMatrix<Scalar, Eigen::RowMajor> stiffness_;
+
+    /// @brief Mass, with the pattern of the stiffness
+    Eigen::SparseMatrix<Scalar, Eigen::RowMajor> mass_;
 
     /// @brief Load
     Eigen::VectorX<Scalar> load_;
