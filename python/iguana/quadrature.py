@@ -27,7 +27,7 @@ from iguana.patch import PlanarPatch, SurfacePatch, VolumePatch
 class DomainQuadrature:
     """The quadrature points over the cells of a patch."""
 
-    _cpp_object: _cpp.DomainQuadrature2d | _cpp.DomainQuadrature3d
+    _cpp_object: _cpp.QuadratureDomain2d | _cpp.QuadratureDomain3d
 
     def __init__(self, patch: PlanarPatch | SurfacePatch | VolumePatch,
                  cell_types: Sequence[CellType] | None = None,
@@ -51,11 +51,11 @@ class DomainQuadrature:
                 patch, or if there is not one cell type per cell.
         """
         if isinstance(patch, VolumePatch):
-            self._cpp_object = _cpp.DomainQuadrature3d()
+            self._cpp_object = _cpp.QuadratureDomain3d()
             classification = _cpp.CellClassification3d
             self._dimension = 3
         elif isinstance(patch, (PlanarPatch, SurfacePatch)):
-            self._cpp_object = _cpp.DomainQuadrature2d()
+            self._cpp_object = _cpp.QuadratureDomain2d()
             classification = _cpp.CellClassification2d
             self._dimension = 2
         else:
@@ -217,7 +217,7 @@ class DomainQuadrature:
 class BoundaryQuadrature:
     """The quadrature points along a boundary in the plane of a patch."""
 
-    _cpp_object: _cpp.BoundaryQuadrature2d
+    _cpp_object: _cpp.QuadratureBoundary2d
 
     def __init__(self, patch: PlanarPatch,
                  boundary: Boundary | SurrogateBoundary,
@@ -292,7 +292,7 @@ class BoundaryQuadrature:
         elif order is not None:
             raise ValueError('an order needs a shift')
 
-        self._cpp_object = _cpp.BoundaryQuadrature2d(boundary=divided,
+        self._cpp_object = _cpp.QuadratureBoundary2d(boundary=divided,
                                                      num_points=num_points)
         self._patch = patch
         self._boundary = boundary
