@@ -58,7 +58,7 @@ Eigen::VectorXd integrals(const Space& space,
     const TensorBSpline<double, 2>& basis = space.basis();
 
     // Two points per direction integrate the quadratic functions exactly
-    iguana::DomainQuadrature<double, 2> quadrature;
+    iguana::QuadratureDomain<double, 2> quadrature;
     quadrature.fill(basis.grid(), classification, CellType::inside,
                     iguana::GaussLegendre<double, 2>(2));
 

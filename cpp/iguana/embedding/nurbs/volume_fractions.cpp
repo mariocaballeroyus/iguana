@@ -11,8 +11,8 @@
 #include <vector>
 
 #include "iguana/embedding/embedded_boundary.hpp"
-#include "iguana/quadrature/boundary_quadrature.hpp"
 #include "iguana/quadrature/gauss_legendre/gauss_legendre.hpp"
+#include "iguana/quadrature/quadrature_boundary.hpp"
 
 namespace iguana
 {
@@ -26,7 +26,7 @@ Eigen::VectorX<typename Basis::Scalar> volume_fractions(
     using T = typename Basis::Scalar;
 
     const EmbeddedBoundary<T, 2> embedded(patch, boundary);
-    const BoundaryQuadrature<T, 2> quadrature(embedded,
+    const QuadratureBoundary<T, 2> quadrature(embedded,
                                               GaussLegendre<T, 1>(8));
 
     const KnotVector<T>& along_x = patch.basis().grid().knots(0);

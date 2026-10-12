@@ -33,7 +33,7 @@ using Assembler3d = Assembler<TensorBSpline<double, 3>, 3>;
 /// @brief Assembly of a ghost penalty over faces, the one overload of
 ///        assemble_stiffness that is not a template
 using AssembleFaces2d = void (Assembler2d::*)(
-    const GhostPenalty2d&, const SkeletonQuadrature<double, 2>&);
+    const GhostPenalty2d&, const QuadratureSkeleton<double, 2>&);
 
 } // namespace
 
@@ -95,25 +95,25 @@ void assembly(py::module_& module)
              py::keep_alive<1, 3>())
         .def("assemble_stiffness",
              py::overload_cast<const PoissonElement2d&,
-                               const DomainQuadrature<double, 2>&>(
+                               const QuadratureDomain<double, 2>&>(
                  &Assembler2d::assemble_stiffness<PoissonElement2d>),
              py::arg("element"), py::arg("quadrature"))
         .def("assemble_load",
              py::overload_cast<const PoissonElement2d&,
-                               const DomainQuadrature<double, 2>&,
+                               const QuadratureDomain<double, 2>&,
                                const Eigen::VectorXd&>(
                  &Assembler2d::assemble_load<PoissonElement2d>),
              py::arg("element"), py::arg("quadrature"), py::arg("source"))
         .def("assemble_stiffness",
              py::overload_cast<const PoissonElement2d&,
-                               const DomainQuadrature<double, 2>&,
+                               const QuadratureDomain<double, 2>&,
                                const Eigen::VectorXd&>(
                  &Assembler2d::assemble_stiffness<PoissonElement2d>),
              py::arg("element"), py::arg("quadrature"),
              py::arg("cell_weights"))
         .def("assemble_load",
              py::overload_cast<const PoissonElement2d&,
-                               const DomainQuadrature<double, 2>&,
+                               const QuadratureDomain<double, 2>&,
                                const Eigen::VectorXd&,
                                const Eigen::VectorXd&>(
                  &Assembler2d::assemble_load<PoissonElement2d>),
@@ -147,12 +147,12 @@ void assembly(py::module_& module)
              py::arg("penalty"), py::arg("quadrature"))
         .def("assemble_mass",
              py::overload_cast<const PoissonElement2d&,
-                               const DomainQuadrature<double, 2>&>(
+                               const QuadratureDomain<double, 2>&>(
                  &Assembler2d::assemble_mass<PoissonElement2d>),
              py::arg("element"), py::arg("quadrature"))
         .def("assemble_mass",
              py::overload_cast<const PoissonElement2d&,
-                               const DomainQuadrature<double, 2>&,
+                               const QuadratureDomain<double, 2>&,
                                const Eigen::VectorXd&>(
                  &Assembler2d::assemble_mass<PoissonElement2d>),
              py::arg("element"), py::arg("quadrature"),
@@ -168,25 +168,25 @@ void assembly(py::module_& module)
              py::keep_alive<1, 3>())
         .def("assemble_stiffness",
              py::overload_cast<const PoissonElement3d&,
-                               const DomainQuadrature<double, 3>&>(
+                               const QuadratureDomain<double, 3>&>(
                  &Assembler3d::assemble_stiffness<PoissonElement3d>),
              py::arg("element"), py::arg("quadrature"))
         .def("assemble_load",
              py::overload_cast<const PoissonElement3d&,
-                               const DomainQuadrature<double, 3>&,
+                               const QuadratureDomain<double, 3>&,
                                const Eigen::VectorXd&>(
                  &Assembler3d::assemble_load<PoissonElement3d>),
              py::arg("element"), py::arg("quadrature"), py::arg("source"))
         .def("assemble_stiffness",
              py::overload_cast<const PoissonElement3d&,
-                               const DomainQuadrature<double, 3>&,
+                               const QuadratureDomain<double, 3>&,
                                const Eigen::VectorXd&>(
                  &Assembler3d::assemble_stiffness<PoissonElement3d>),
              py::arg("element"), py::arg("quadrature"),
              py::arg("cell_weights"))
         .def("assemble_load",
              py::overload_cast<const PoissonElement3d&,
-                               const DomainQuadrature<double, 3>&,
+                               const QuadratureDomain<double, 3>&,
                                const Eigen::VectorXd&,
                                const Eigen::VectorXd&>(
                  &Assembler3d::assemble_load<PoissonElement3d>),
@@ -194,12 +194,12 @@ void assembly(py::module_& module)
              py::arg("cell_weights"))
         .def("assemble_mass",
              py::overload_cast<const PoissonElement3d&,
-                               const DomainQuadrature<double, 3>&>(
+                               const QuadratureDomain<double, 3>&>(
                  &Assembler3d::assemble_mass<PoissonElement3d>),
              py::arg("element"), py::arg("quadrature"))
         .def("assemble_mass",
              py::overload_cast<const PoissonElement3d&,
-                               const DomainQuadrature<double, 3>&,
+                               const QuadratureDomain<double, 3>&,
                                const Eigen::VectorXd&>(
                  &Assembler3d::assemble_mass<PoissonElement3d>),
              py::arg("element"), py::arg("quadrature"),

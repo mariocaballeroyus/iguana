@@ -18,12 +18,12 @@ add_executable(iguana_tests
     fspace/test_function_space.cpp
     geometry/test_boundary.cpp
     geometry/test_patch.cpp
-    quadrature/test_boundary_quadrature.cpp
-    quadrature/test_domain_quadrature.cpp
     quadrature/gauss_legendre/test_gauss_legendre.cpp
     quadrature/moment_fitting/test_moment_fitting.cpp
     quadrature/moment_fitting/test_moments.cpp
-    quadrature/test_skeleton_quadrature.cpp
+    quadrature/test_quadrature_boundary.cpp
+    quadrature/test_quadrature_domain.cpp
+    quadrature/test_quadrature_skeleton.cpp
     quadrature/xiao_gimbutas/test_xiao_gimbutas.cpp
     assembly/test_assembler.cpp
     assembly/test_element_values.cpp

@@ -26,7 +26,7 @@ using iguana::TensorNURBS;
 
 using Face = Boundary<double, 2>::Face;
 using Gauss = iguana::GaussLegendre<double, 1>;
-using Quadrature = iguana::SkeletonQuadrature<double, 2>;
+using Quadrature = iguana::QuadratureSkeleton<double, 2>;
 using Region = iguana::Patch<TensorBSpline<double, 2>, 2>;
 
 /// @brief Patch of linear elements between breaks in each direction,
@@ -86,7 +86,7 @@ Face circle(const Eigen::RowVector2d& center)
 } // namespace
 
 TEST_CASE("A projected skeleton quadrature reaches the closest points of a "
-          "boundary", "[skeleton_quadrature]")
+          "boundary", "[quadrature_skeleton]")
 {
     // The middle element, [-1, .5] x [-1.5, 1] in parameters, is the only
     // cell inside the circle of radius two around (.3, -.2), and the others

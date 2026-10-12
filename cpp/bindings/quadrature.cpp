@@ -26,16 +26,16 @@ namespace iguana::bindings
 namespace
 {
 
-using DomainQuadrature2d = DomainQuadrature<double, 2>;
-using DomainQuadrature3d = DomainQuadrature<double, 3>;
-using BoundaryQuadrature2d = BoundaryQuadrature<double, 2>;
-using SkeletonQuadrature2d = SkeletonQuadrature<double, 2>;
+using QuadratureDomain2d = QuadratureDomain<double, 2>;
+using QuadratureDomain3d = QuadratureDomain<double, 3>;
+using QuadratureBoundary2d = QuadratureBoundary<double, 2>;
+using QuadratureSkeleton2d = QuadratureSkeleton<double, 2>;
 using PlanarPatch = Patch<TensorBSpline<double, 2>, 2>;
 
 /// @brief Fills the cells of one type with a Gauss-Legendre rule, which
 ///        Python never handles itself
 template<std::size_t d>
-void fill_gauss_legendre(DomainQuadrature<double, d>& quadrature,
+void fill_gauss_legendre(QuadratureDomain<double, d>& quadrature,
                          const HierarchicalGrid<double, d>& grid,
                          const CellClassification<double, d>& classification,
                          CellType cell_type,
@@ -49,7 +49,7 @@ void fill_gauss_legendre(DomainQuadrature<double, d>& quadrature,
 ///        by facets in parameter space: segments with the domain on their
 ///        left, or triangles counterclockwise seen from outside
 template<std::size_t d>
-void fill_moment_fitting(DomainQuadrature<double, d>& quadrature,
+void fill_moment_fitting(QuadratureDomain<double, d>& quadrature,
                          const HierarchicalGrid<double, d>& grid,
                          const CellClassification<double, d>& classification,
                          CellType cell_type, const Eigen::MatrixXd& vertices,
@@ -96,7 +96,7 @@ int element_holding(const KnotVector<double>& knots, double parameter)
  */
 template<typename Basis, std::size_t n, typename Visit>
 void walk_held_elements(
-    const DomainQuadrature<double, Basis::dimension>& quadrature,
+    const QuadratureDomain<double, Basis::dimension>& quadrature,
     const Patch<Basis, n>& patch,
     const HierarchicalGrid<double, Basis::dimension>& grid, Visit&& visit)
 {
@@ -109,7 +109,7 @@ void walk_held_elements(
 
         if (coarse.degree() != knots.degree() ||
             coarse.values() != knots.values())
-            throw std::invalid_argument("DomainQuadrature: "
+            throw std::invalid_argument("QuadratureDomain: "
                                         "the grid must lie on the knots of "
                                         "the patch");
     }
@@ -123,7 +123,7 @@ void walk_held_elements(
         const int element = quadrature.elements()(position);
 
         if (element < 0 || element >= grid.num_elements())
-            throw std::invalid_argument("DomainQuadrature: "
+            throw std::invalid_argument("QuadratureDomain: "
                                         "the elements must lie in the grid");
 
         held[element] = position;
@@ -167,7 +167,7 @@ void walk_held_elements(
  */
 template<typename Basis, std::size_t n>
 PointMatrix<double, n> positions(
-    const DomainQuadrature<double, Basis::dimension>& quadrature,
+    const QuadratureDomain<double, Basis::dimension>& quadrature,
     const Patch<Basis, n>& patch,
     const HierarchicalGrid<double, Basis::dimension>& grid)
 {
@@ -203,7 +203,7 @@ PointMatrix<double, n> positions(
  */
 template<typename Basis, std::size_t n>
 Eigen::VectorXd physical_weights(
-    const DomainQuadrature<double, Basis::dimension>& quadrature,
+    const QuadratureDomain<double, Basis::dimension>& quadrature,
     const Patch<Basis, n>& patch,
     const HierarchicalGrid<double, Basis::dimension>& grid)
 {
@@ -237,7 +237,7 @@ Eigen::VectorXd physical_weights(
 
 /// @brief Places a Gauss-Legendre rule on every piece of an embedded
 ///        boundary, a rule Python never handles itself
-BoundaryQuadrature2d boundary_gauss_legendre(
+QuadratureBoundary2d boundary_gauss_legendre(
     const EmbeddedBoundary<double, 2>& boundary, int num_points)
 {
     return {boundary, GaussLegendre<double, 1>(num_points)};
@@ -245,7 +245,7 @@ BoundaryQuadrature2d boundary_gauss_legendre(
 
 /// @brief Places a Gauss-Legendre rule on every face of a surrogate
 ///        boundary, a rule Python never handles itself
-BoundaryQuadrature2d surrogate_gauss_legendre(
+QuadratureBoundary2d surrogate_gauss_legendre(
     const SurrogateBoundary<double, 2>& boundary, int num_points)
 {
     return {boundary, GaussLegendre<double, 1>(num_points)};
@@ -253,7 +253,7 @@ BoundaryQuadrature2d surrogate_gauss_legendre(
 
 /// @brief Places a Gauss-Legendre rule on every face of a list of interior
 ///        faces of the grid of a patch, a rule Python never handles itself
-SkeletonQuadrature2d skeleton_gauss_legendre(const PlanarPatch& patch,
+QuadratureSkeleton2d skeleton_gauss_legendre(const PlanarPatch& patch,
                                              const std::vector<int>& faces,
                                              int num_points)
 {
@@ -272,7 +272,7 @@ SkeletonQuadrature2d skeleton_gauss_legendre(const PlanarPatch& patch,
  *      patch
  */
 template<typename Visit>
-void walk_held_elements(const BoundaryQuadrature2d& quadrature,
+void walk_held_elements(const QuadratureBoundary2d& quadrature,
                         const PlanarPatch& patch, Visit&& visit)
 {
     const TensorBSpline<double, 2>& basis = patch.basis();
@@ -285,7 +285,7 @@ void walk_held_elements(const BoundaryQuadrature2d& quadrature,
         const int element = quadrature.elements()(position);
 
         if (element < 0 || element >= grid.num_elements())
-            throw std::invalid_argument("BoundaryQuadrature: "
+            throw std::invalid_argument("QuadratureBoundary: "
                                         "the elements must lie in the grid "
                                         "of the patch");
 
@@ -307,7 +307,7 @@ void walk_held_elements(const BoundaryQuadrature2d& quadrature,
  * @throws std::invalid_argument As walk_held_elements() does
  */
 PointMatrix<double, 2> boundary_positions(
-    const BoundaryQuadrature2d& quadrature, const PlanarPatch& patch)
+    const QuadratureBoundary2d& quadrature, const PlanarPatch& patch)
 {
     PointMatrix<double, 2> result(quadrature.num_points(), 2);
 
@@ -343,7 +343,7 @@ PointMatrix<double, 2> boundary_positions(
  * @pre A projected quadrature was projected through @p patch
  */
 PointMatrix<double, 2> boundary_projections(
-    const BoundaryQuadrature2d& quadrature, const PlanarPatch& patch)
+    const QuadratureBoundary2d& quadrature, const PlanarPatch& patch)
 {
     PointMatrix<double, 2> result = boundary_positions(quadrature, patch);
 
@@ -365,7 +365,7 @@ PointMatrix<double, 2> boundary_projections(
  * @pre A projected quadrature was projected through @p patch
  */
 PointMatrix<double, 2> skeleton_projections(
-    const SkeletonQuadrature2d& quadrature, const PlanarPatch& patch)
+    const QuadratureSkeleton2d& quadrature, const PlanarPatch& patch)
 {
     const TensorBSpline<double, 2>& basis = patch.basis();
     const TensorGrid<double, 2>& grid = basis.grid();
@@ -383,7 +383,7 @@ PointMatrix<double, 2> skeleton_projections(
         const int cell = quadrature.cells()(face, 0);
 
         if (cell < 0 || cell >= grid.num_elements())
-            throw std::invalid_argument("SkeletonQuadrature: "
+            throw std::invalid_argument("QuadratureSkeleton: "
                                         "the faces must lie in the grid of "
                                         "the patch");
 
@@ -416,7 +416,7 @@ PointMatrix<double, 2> skeleton_projections(
  * @throws std::invalid_argument As walk_held_elements() does
  */
 Eigen::VectorXd physical_boundary_weights(
-    const BoundaryQuadrature2d& quadrature, const PlanarPatch& patch)
+    const QuadratureBoundary2d& quadrature, const PlanarPatch& patch)
 {
     Eigen::VectorXd result(quadrature.num_points());
 
@@ -457,7 +457,7 @@ Eigen::VectorXd physical_boundary_weights(
  * @throws std::invalid_argument As walk_held_elements() does
  */
 PointMatrix<double, 2> physical_boundary_normals(
-    const BoundaryQuadrature2d& quadrature, const PlanarPatch& patch)
+    const QuadratureBoundary2d& quadrature, const PlanarPatch& patch)
 {
     PointMatrix<double, 2> result(quadrature.num_points(), 2);
 
@@ -496,7 +496,7 @@ void quadrature(py::module_& module)
     // The weights are copied, as filling reallocates them
     constexpr py::return_value_policy copy = py::return_value_policy::copy;
 
-    py::class_<DomainQuadrature2d>(module, "DomainQuadrature2d")
+    py::class_<QuadratureDomain2d>(module, "QuadratureDomain2d")
         .def(py::init<>())
         .def("fill_gauss_legendre", &fill_gauss_legendre<2>,
              py::arg("grid"), py::arg("classification"),
@@ -506,9 +506,9 @@ void quadrature(py::module_& module)
              py::arg("cell_type"), py::arg("vertices"), py::arg("facets"),
              py::arg("order"))
         .def_property_readonly("num_elements",
-                               &DomainQuadrature2d::num_elements)
-        .def_property_readonly("num_points", &DomainQuadrature2d::num_points)
-        .def_property_readonly("weights", &DomainQuadrature2d::weights, copy)
+                               &QuadratureDomain2d::num_elements)
+        .def_property_readonly("num_points", &QuadratureDomain2d::num_points)
+        .def_property_readonly("weights", &QuadratureDomain2d::weights, copy)
         .def("positions", &positions<TensorBSpline<double, 2>, 2>,
              py::arg("patch"), py::arg("grid"))
         .def("positions", &positions<TensorBSpline<double, 2>, 3>,
@@ -522,7 +522,7 @@ void quadrature(py::module_& module)
         .def("physical_weights", &physical_weights<TensorNURBS<double, 2>, 3>,
              py::arg("patch"), py::arg("grid"));
 
-    py::class_<DomainQuadrature3d>(module, "DomainQuadrature3d")
+    py::class_<QuadratureDomain3d>(module, "QuadratureDomain3d")
         .def(py::init<>())
         .def("fill_gauss_legendre", &fill_gauss_legendre<3>,
              py::arg("grid"), py::arg("classification"),
@@ -532,51 +532,51 @@ void quadrature(py::module_& module)
              py::arg("cell_type"), py::arg("vertices"), py::arg("facets"),
              py::arg("order"))
         .def_property_readonly("num_elements",
-                               &DomainQuadrature3d::num_elements)
-        .def_property_readonly("num_points", &DomainQuadrature3d::num_points)
-        .def_property_readonly("weights", &DomainQuadrature3d::weights, copy)
+                               &QuadratureDomain3d::num_elements)
+        .def_property_readonly("num_points", &QuadratureDomain3d::num_points)
+        .def_property_readonly("weights", &QuadratureDomain3d::weights, copy)
         .def("positions", &positions<TensorBSpline<double, 3>, 3>,
              py::arg("patch"), py::arg("grid"))
         .def("physical_weights", &physical_weights<TensorBSpline<double, 3>, 3>,
              py::arg("patch"), py::arg("grid"));
 
-    py::class_<BoundaryQuadrature2d>(module, "BoundaryQuadrature2d")
+    py::class_<QuadratureBoundary2d>(module, "QuadratureBoundary2d")
         .def(py::init(&boundary_gauss_legendre), py::arg("boundary"),
              py::arg("num_points"))
         .def(py::init(&surrogate_gauss_legendre), py::arg("boundary"),
              py::arg("num_points"))
         .def_property_readonly("num_elements",
-                               &BoundaryQuadrature2d::num_elements)
-        .def_property_readonly("num_points", &BoundaryQuadrature2d::num_points)
-        .def_property_readonly("faces", &BoundaryQuadrature2d::faces)
+                               &QuadratureBoundary2d::num_elements)
+        .def_property_readonly("num_points", &QuadratureBoundary2d::num_points)
+        .def_property_readonly("faces", &QuadratureBoundary2d::faces)
         .def("project_to_closest",
-             &BoundaryQuadrature2d::project_to_closest<
+             &QuadratureBoundary2d::project_to_closest<
                  TensorBSpline<double, 2>>,
              py::arg("patch"), py::arg("boundary"), py::arg("order"))
         .def_property_readonly("is_projected",
-                               &BoundaryQuadrature2d::is_projected)
-        .def_property_readonly("distances", &BoundaryQuadrature2d::distances)
-        .def_property_readonly("order", &BoundaryQuadrature2d::order)
+                               &QuadratureBoundary2d::is_projected)
+        .def_property_readonly("distances", &QuadratureBoundary2d::distances)
+        .def_property_readonly("order", &QuadratureBoundary2d::order)
         .def("positions", &boundary_positions, py::arg("patch"))
         .def("projections", &boundary_projections, py::arg("patch"))
         .def("physical_weights", &physical_boundary_weights, py::arg("patch"))
         .def("physical_normals", &physical_boundary_normals,
              py::arg("patch"));
 
-    py::class_<SkeletonQuadrature2d>(module, "SkeletonQuadrature2d")
+    py::class_<QuadratureSkeleton2d>(module, "QuadratureSkeleton2d")
         .def(py::init(&skeleton_gauss_legendre), py::arg("patch"),
              py::arg("faces"), py::arg("num_points"))
-        .def_property_readonly("num_faces", &SkeletonQuadrature2d::num_faces)
+        .def_property_readonly("num_faces", &QuadratureSkeleton2d::num_faces)
         .def_property_readonly("num_points",
-                               &SkeletonQuadrature2d::num_points)
+                               &QuadratureSkeleton2d::num_points)
         .def("project_to_closest",
-             &SkeletonQuadrature2d::project_to_closest<
+             &QuadratureSkeleton2d::project_to_closest<
                  TensorBSpline<double, 2>>,
              py::arg("patch"), py::arg("boundary"), py::arg("order"))
         .def_property_readonly("is_projected",
-                               &SkeletonQuadrature2d::is_projected)
-        .def_property_readonly("distances", &SkeletonQuadrature2d::distances)
-        .def_property_readonly("order", &SkeletonQuadrature2d::order)
+                               &QuadratureSkeleton2d::is_projected)
+        .def_property_readonly("distances", &QuadratureSkeleton2d::distances)
+        .def_property_readonly("order", &QuadratureSkeleton2d::order)
         .def("projections", &skeleton_projections, py::arg("patch"));
 }
 

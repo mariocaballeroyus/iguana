@@ -170,7 +170,7 @@ TEST_CASE("Moment fitting fills the cut cells of a domain", "[quadrature]")
 
     const Box solid({-1., -1., -1.}, {1.5, 2., 2.});
 
-    iguana::DomainQuadrature<double, 3> quadrature;
+    iguana::QuadratureDomain<double, 3> quadrature;
     quadrature.fill(grid, classification, iguana::CellType::inside,
                     iguana::GaussLegendre<double, 3>(2));
     quadrature.fill(grid, classification, iguana::CellType::cut,

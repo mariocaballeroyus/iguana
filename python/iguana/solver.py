@@ -26,14 +26,14 @@ from iguana.condition import (FaceNitscheCondition, NeumannCondition,
 from iguana.element import PoissonElement
 from iguana.fspace import FunctionSpace
 from iguana.patch import PlanarPatch, VolumePatch
-from iguana.quadrature import DomainQuadrature
+from iguana.quadrature import QuadratureDomain
 from iguana.stabilization import GhostPenalty
 
 
 def solve(
     element: PoissonElement,
     space: FunctionSpace,
-    quadrature: DomainQuadrature,
+    quadrature: QuadratureDomain,
     source: (npt.ArrayLike
              | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
     fixed: npt.ArrayLike | None = None,
@@ -154,7 +154,7 @@ def solve(
 def _assemble(
     element: PoissonElement,
     space: FunctionSpace,
-    quadrature: DomainQuadrature,
+    quadrature: QuadratureDomain,
     source: (npt.ArrayLike
              | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
     cell_weights: npt.ArrayLike | None,
@@ -192,7 +192,7 @@ def _assemble(
     else:
         raise TypeError('the space must lie on a planar or volume patch')
 
-    if not isinstance(quadrature, DomainQuadrature):
+    if not isinstance(quadrature, QuadratureDomain):
         raise TypeError('the quadrature must be a domain quadrature')
 
     # The system numbers the cells as the elements of the patch, which

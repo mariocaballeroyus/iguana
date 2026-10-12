@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 
 import iguana
-from iguana import (Boundary, BoundaryQuadrature, CellType, DomainQuadrature,
-                    HierarchicalGrid, SurrogateBoundary)
+from iguana import (Boundary, CellType, HierarchicalGrid, QuadratureBoundary,
+                    QuadratureDomain, SurrogateBoundary)
 
 ORIGIN = np.array([1., 0., -1.])
 
@@ -112,7 +112,7 @@ def disc():
 
 def test_gauss_legendre_positions():
     """The points of each inside cell are its Gauss points in space."""
-    quadrature = DomainQuadrature(box(), mixed())
+    quadrature = QuadratureDomain(box(), mixed())
     quadrature.fill_gauss_legendre(CellType.inside, (2, 3, 1))
 
     # Gauss nodes about the centre of a unit cell, first direction fastest
@@ -127,7 +127,7 @@ def test_gauss_legendre_positions():
 
 def test_fill_order():
     """Each filled cell type follows the ones filled before."""
-    quadrature = DomainQuadrature(box(), mixed())
+    quadrature = QuadratureDomain(box(), mixed())
     assert quadrature.positions.shape == (0, 3)
 
     quadrature.fill_gauss_legendre(CellType.cut, 1)
@@ -153,7 +153,7 @@ def test_hierarchical_grid():
     grid = grid.refine([5, 1]).refine([7])
 
     # Exact for the map, of degree 2 along x and 1 along y and z
-    quadrature = DomainQuadrature(patch, grid=grid)
+    quadrature = QuadratureDomain(patch, grid=grid)
     quadrature.fill_gauss_legendre(CellType.inside, (2, 1, 1))
 
     # A B-spline integrates to (t[i + p + 1] - t[i]) / (p + 1), and the
@@ -177,7 +177,7 @@ def test_moment_fitting():
     cell_types[0] = cell_types[4] = CellType.inside
     cell_types[1] = cell_types[5] = CellType.cut
 
-    quadrature = DomainQuadrature(box(), cell_types)
+    quadrature = QuadratureDomain(box(), cell_types)
     quadrature.fill_gauss_legendre(CellType.inside, 2)
     quadrature.fill_moment_fitting(CellType.cut, *solid())
 
@@ -190,7 +190,7 @@ def test_surface():
     """A surface patch takes one number of points per surface direction."""
     # The first isosurface is the face of the block at x = 1, whose cells
     # all lie inside without cell types
-    quadrature = DomainQuadrature(box().isosurfaces()[0])
+    quadrature = QuadratureDomain(box().isosurfaces()[0])
     quadrature.fill_gauss_legendre(CellType.inside, (3, 2))
 
     assert quadrature.num_points == 2 * 3 * 2
@@ -202,7 +202,7 @@ def test_planar():
     of its elements."""
     rectangle = iguana.create_rectangle(lengths=(4., 2.), elements=(4, 2),
                                         degrees=(2, 1), origin=ORIGIN[:2])
-    quadrature = DomainQuadrature(rectangle)
+    quadrature = QuadratureDomain(rectangle)
     quadrature.fill_gauss_legendre(CellType.inside, 1)
 
     # One point per unit element, at its centre
@@ -228,7 +228,7 @@ def test_nurbs_surface():
                                      knots=([0., 0., 0., 1., 1., 1.],
                                             [0., 0., 1., 1.]),
                                      control_points=net, weights=weights)
-    quadrature = DomainQuadrature(cylinder)
+    quadrature = QuadratureDomain(cylinder)
     quadrature.fill_gauss_legendre(CellType.inside, 8)
     positions = quadrature.positions
 
@@ -244,7 +244,7 @@ def test_nurbs_surface():
 def test_trimmed_surface():
     """Moment fitting on the cut cells of a trimmed surface integrates the
     area and first moments of the trimmed region."""
-    quadrature = DomainQuadrature(square(), trimmed())
+    quadrature = QuadratureDomain(square(), trimmed())
     quadrature.fill_gauss_legendre(CellType.inside, 3)
     quadrature.fill_moment_fitting(CellType.cut, *triangle())
 
@@ -273,7 +273,7 @@ def test_planar_region():
     cell_types = [CellType.inside] * 2 + [CellType.cut] * 4 \
         + [CellType.outside] * 2
 
-    quadrature = DomainQuadrature(rectangle, cell_types)
+    quadrature = QuadratureDomain(rectangle, cell_types)
     quadrature.fill_gauss_legendre(CellType.inside, 3)
     quadrature.fill_moment_fitting(CellType.cut, corners, segments)
 
@@ -295,7 +295,7 @@ def test_boundary_circle():
     # where the circle of radius 2 is an ellipse
     rectangle = iguana.create_rectangle(lengths=(6., 4.), elements=(3, 4),
                                         degrees=(1, 1), origin=(2., .5))
-    quadrature = BoundaryQuadrature(rectangle, circle(2.), 8)
+    quadrature = QuadratureBoundary(rectangle, circle(2.), 8)
 
     radial = (quadrature.positions - MIDDLE) / 2.
 
@@ -309,8 +309,8 @@ def test_shifted_surrogate_boundary():
     highest degree of the patch unless given. Without the shift, they stay
     where they are."""
     rectangle, surrogate = disc()
-    shifted = BoundaryQuadrature(rectangle, surrogate, 3, shift=circle(1.6))
-    plain = BoundaryQuadrature(rectangle, surrogate, 3)
+    shifted = QuadratureBoundary(rectangle, surrogate, 3, shift=circle(1.6))
+    plain = QuadratureBoundary(rectangle, surrogate, 3)
 
     radial = shifted.positions - MIDDLE
     radial /= np.linalg.norm(radial, axis=1)[:, None]
@@ -321,7 +321,7 @@ def test_shifted_surrogate_boundary():
 
     assert shifted.order == 3
     assert plain.order is None
-    assert BoundaryQuadrature(rectangle, surrogate, 3, shift=circle(1.6),
+    assert QuadratureBoundary(rectangle, surrogate, 3, shift=circle(1.6),
                               order=1).order == 1
 
 
@@ -329,21 +329,21 @@ def test_invalid_arguments():
     """Invalid arguments raise and leave the quadrature unchanged."""
     # A curve patch, and one cell type too few
     with pytest.raises(TypeError):
-        DomainQuadrature(box().isosurfaces()[0].isocurves()[0])
+        QuadratureDomain(box().isosurfaces()[0].isocurves()[0])
 
     with pytest.raises(ValueError):
-        DomainQuadrature(box(), mixed()[:-1])
+        QuadratureDomain(box(), mixed()[:-1])
 
     # A grid must lie on the knots of the patch
     with pytest.raises(TypeError):
-        DomainQuadrature(box(), grid=box())
+        QuadratureDomain(box(), grid=box())
 
     with pytest.raises(ValueError):
-        DomainQuadrature(box(), grid=HierarchicalGrid(
+        QuadratureDomain(box(), grid=HierarchicalGrid(
             (2, 1, 1), [[0., 0., 0., 1., 1., 1.], [0., 0., 1., 1.],
                         [0., 0., 1., 1.]]))
 
-    quadrature = DomainQuadrature(box(), mixed())
+    quadrature = QuadratureDomain(box(), mixed())
 
     with pytest.raises(ValueError):
         quadrature.fill_gauss_legendre(CellType.inside, (2, 2))
@@ -356,7 +356,7 @@ def test_invalid_arguments():
     assert quadrature.num_points == 5
 
     # A surface polygon lies in parameter space and closes by segments
-    surface = DomainQuadrature(square(), trimmed())
+    surface = QuadratureDomain(square(), trimmed())
     vertices, segments = triangle()
 
     with pytest.raises(ValueError):
@@ -375,14 +375,14 @@ def test_invalid_arguments():
     rectangle, surrogate = disc()
 
     with pytest.raises(ValueError):
-        BoundaryQuadrature(rectangle, circle(1.6), 3, shift=circle(1.6))
+        QuadratureBoundary(rectangle, circle(1.6), 3, shift=circle(1.6))
 
     with pytest.raises(TypeError):
-        BoundaryQuadrature(rectangle, surrogate, 3, shift=surrogate)
+        QuadratureBoundary(rectangle, surrogate, 3, shift=surrogate)
 
     with pytest.raises(ValueError):
-        BoundaryQuadrature(rectangle, surrogate, 3, order=2)
+        QuadratureBoundary(rectangle, surrogate, 3, order=2)
 
     with pytest.raises(ValueError):
-        BoundaryQuadrature(rectangle, surrogate, 3, shift=circle(1.6),
+        QuadratureBoundary(rectangle, surrogate, 3, shift=circle(1.6),
                            order=-1)

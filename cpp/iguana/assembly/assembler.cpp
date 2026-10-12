@@ -32,14 +32,14 @@ namespace
  * @brief Expands the values at the points of one element or face of a
  *        projected quadrature towards the boundary it is projected onto
  *
- * @tparam Quadrature BoundaryQuadrature or SkeletonQuadrature
+ * @tparam Projected QuadratureBoundary or QuadratureSkeleton
  *
  * @throws std::invalid_argument If the patch is not a B-spline one, whose
  *         basis alone provides the Taylor series
  */
-template<typename Basis, std::size_t n, typename Quadrature>
+template<typename Basis, std::size_t n, typename Projected>
 void shift_values(ElementValues<Basis, n>& values,
-                  const Quadrature& quadrature, int first, int count)
+                  const Projected& quadrature, int first, int count)
 {
     using Scalar = typename Basis::Scalar;
     constexpr std::size_t dim = Basis::dimension;
@@ -146,7 +146,7 @@ Assembler<Basis, n>::Assembler(const FunctionSpace<Basis>& space,
 template<typename Basis, std::size_t n>
 template<std::derived_from<Element<Basis, n>> E>
 void Assembler<Basis, n>::assemble_stiffness(
-    const E& element, const DomainQuadrature<Scalar, dim>& quadrature)
+    const E& element, const QuadratureDomain<Scalar, dim>& quadrature)
 {
     // Every cell weighted by one
     const Eigen::VectorX<Scalar> ones =
@@ -158,7 +158,7 @@ void Assembler<Basis, n>::assemble_stiffness(
 template<typename Basis, std::size_t n>
 template<std::derived_from<Element<Basis, n>> E>
 void Assembler<Basis, n>::assemble_stiffness(
-    const E& element, const DomainQuadrature<Scalar, dim>& quadrature,
+    const E& element, const QuadratureDomain<Scalar, dim>& quadrature,
     const Eigen::VectorX<Scalar>& cell_weights)
 {
     if (cell_weights.size() != space_.dof_map().num_elements())
@@ -199,7 +199,7 @@ void Assembler<Basis, n>::assemble_stiffness(
 template<typename Basis, std::size_t n>
 template<std::derived_from<Element<Basis, n>> E>
 void Assembler<Basis, n>::assemble_load(
-    const E& element, const DomainQuadrature<Scalar, dim>& quadrature,
+    const E& element, const QuadratureDomain<Scalar, dim>& quadrature,
     const Eigen::VectorX<Scalar>& source)
 {
     // Every cell weighted by one
@@ -212,7 +212,7 @@ void Assembler<Basis, n>::assemble_load(
 template<typename Basis, std::size_t n>
 template<std::derived_from<Element<Basis, n>> E>
 void Assembler<Basis, n>::assemble_load(
-    const E& element, const DomainQuadrature<Scalar, dim>& quadrature,
+    const E& element, const QuadratureDomain<Scalar, dim>& quadrature,
     const Eigen::VectorX<Scalar>& source,
     const Eigen::VectorX<Scalar>& cell_weights)
 {
@@ -259,7 +259,7 @@ void Assembler<Basis, n>::assemble_load(
 template<typename Basis, std::size_t n>
 template<std::derived_from<Element<Basis, n>> E>
 void Assembler<Basis, n>::assemble_mass(
-    const E& element, const DomainQuadrature<Scalar, dim>& quadrature)
+    const E& element, const QuadratureDomain<Scalar, dim>& quadrature)
 {
     // Every cell weighted by one
     const Eigen::VectorX<Scalar> ones =
@@ -271,7 +271,7 @@ void Assembler<Basis, n>::assemble_mass(
 template<typename Basis, std::size_t n>
 template<std::derived_from<Element<Basis, n>> E>
 void Assembler<Basis, n>::assemble_mass(
-    const E& element, const DomainQuadrature<Scalar, dim>& quadrature,
+    const E& element, const QuadratureDomain<Scalar, dim>& quadrature,
     const Eigen::VectorX<Scalar>& cell_weights)
 {
     if (cell_weights.size() != space_.dof_map().num_elements())
@@ -311,7 +311,7 @@ void Assembler<Basis, n>::assemble_mass(
 template<typename Basis, std::size_t n>
 template<std::derived_from<Condition<Basis, n>> C>
 void Assembler<Basis, n>::assemble_stiffness(
-    const C& condition, const BoundaryQuadrature<Scalar, dim>& quadrature)
+    const C& condition, const QuadratureBoundary<Scalar, dim>& quadrature)
 {
     ElementValues<Basis, n> values(patch_, condition.flags());
     ElementValues<Basis, n> shifted_values(patch_, condition.flags());
@@ -363,7 +363,7 @@ void Assembler<Basis, n>::assemble_stiffness(
 template<typename Basis, std::size_t n>
 template<std::derived_from<Condition<Basis, n>> C>
 void Assembler<Basis, n>::assemble_load(
-    const C& condition, const BoundaryQuadrature<Scalar, dim>& quadrature,
+    const C& condition, const QuadratureBoundary<Scalar, dim>& quadrature,
     const Eigen::VectorX<Scalar>& data)
 {
     if (data.size() != quadrature.num_points())
@@ -421,7 +421,7 @@ void Assembler<Basis, n>::assemble_load(
 template<typename Basis, std::size_t n>
 void Assembler<Basis, n>::assemble_stiffness(
     const GhostPenalty<Basis, n>& penalty,
-    const SkeletonQuadrature<Scalar, dim>& quadrature) requires (dim == 2)
+    const QuadratureSkeleton<Scalar, dim>& quadrature) requires (dim == 2)
 {
     // Without the faces coupled, the pattern would grow with each new face
     if (!couple_faces_)
@@ -478,7 +478,7 @@ void Assembler<Basis, n>::assemble_stiffness(
 template<typename Basis, std::size_t n>
 template<std::derived_from<FaceCondition<Basis, n>> C>
 void Assembler<Basis, n>::assemble_stiffness(
-    const C& condition, const SkeletonQuadrature<Scalar, dim>& quadrature,
+    const C& condition, const QuadratureSkeleton<Scalar, dim>& quadrature,
     const Eigen::VectorX<Scalar>& cell_weights) requires (dim == 2)
 {
     // Without the faces coupled, the pattern would grow with each new face
@@ -558,7 +558,7 @@ void Assembler<Basis, n>::assemble_stiffness(
 template<typename Basis, std::size_t n>
 template<std::derived_from<FaceCondition<Basis, n>> C>
 void Assembler<Basis, n>::assemble_load(
-    const C& condition, const SkeletonQuadrature<Scalar, dim>& quadrature,
+    const C& condition, const QuadratureSkeleton<Scalar, dim>& quadrature,
     const Eigen::VectorX<Scalar>& data,
     const Eigen::VectorX<Scalar>& cell_weights) requires (dim == 2)
 {
@@ -691,142 +691,142 @@ template class Assembler<TensorNURBS<double, 3>, 3>;
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_stiffness(
     const PoissonElement<TensorBSpline<double, 2>, 2>&,
-    const DomainQuadrature<double, 2>&);
+    const QuadratureDomain<double, 2>&);
 template void Assembler<TensorBSpline<double, 3>, 3>::assemble_stiffness(
     const PoissonElement<TensorBSpline<double, 3>, 3>&,
-    const DomainQuadrature<double, 3>&);
+    const QuadratureDomain<double, 3>&);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_stiffness(
     const PoissonElement<TensorNURBS<double, 2>, 2>&,
-    const DomainQuadrature<double, 2>&);
+    const QuadratureDomain<double, 2>&);
 template void Assembler<TensorNURBS<double, 3>, 3>::assemble_stiffness(
     const PoissonElement<TensorNURBS<double, 3>, 3>&,
-    const DomainQuadrature<double, 3>&);
+    const QuadratureDomain<double, 3>&);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
     const PoissonElement<TensorBSpline<double, 2>, 2>&,
-    const DomainQuadrature<double, 2>&, const Eigen::VectorX<double>&);
+    const QuadratureDomain<double, 2>&, const Eigen::VectorX<double>&);
 template void Assembler<TensorBSpline<double, 3>, 3>::assemble_load(
     const PoissonElement<TensorBSpline<double, 3>, 3>&,
-    const DomainQuadrature<double, 3>&, const Eigen::VectorX<double>&);
+    const QuadratureDomain<double, 3>&, const Eigen::VectorX<double>&);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
     const PoissonElement<TensorNURBS<double, 2>, 2>&,
-    const DomainQuadrature<double, 2>&, const Eigen::VectorX<double>&);
+    const QuadratureDomain<double, 2>&, const Eigen::VectorX<double>&);
 template void Assembler<TensorNURBS<double, 3>, 3>::assemble_load(
     const PoissonElement<TensorNURBS<double, 3>, 3>&,
-    const DomainQuadrature<double, 3>&, const Eigen::VectorX<double>&);
+    const QuadratureDomain<double, 3>&, const Eigen::VectorX<double>&);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_stiffness(
     const PoissonElement<TensorBSpline<double, 2>, 2>&,
-    const DomainQuadrature<double, 2>&, const Eigen::VectorX<double>&);
+    const QuadratureDomain<double, 2>&, const Eigen::VectorX<double>&);
 template void Assembler<TensorBSpline<double, 3>, 3>::assemble_stiffness(
     const PoissonElement<TensorBSpline<double, 3>, 3>&,
-    const DomainQuadrature<double, 3>&, const Eigen::VectorX<double>&);
+    const QuadratureDomain<double, 3>&, const Eigen::VectorX<double>&);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_stiffness(
     const PoissonElement<TensorNURBS<double, 2>, 2>&,
-    const DomainQuadrature<double, 2>&, const Eigen::VectorX<double>&);
+    const QuadratureDomain<double, 2>&, const Eigen::VectorX<double>&);
 template void Assembler<TensorNURBS<double, 3>, 3>::assemble_stiffness(
     const PoissonElement<TensorNURBS<double, 3>, 3>&,
-    const DomainQuadrature<double, 3>&, const Eigen::VectorX<double>&);
+    const QuadratureDomain<double, 3>&, const Eigen::VectorX<double>&);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
     const PoissonElement<TensorBSpline<double, 2>, 2>&,
-    const DomainQuadrature<double, 2>&, const Eigen::VectorX<double>&,
+    const QuadratureDomain<double, 2>&, const Eigen::VectorX<double>&,
     const Eigen::VectorX<double>&);
 template void Assembler<TensorBSpline<double, 3>, 3>::assemble_load(
     const PoissonElement<TensorBSpline<double, 3>, 3>&,
-    const DomainQuadrature<double, 3>&, const Eigen::VectorX<double>&,
+    const QuadratureDomain<double, 3>&, const Eigen::VectorX<double>&,
     const Eigen::VectorX<double>&);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
     const PoissonElement<TensorNURBS<double, 2>, 2>&,
-    const DomainQuadrature<double, 2>&, const Eigen::VectorX<double>&,
+    const QuadratureDomain<double, 2>&, const Eigen::VectorX<double>&,
     const Eigen::VectorX<double>&);
 template void Assembler<TensorNURBS<double, 3>, 3>::assemble_load(
     const PoissonElement<TensorNURBS<double, 3>, 3>&,
-    const DomainQuadrature<double, 3>&, const Eigen::VectorX<double>&,
+    const QuadratureDomain<double, 3>&, const Eigen::VectorX<double>&,
     const Eigen::VectorX<double>&);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_mass(
     const PoissonElement<TensorBSpline<double, 2>, 2>&,
-    const DomainQuadrature<double, 2>&);
+    const QuadratureDomain<double, 2>&);
 template void Assembler<TensorBSpline<double, 3>, 3>::assemble_mass(
     const PoissonElement<TensorBSpline<double, 3>, 3>&,
-    const DomainQuadrature<double, 3>&);
+    const QuadratureDomain<double, 3>&);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_mass(
     const PoissonElement<TensorNURBS<double, 2>, 2>&,
-    const DomainQuadrature<double, 2>&);
+    const QuadratureDomain<double, 2>&);
 template void Assembler<TensorNURBS<double, 3>, 3>::assemble_mass(
     const PoissonElement<TensorNURBS<double, 3>, 3>&,
-    const DomainQuadrature<double, 3>&);
+    const QuadratureDomain<double, 3>&);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_mass(
     const PoissonElement<TensorBSpline<double, 2>, 2>&,
-    const DomainQuadrature<double, 2>&, const Eigen::VectorX<double>&);
+    const QuadratureDomain<double, 2>&, const Eigen::VectorX<double>&);
 template void Assembler<TensorBSpline<double, 3>, 3>::assemble_mass(
     const PoissonElement<TensorBSpline<double, 3>, 3>&,
-    const DomainQuadrature<double, 3>&, const Eigen::VectorX<double>&);
+    const QuadratureDomain<double, 3>&, const Eigen::VectorX<double>&);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_mass(
     const PoissonElement<TensorNURBS<double, 2>, 2>&,
-    const DomainQuadrature<double, 2>&, const Eigen::VectorX<double>&);
+    const QuadratureDomain<double, 2>&, const Eigen::VectorX<double>&);
 template void Assembler<TensorNURBS<double, 3>, 3>::assemble_mass(
     const PoissonElement<TensorNURBS<double, 3>, 3>&,
-    const DomainQuadrature<double, 3>&, const Eigen::VectorX<double>&);
+    const QuadratureDomain<double, 3>&, const Eigen::VectorX<double>&);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_stiffness(
     const PenaltyCondition<TensorBSpline<double, 2>, 2>&,
-    const BoundaryQuadrature<double, 2>&);
+    const QuadratureBoundary<double, 2>&);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_stiffness(
     const PenaltyCondition<TensorNURBS<double, 2>, 2>&,
-    const BoundaryQuadrature<double, 2>&);
+    const QuadratureBoundary<double, 2>&);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
     const PenaltyCondition<TensorBSpline<double, 2>, 2>&,
-    const BoundaryQuadrature<double, 2>&, const Eigen::VectorX<double>&);
+    const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
     const PenaltyCondition<TensorNURBS<double, 2>, 2>&,
-    const BoundaryQuadrature<double, 2>&, const Eigen::VectorX<double>&);
+    const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_stiffness(
     const NeumannCondition<TensorBSpline<double, 2>, 2>&,
-    const BoundaryQuadrature<double, 2>&);
+    const QuadratureBoundary<double, 2>&);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_stiffness(
     const NeumannCondition<TensorNURBS<double, 2>, 2>&,
-    const BoundaryQuadrature<double, 2>&);
+    const QuadratureBoundary<double, 2>&);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
     const NeumannCondition<TensorBSpline<double, 2>, 2>&,
-    const BoundaryQuadrature<double, 2>&, const Eigen::VectorX<double>&);
+    const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
     const NeumannCondition<TensorNURBS<double, 2>, 2>&,
-    const BoundaryQuadrature<double, 2>&, const Eigen::VectorX<double>&);
+    const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_stiffness(
     const NitscheCondition<TensorBSpline<double, 2>, 2>&,
-    const BoundaryQuadrature<double, 2>&);
+    const QuadratureBoundary<double, 2>&);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_stiffness(
     const NitscheCondition<TensorNURBS<double, 2>, 2>&,
-    const BoundaryQuadrature<double, 2>&);
+    const QuadratureBoundary<double, 2>&);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
     const NitscheCondition<TensorBSpline<double, 2>, 2>&,
-    const BoundaryQuadrature<double, 2>&, const Eigen::VectorX<double>&);
+    const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
     const NitscheCondition<TensorNURBS<double, 2>, 2>&,
-    const BoundaryQuadrature<double, 2>&, const Eigen::VectorX<double>&);
+    const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_stiffness(
     const FaceNitscheCondition<TensorBSpline<double, 2>, 2>&,
-    const SkeletonQuadrature<double, 2>&, const Eigen::VectorX<double>&);
+    const QuadratureSkeleton<double, 2>&, const Eigen::VectorX<double>&);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_stiffness(
     const FaceNitscheCondition<TensorNURBS<double, 2>, 2>&,
-    const SkeletonQuadrature<double, 2>&, const Eigen::VectorX<double>&);
+    const QuadratureSkeleton<double, 2>&, const Eigen::VectorX<double>&);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
     const FaceNitscheCondition<TensorBSpline<double, 2>, 2>&,
-    const SkeletonQuadrature<double, 2>&, const Eigen::VectorX<double>&,
+    const QuadratureSkeleton<double, 2>&, const Eigen::VectorX<double>&,
     const Eigen::VectorX<double>&);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
     const FaceNitscheCondition<TensorNURBS<double, 2>, 2>&,
-    const SkeletonQuadrature<double, 2>&, const Eigen::VectorX<double>&,
+    const QuadratureSkeleton<double, 2>&, const Eigen::VectorX<double>&,
     const Eigen::VectorX<double>&);
 
 } // namespace iguana

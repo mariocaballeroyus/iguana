@@ -19,9 +19,9 @@
 #include "iguana/element/element.hpp"
 #include "iguana/fspace/function_space.hpp"
 #include "iguana/geometry/patch.hpp"
-#include "iguana/quadrature/boundary_quadrature.hpp"
-#include "iguana/quadrature/domain_quadrature.hpp"
-#include "iguana/quadrature/skeleton_quadrature.hpp"
+#include "iguana/quadrature/quadrature_boundary.hpp"
+#include "iguana/quadrature/quadrature_domain.hpp"
+#include "iguana/quadrature/quadrature_skeleton.hpp"
 #include "iguana/stabilization/ghost_penalty.hpp"
 
 namespace iguana
@@ -94,7 +94,7 @@ public:
      */
     template<std::derived_from<Element<Basis, n>> E>
     void assemble_stiffness(const E& element,
-                            const DomainQuadrature<Scalar, dim>& quadrature);
+                            const QuadratureDomain<Scalar, dim>& quadrature);
 
     /**
      * @brief Adds the stiffness of an element over the points of a
@@ -116,7 +116,7 @@ public:
      */
     template<std::derived_from<Element<Basis, n>> E>
     void assemble_stiffness(const E& element,
-                            const DomainQuadrature<Scalar, dim>& quadrature,
+                            const QuadratureDomain<Scalar, dim>& quadrature,
                             const Eigen::VectorX<Scalar>& cell_weights);
 
     /**
@@ -137,7 +137,7 @@ public:
      */
     template<std::derived_from<Element<Basis, n>> E>
     void assemble_load(const E& element,
-                       const DomainQuadrature<Scalar, dim>& quadrature,
+                       const QuadratureDomain<Scalar, dim>& quadrature,
                        const Eigen::VectorX<Scalar>& source);
 
     /**
@@ -162,7 +162,7 @@ public:
      */
     template<std::derived_from<Element<Basis, n>> E>
     void assemble_load(const E& element,
-                       const DomainQuadrature<Scalar, dim>& quadrature,
+                       const QuadratureDomain<Scalar, dim>& quadrature,
                        const Eigen::VectorX<Scalar>& source,
                        const Eigen::VectorX<Scalar>& cell_weights);
 
@@ -178,7 +178,7 @@ public:
      */
     template<std::derived_from<Element<Basis, n>> E>
     void assemble_mass(const E& element,
-                       const DomainQuadrature<Scalar, dim>& quadrature);
+                       const QuadratureDomain<Scalar, dim>& quadrature);
 
     /**
      * @brief Adds the mass of an element over the points of a quadrature,
@@ -198,7 +198,7 @@ public:
      */
     template<std::derived_from<Element<Basis, n>> E>
     void assemble_mass(const E& element,
-                       const DomainQuadrature<Scalar, dim>& quadrature,
+                       const QuadratureDomain<Scalar, dim>& quadrature,
                        const Eigen::VectorX<Scalar>& cell_weights);
 
     /**
@@ -226,7 +226,7 @@ public:
      */
     template<std::derived_from<Condition<Basis, n>> C>
     void assemble_stiffness(const C& condition,
-                            const BoundaryQuadrature<Scalar, dim>& quadrature);
+                            const QuadratureBoundary<Scalar, dim>& quadrature);
 
     /**
      * @brief Adds the load of a condition along the points of a boundary
@@ -249,7 +249,7 @@ public:
      */
     template<std::derived_from<Condition<Basis, n>> C>
     void assemble_load(const C& condition,
-                       const BoundaryQuadrature<Scalar, dim>& quadrature,
+                       const QuadratureBoundary<Scalar, dim>& quadrature,
                        const Eigen::VectorX<Scalar>& data);
 
     /**
@@ -274,7 +274,7 @@ public:
      *      it holds has its degrees of freedom in the space
      */
     void assemble_stiffness(const GhostPenalty<Basis, n>& penalty,
-                            const SkeletonQuadrature<Scalar, dim>& quadrature)
+                            const QuadratureSkeleton<Scalar, dim>& quadrature)
         requires (dim == 2);
 
     /**
@@ -312,7 +312,7 @@ public:
      */
     template<std::derived_from<FaceCondition<Basis, n>> C>
     void assemble_stiffness(const C& condition,
-                            const SkeletonQuadrature<Scalar, dim>& quadrature,
+                            const QuadratureSkeleton<Scalar, dim>& quadrature,
                             const Eigen::VectorX<Scalar>& cell_weights)
         requires (dim == 2);
 
@@ -340,7 +340,7 @@ public:
      */
     template<std::derived_from<FaceCondition<Basis, n>> C>
     void assemble_load(const C& condition,
-                       const SkeletonQuadrature<Scalar, dim>& quadrature,
+                       const QuadratureSkeleton<Scalar, dim>& quadrature,
                        const Eigen::VectorX<Scalar>& data,
                        const Eigen::VectorX<Scalar>& cell_weights)
         requires (dim == 2);

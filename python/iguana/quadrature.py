@@ -24,10 +24,10 @@ from iguana.embedding import CellType, SurrogateBoundary
 from iguana.patch import PlanarPatch, SurfacePatch, VolumePatch
 
 
-class DomainQuadrature:
+class QuadratureDomain:
     """The quadrature points over the cells of a patch."""
 
-    _cpp_object: _cpp.DomainQuadrature2d | _cpp.DomainQuadrature3d
+    _cpp_object: _cpp.QuadratureDomain2d | _cpp.QuadratureDomain3d
 
     def __init__(self, patch: PlanarPatch | SurfacePatch | VolumePatch,
                  cell_types: Sequence[CellType] | None = None,
@@ -51,11 +51,11 @@ class DomainQuadrature:
                 patch, or if there is not one cell type per cell.
         """
         if isinstance(patch, VolumePatch):
-            self._cpp_object = _cpp.DomainQuadrature3d()
+            self._cpp_object = _cpp.QuadratureDomain3d()
             classification = _cpp.CellClassification3d
             self._dimension = 3
         elif isinstance(patch, (PlanarPatch, SurfacePatch)):
-            self._cpp_object = _cpp.DomainQuadrature2d()
+            self._cpp_object = _cpp.QuadratureDomain2d()
             classification = _cpp.CellClassification2d
             self._dimension = 2
         else:
@@ -210,14 +210,14 @@ class DomainQuadrature:
             parameters, np.asarray(facets, dtype=np.int32), order)
 
     def __repr__(self) -> str:
-        return (f'DomainQuadrature(num_elements={self.num_elements}, '
+        return (f'QuadratureDomain(num_elements={self.num_elements}, '
                 f'num_points={self.num_points})')
 
 
-class BoundaryQuadrature:
+class QuadratureBoundary:
     """The quadrature points along a boundary in the plane of a patch."""
 
-    _cpp_object: _cpp.BoundaryQuadrature2d
+    _cpp_object: _cpp.QuadratureBoundary2d
 
     def __init__(self, patch: PlanarPatch,
                  boundary: Boundary | SurrogateBoundary,
@@ -292,7 +292,7 @@ class BoundaryQuadrature:
         elif order is not None:
             raise ValueError('an order needs a shift')
 
-        self._cpp_object = _cpp.BoundaryQuadrature2d(boundary=divided,
+        self._cpp_object = _cpp.QuadratureBoundary2d(boundary=divided,
                                                      num_points=num_points)
         self._patch = patch
         self._boundary = boundary
@@ -373,7 +373,7 @@ class BoundaryQuadrature:
         return self._cpp_object.physical_normals(self._patch._cpp_object)
 
     def __repr__(self) -> str:
-        return (f'BoundaryQuadrature(num_elements={self.num_elements}, '
+        return (f'QuadratureBoundary(num_elements={self.num_elements}, '
                 f'num_points={self.num_points})')
 
 
