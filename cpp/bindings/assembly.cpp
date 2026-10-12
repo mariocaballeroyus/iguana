@@ -24,7 +24,7 @@ using PoissonElement3d = PoissonElement<TensorBSpline<double, 3>, 3>;
 using PenaltyCondition2d = PenaltyCondition<TensorBSpline<double, 2>, 2>;
 using NeumannCondition2d = NeumannCondition<TensorBSpline<double, 2>, 2>;
 using NitscheCondition2d = NitscheCondition<TensorBSpline<double, 2>, 2>;
-using FaceNitscheCondition2d =
+using SkeletonNitscheCondition2d =
     SkeletonNitscheCondition<TensorBSpline<double, 2>, 2>;
 using GhostPenalty2d = GhostPenalty<TensorBSpline<double, 2>, 2>;
 using BoundaryProjection2d = BoundaryProjection<double>;
@@ -79,7 +79,7 @@ void assembly(py::module_& module)
              py::arg("trace"), py::arg("flux"), py::arg("penalty"),
              py::keep_alive<1, 2>(), py::keep_alive<1, 3>());
 
-    py::class_<FaceNitscheCondition2d>(module, "FaceNitscheCondition2d")
+    py::class_<SkeletonNitscheCondition2d>(module, "SkeletonNitscheCondition2d")
         .def(py::init<const Trace2d&, const Flux2d&, double>(),
              py::arg("trace"), py::arg("flux"), py::arg("penalty"),
              py::keep_alive<1, 2>(), py::keep_alive<1, 3>());
@@ -151,18 +151,18 @@ void assembly(py::module_& module)
                  &Assembler2d::assemble_load<NitscheCondition2d>),
              py::arg("condition"), py::arg("quadrature"), py::arg("data"))
         .def("assemble_stiffness",
-             py::overload_cast<const FaceNitscheCondition2d&,
+             py::overload_cast<const SkeletonNitscheCondition2d&,
                                const QuadratureSkeleton2d&,
                                const Eigen::VectorXd&>(
-                 &Assembler2d::assemble_stiffness<FaceNitscheCondition2d>),
+                 &Assembler2d::assemble_stiffness<SkeletonNitscheCondition2d>),
              py::arg("condition"), py::arg("quadrature"),
              py::arg("cell_weights"))
         .def("assemble_load",
-             py::overload_cast<const FaceNitscheCondition2d&,
+             py::overload_cast<const SkeletonNitscheCondition2d&,
                                const QuadratureSkeleton2d&,
                                const Eigen::VectorXd&,
                                const Eigen::VectorXd&>(
-                 &Assembler2d::assemble_load<FaceNitscheCondition2d>),
+                 &Assembler2d::assemble_load<SkeletonNitscheCondition2d>),
              py::arg("condition"), py::arg("quadrature"), py::arg("data"),
              py::arg("cell_weights"))
         .def("assemble_stiffness",
@@ -196,21 +196,21 @@ void assembly(py::module_& module)
              py::arg("condition"), py::arg("quadrature"),
              py::arg("projection"), py::arg("order"), py::arg("data"))
         .def("assemble_stiffness",
-             py::overload_cast<const FaceNitscheCondition2d&,
+             py::overload_cast<const SkeletonNitscheCondition2d&,
                                const QuadratureSkeleton2d&,
                                const BoundaryProjection2d&, int,
                                const Eigen::VectorXd&>(
-                 &Assembler2d::assemble_stiffness<FaceNitscheCondition2d>),
+                 &Assembler2d::assemble_stiffness<SkeletonNitscheCondition2d>),
              py::arg("condition"), py::arg("quadrature"),
              py::arg("projection"), py::arg("order"),
              py::arg("cell_weights"))
         .def("assemble_load",
-             py::overload_cast<const FaceNitscheCondition2d&,
+             py::overload_cast<const SkeletonNitscheCondition2d&,
                                const QuadratureSkeleton2d&,
                                const BoundaryProjection2d&, int,
                                const Eigen::VectorXd&,
                                const Eigen::VectorXd&>(
-                 &Assembler2d::assemble_load<FaceNitscheCondition2d>),
+                 &Assembler2d::assemble_load<SkeletonNitscheCondition2d>),
              py::arg("condition"), py::arg("quadrature"),
              py::arg("projection"), py::arg("order"), py::arg("data"),
              py::arg("cell_weights"))

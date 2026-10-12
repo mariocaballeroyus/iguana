@@ -429,9 +429,9 @@ class FaceNitscheCondition:
         """Add the stiffness and load of the condition into the compiled
         assembler of a planar space, built with its faces coupled, with the
         weights of the cells."""
-        condition = _cpp.FaceNitscheCondition2d(self._trace._cpp_trace(),
-                                                self._trace._cpp_flux(),
-                                                self._penalty)
+        condition = _cpp.SkeletonNitscheCondition2d(self._trace._cpp_trace(),
+                                                    self._trace._cpp_flux(),
+                                                    self._penalty)
 
         assembler.assemble_stiffness(condition, self._quadrature,
                                      self._projection, self._order,
