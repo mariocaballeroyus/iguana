@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef IGUANA_CONDITION_FACE_NITSCHE_CONDITION_HPP
-#define IGUANA_CONDITION_FACE_NITSCHE_CONDITION_HPP
+#ifndef IGUANA_CONDITION_SKELETON_NITSCHE_CONDITION_HPP
+#define IGUANA_CONDITION_SKELETON_NITSCHE_CONDITION_HPP
 
 #include <array>
 #include <cstddef>
@@ -12,7 +12,7 @@
 #include <Eigen/Core>
 
 #include "iguana/assembly/element_values.hpp"
-#include "iguana/condition/face_condition.hpp"
+#include "iguana/condition/skeleton_condition.hpp"
 #include "iguana/element/flux.hpp"
 #include "iguana/element/trace.hpp"
 #include "iguana/geometry/patch.hpp"
@@ -48,7 +48,7 @@ namespace iguana
  * @tparam n Dimension of the physical space of the patch
  */
 template<typename Basis, std::size_t n>
-class FaceNitscheCondition final : public FaceCondition<Basis, n>
+class SkeletonNitscheCondition final : public SkeletonCondition<Basis, n>
 {
 public:
     /// @brief Floating-point type of the basis
@@ -67,7 +67,7 @@ public:
      * @pre @p trace and @p flux outlive the condition, which keeps
      *      references to them
      */
-    FaceNitscheCondition(const Trace<Basis, n>& trace,
+    SkeletonNitscheCondition(const Trace<Basis, n>& trace,
                          const Flux<Basis, n>& flux, Scalar penalty);
 
     /// @brief Penalty beta
@@ -114,4 +114,4 @@ private:
 
 } // namespace iguana
 
-#endif // IGUANA_CONDITION_FACE_NITSCHE_CONDITION_HPP
+#endif // IGUANA_CONDITION_SKELETON_NITSCHE_CONDITION_HPP

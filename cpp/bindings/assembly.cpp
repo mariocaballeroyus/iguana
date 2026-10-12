@@ -25,7 +25,7 @@ using PenaltyCondition2d = PenaltyCondition<TensorBSpline<double, 2>, 2>;
 using NeumannCondition2d = NeumannCondition<TensorBSpline<double, 2>, 2>;
 using NitscheCondition2d = NitscheCondition<TensorBSpline<double, 2>, 2>;
 using FaceNitscheCondition2d =
-    FaceNitscheCondition<TensorBSpline<double, 2>, 2>;
+    SkeletonNitscheCondition<TensorBSpline<double, 2>, 2>;
 using GhostPenalty2d = GhostPenalty<TensorBSpline<double, 2>, 2>;
 using BoundaryProjection2d = BoundaryProjection<double>;
 using QuadratureBoundary2d = QuadratureBoundary<double, 2>;

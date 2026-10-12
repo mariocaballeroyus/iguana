@@ -825,7 +825,7 @@ TEST_CASE("A ghost penalty needs coupled faces and an affine B-spline patch",
                       std::invalid_argument);
 }
 
-TEST_CASE("Face Nitsche conditions with binary weights are Nitsche "
+TEST_CASE("Skeleton Nitsche conditions with binary weights are Nitsche "
           "conditions on the surrogate boundary", "[assembler]")
 {
     const Basis basis = five_by_five();
@@ -868,7 +868,7 @@ TEST_CASE("Face Nitsche conditions with binary weights are Nitsche "
     const iguana::PoissonElement<Basis, 2>::U trace;
     const iguana::PoissonElement<Basis, 2>::Q flux;
     const iguana::NitscheCondition<Basis, 2> nitsche(trace, flux, 40.);
-    const iguana::FaceNitscheCondition<Basis, 2> face(trace, flux, 40.);
+    const iguana::SkeletonNitscheCondition<Basis, 2> face(trace, flux, 40.);
     const Eigen::Vector2d b(1., -2.);
 
     iguana::Assembler<Basis, 2> on_surrogate(space, patch, true);
@@ -933,7 +933,7 @@ TEST_CASE("A linear field solves the weighted problem with Nitsche "
     const iguana::PoissonElement<Basis, 2> element;
     const iguana::PoissonElement<Basis, 2>::U trace;
     const iguana::PoissonElement<Basis, 2>::Q flux;
-    const iguana::FaceNitscheCondition<Basis, 2> face(trace, flux, 40.);
+    const iguana::SkeletonNitscheCondition<Basis, 2> face(trace, flux, 40.);
     const iguana::GhostPenalty<Basis, 2> ghost(trace, .1);
     const Eigen::Vector2d b(1., -2.);
 
@@ -959,7 +959,7 @@ TEST_CASE("A linear field solves the weighted problem with Nitsche "
             < 1e-12 * assembler.load().cwiseAbs().maxCoeff());
 }
 
-TEST_CASE("Face conditions need coupled faces, one weight per cell and a "
+TEST_CASE("Skeleton conditions need coupled faces, one weight per cell and a "
           "projection of their points", "[assembler]")
 {
     const Basis basis = five_by_five();
@@ -985,11 +985,11 @@ TEST_CASE("Face conditions need coupled faces, one weight per cell and a "
 
     const iguana::PoissonElement<Basis, 2>::U trace;
     const iguana::PoissonElement<Basis, 2>::Q flux;
-    const iguana::FaceNitscheCondition<Basis, 2> face(trace, flux, 40.);
+    const iguana::SkeletonNitscheCondition<Basis, 2> face(trace, flux, 40.);
     const Eigen::VectorXd data = Eigen::VectorXd::Zero(faces.num_points());
 
     REQUIRE_THROWS_AS(
-        (iguana::FaceNitscheCondition<Basis, 2>(trace, flux, 0.)),
+        (iguana::SkeletonNitscheCondition<Basis, 2>(trace, flux, 0.)),
         std::invalid_argument);
 
     // Faces left out of the pattern
@@ -1034,7 +1034,7 @@ TEST_CASE("Face conditions need coupled faces, one weight per cell and a "
         rational, CellClassification<double, 2>(every));
     const iguana::PoissonElement<Rational, 2>::U rational_trace;
     const iguana::PoissonElement<Rational, 2>::Q rational_flux;
-    const iguana::FaceNitscheCondition<Rational, 2> rational_face(
+    const iguana::SkeletonNitscheCondition<Rational, 2> rational_face(
         rational_trace, rational_flux, 40.);
     iguana::Assembler<Rational, 2> on_rational(rational_space, rational_patch,
                                                true);

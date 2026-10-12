@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-#include "face_nitsche_condition.hpp"
+#include "skeleton_nitsche_condition.hpp"
 
 #include <cmath>
 #include <cstddef>
@@ -40,17 +40,17 @@ Eigen::MatrixX<Scalar> mean_rows(const Eigen::MatrixX<Scalar>& before,
 } // namespace
 
 template<typename Basis, std::size_t n>
-FaceNitscheCondition<Basis, n>::FaceNitscheCondition(
+SkeletonNitscheCondition<Basis, n>::SkeletonNitscheCondition(
     const Trace<Basis, n>& trace, const Flux<Basis, n>& flux, Scalar penalty)
     : trace_(trace), flux_(flux), penalty_(penalty)
 {
     if (penalty <= 0)
-        throw std::invalid_argument("FaceNitscheCondition: "
+        throw std::invalid_argument("SkeletonNitscheCondition: "
                                     "the penalty must be positive");
 }
 
 template<typename Basis, std::size_t n>
-void FaceNitscheCondition<Basis, n>::local_stiffness(
+void SkeletonNitscheCondition<Basis, n>::local_stiffness(
     const ElementValues<Basis, n>& before,
     const ElementValues<Basis, n>& after,
     const ElementValues<Basis, n>& shifted_before,
@@ -98,7 +98,7 @@ void FaceNitscheCondition<Basis, n>::local_stiffness(
 }
 
 template<typename Basis, std::size_t n>
-void FaceNitscheCondition<Basis, n>::local_load(
+void SkeletonNitscheCondition<Basis, n>::local_load(
     const ElementValues<Basis, n>& before,
     const ElementValues<Basis, n>& after,
     const ElementValues<Basis, n>& shifted_before,
@@ -137,11 +137,11 @@ void FaceNitscheCondition<Basis, n>::local_load(
            - jump * flux * weights.cwiseProduct(data);
 }
 
-template class FaceNitscheCondition<TensorBSpline<double, 2>, 2>;
-template class FaceNitscheCondition<TensorBSpline<double, 2>, 3>;
-template class FaceNitscheCondition<TensorBSpline<double, 3>, 3>;
-template class FaceNitscheCondition<TensorNURBS<double, 2>, 2>;
-template class FaceNitscheCondition<TensorNURBS<double, 2>, 3>;
-template class FaceNitscheCondition<TensorNURBS<double, 3>, 3>;
+template class SkeletonNitscheCondition<TensorBSpline<double, 2>, 2>;
+template class SkeletonNitscheCondition<TensorBSpline<double, 2>, 3>;
+template class SkeletonNitscheCondition<TensorBSpline<double, 3>, 3>;
+template class SkeletonNitscheCondition<TensorNURBS<double, 2>, 2>;
+template class SkeletonNitscheCondition<TensorNURBS<double, 2>, 3>;
+template class SkeletonNitscheCondition<TensorNURBS<double, 3>, 3>;
 
 } // namespace iguana

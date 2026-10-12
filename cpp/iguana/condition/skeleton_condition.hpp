@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef IGUANA_CONDITION_FACE_CONDITION_HPP
-#define IGUANA_CONDITION_FACE_CONDITION_HPP
+#ifndef IGUANA_CONDITION_SKELETON_CONDITION_HPP
+#define IGUANA_CONDITION_SKELETON_CONDITION_HPP
 
 #include <array>
 #include <cstddef>
@@ -36,13 +36,13 @@ namespace iguana
  * @tparam n Dimension of the physical space of the patch
  */
 template<typename Basis, std::size_t n>
-class FaceCondition
+class SkeletonCondition
 {
 public:
     /// @brief Floating-point type of the basis
     using Scalar = typename Basis::Scalar;
 
-    virtual ~FaceCondition() = default;
+    virtual ~SkeletonCondition() = default;
 
     /// @brief Optional values the condition reads from ElementValues
     virtual ValueFlags flags() const noexcept = 0;
@@ -117,4 +117,4 @@ public:
 
 } // namespace iguana
 
-#endif // IGUANA_CONDITION_FACE_CONDITION_HPP
+#endif // IGUANA_CONDITION_SKELETON_CONDITION_HPP

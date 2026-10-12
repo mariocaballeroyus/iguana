@@ -15,7 +15,7 @@
 #include <Eigen/SparseCore>
 
 #include "iguana/condition/condition.hpp"
-#include "iguana/condition/face_condition.hpp"
+#include "iguana/condition/skeleton_condition.hpp"
 #include "iguana/element/element.hpp"
 #include "iguana/fspace/function_space.hpp"
 #include "iguana/geometry/boundary_projection.hpp"
@@ -334,7 +334,7 @@ public:
         requires (dim == 2);
 
     /**
-     * @brief Adds the stiffness of a face condition over the points of a
+     * @brief Adds the stiffness of a skeleton condition over the points of a
      *        skeleton quadrature, with the test functions of each cell
      *        weighted
      *
@@ -347,9 +347,10 @@ public:
      * the condition, so the cells of non-zero weight must stay off the edge
      * of the grid, or take conditions of their own there
      *
-     * @tparam C Face condition, a final class derived from FaceCondition
+     * @tparam C Skeleton condition, a final class derived from
+     *         SkeletonCondition
      *
-     * @param condition Face condition whose local stiffness is added
+     * @param condition Skeleton condition whose local stiffness is added
      * @param quadrature Quadrature over interior faces of the grid of the
      *        basis
      * @param cell_weights Weight of the test functions on each element of
@@ -363,20 +364,21 @@ public:
      *      of a face across which the weights jump has its degrees of
      *      freedom in the space
      */
-    template<std::derived_from<FaceCondition<Basis, n>> C>
+    template<std::derived_from<SkeletonCondition<Basis, n>> C>
     void assemble_stiffness(const C& condition,
                             const QuadratureSkeleton<Scalar, dim>& quadrature,
                             const Eigen::VectorX<Scalar>& cell_weights)
         requires (dim == 2);
 
     /**
-     * @brief Adds the load of a face condition over the points of a
+     * @brief Adds the load of a skeleton condition over the points of a
      *        skeleton quadrature, from data given at them, with the test
      *        functions of each cell weighted
      *
-     * @tparam C Face condition, a final class derived from FaceCondition
+     * @tparam C Skeleton condition, a final class derived from
+     *         SkeletonCondition
      *
-     * @param condition Face condition whose local load is added
+     * @param condition Skeleton condition whose local load is added
      * @param quadrature Quadrature over interior faces of the grid of the
      *        basis
      * @param data Value the condition imposes at each point of the
@@ -388,9 +390,9 @@ public:
      *         point of @p quadrature, or as for the stiffness of a face
      *         condition
      *
-     * @pre @p quadrature is built as for the stiffness of a face condition
+     * @pre @p quadrature is built as for the stiffness of a skeleton condition
      */
-    template<std::derived_from<FaceCondition<Basis, n>> C>
+    template<std::derived_from<SkeletonCondition<Basis, n>> C>
     void assemble_load(const C& condition,
                        const QuadratureSkeleton<Scalar, dim>& quadrature,
                        const Eigen::VectorX<Scalar>& data,
@@ -398,7 +400,7 @@ public:
         requires (dim == 2);
 
     /**
-     * @brief Adds the stiffness of a face condition over the points of a
+     * @brief Adds the stiffness of a skeleton condition over the points of a
      *        skeleton quadrature, with the test functions of each cell
      *        weighted and the values expanded along the distance vectors of
      *        a projection
@@ -407,9 +409,10 @@ public:
      * cells of a face are also expanded from each point to its closest
      * point on the boundary, along the same distance vectors
      *
-     * @tparam C Face condition, a final class derived from FaceCondition
+     * @tparam C Skeleton condition, a final class derived from
+     *         SkeletonCondition
      *
-     * @param condition Face condition whose local stiffness is added
+     * @param condition Skeleton condition whose local stiffness is added
      * @param quadrature Quadrature over interior faces of the grid of the
      *        basis
      * @param projection Projection of the points of @p quadrature onto the
@@ -424,10 +427,10 @@ public:
      *         have one distance vector per point of @p quadrature, or if the
      *         patch is not a B-spline one
      *
-     * @pre As for the stiffness of a face condition, and @p projection was
+     * @pre As for the stiffness of a skeleton condition, and @p projection was
      *      computed from the points of @p quadrature through the patch
      */
-    template<std::derived_from<FaceCondition<Basis, n>> C>
+    template<std::derived_from<SkeletonCondition<Basis, n>> C>
     void assemble_stiffness(const C& condition,
                             const QuadratureSkeleton<Scalar, dim>& quadrature,
                             const BoundaryProjection<Scalar>& projection,
@@ -436,14 +439,15 @@ public:
         requires (dim == 2);
 
     /**
-     * @brief Adds the load of a face condition over the points of a
+     * @brief Adds the load of a skeleton condition over the points of a
      *        skeleton quadrature, from data given at their closest points,
      *        with the test functions of each cell weighted and the values
      *        expanded along the distance vectors of a projection
      *
-     * @tparam C Face condition, a final class derived from FaceCondition
+     * @tparam C Skeleton condition, a final class derived from
+     *         SkeletonCondition
      *
-     * @param condition Face condition whose local load is added
+     * @param condition Skeleton condition whose local load is added
      * @param quadrature Quadrature over interior faces of the grid of the
      *        basis
      * @param projection Projection of the points of @p quadrature onto the
@@ -457,11 +461,11 @@ public:
      *
      * @throws std::invalid_argument If @p data does not have one value per
      *         point of @p quadrature, or as for the projected stiffness of a
-     *         face condition
+     *         skeleton condition
      *
-     * @pre As for the projected stiffness of a face condition
+     * @pre As for the projected stiffness of a skeleton condition
      */
-    template<std::derived_from<FaceCondition<Basis, n>> C>
+    template<std::derived_from<SkeletonCondition<Basis, n>> C>
     void assemble_load(const C& condition,
                        const QuadratureSkeleton<Scalar, dim>& quadrature,
                        const BoundaryProjection<Scalar>& projection,
@@ -510,23 +514,23 @@ private:
         const Eigen::VectorX<Scalar>& data);
 
     /**
-     * @brief Adds the stiffness of a face condition over the points of a
+     * @brief Adds the stiffness of a skeleton condition over the points of a
      *        skeleton quadrature, shifted along a projection when one is
      *        given, the work of both public overloads
      */
-    template<std::derived_from<FaceCondition<Basis, n>> C>
-    void add_face_condition_stiffness(
+    template<std::derived_from<SkeletonCondition<Basis, n>> C>
+    void add_skeleton_condition_stiffness(
         const C& condition, const QuadratureSkeleton<Scalar, dim>& quadrature,
         const BoundaryProjection<Scalar>* projection, int order,
         const Eigen::VectorX<Scalar>& cell_weights) requires (dim == 2);
 
     /**
-     * @brief Adds the load of a face condition over the points of a
+     * @brief Adds the load of a skeleton condition over the points of a
      *        skeleton quadrature, shifted along a projection when one is
      *        given, the work of both public overloads
      */
-    template<std::derived_from<FaceCondition<Basis, n>> C>
-    void add_face_condition_load(
+    template<std::derived_from<SkeletonCondition<Basis, n>> C>
+    void add_skeleton_condition_load(
         const C& condition, const QuadratureSkeleton<Scalar, dim>& quadrature,
         const BoundaryProjection<Scalar>* projection, int order,
         const Eigen::VectorX<Scalar>& data,
