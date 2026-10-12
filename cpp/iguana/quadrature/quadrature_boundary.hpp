@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef IGUANA_QUADRATURE_BOUNDARY_QUADRATURE_HPP
-#define IGUANA_QUADRATURE_BOUNDARY_QUADRATURE_HPP
+#ifndef IGUANA_QUADRATURE_QUADRATURE_BOUNDARY_HPP
+#define IGUANA_QUADRATURE_QUADRATURE_BOUNDARY_HPP
 
 #include <concepts>
 #include <cstddef>
@@ -43,7 +43,7 @@ namespace iguana
  *         a surrogate boundary are then segments
  */
 template<std::floating_point T, std::size_t d>
-class BoundaryQuadrature : public Quadrature<T, d>
+class QuadratureBoundary : public Quadrature<T, d>
 {
 public:
     /**
@@ -56,7 +56,7 @@ public:
      * @param boundary Boundary divided over the elements of a grid
      * @param rule Rule placed on every piece
      */
-    BoundaryQuadrature(const EmbeddedBoundary<T, d>& boundary,
+    QuadratureBoundary(const EmbeddedBoundary<T, d>& boundary,
                        const GaussLegendre<T, 1>& rule);
 
     /**
@@ -70,7 +70,7 @@ public:
      * @param boundary Surrogate boundary of the inside cells of a grid
      * @param rule Rule placed on every face
      */
-    BoundaryQuadrature(const SurrogateBoundary<T, d>& boundary,
+    QuadratureBoundary(const SurrogateBoundary<T, d>& boundary,
                        const GaussLegendre<T, 1>& rule);
 
     /**
@@ -163,4 +163,4 @@ private:
 
 } // namespace iguana
 
-#endif // IGUANA_QUADRATURE_BOUNDARY_QUADRATURE_HPP
+#endif // IGUANA_QUADRATURE_QUADRATURE_BOUNDARY_HPP

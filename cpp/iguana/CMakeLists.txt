@@ -18,14 +18,14 @@ add_library(iguana
     geometry/boundary.cpp
     geometry/boundary_projection.cpp
     geometry/patch.cpp
-    quadrature/boundary_quadrature.cpp
     quadrature/box_rule.cpp
-    quadrature/domain_quadrature.cpp
     quadrature/gauss_legendre/gauss_legendre.cpp
     quadrature/gauss_legendre/gauss_legendre_tables.cpp
     quadrature/moment_fitting/moment_fitting.cpp
     quadrature/moment_fitting/moments.cpp
-    quadrature/skeleton_quadrature.cpp
+    quadrature/quadrature_boundary.cpp
+    quadrature/quadrature_domain.cpp
+    quadrature/quadrature_skeleton.cpp
     quadrature/xiao_gimbutas/xiao_gimbutas.cpp
     quadrature/xiao_gimbutas/xiao_gimbutas_tables.cpp
     assembly/assembler.cpp

@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef IGUANA_QUADRATURE_DOMAIN_QUADRATURE_HPP
-#define IGUANA_QUADRATURE_DOMAIN_QUADRATURE_HPP
+#ifndef IGUANA_QUADRATURE_QUADRATURE_DOMAIN_HPP
+#define IGUANA_QUADRATURE_QUADRATURE_DOMAIN_HPP
 
 #include <concepts>
 #include <cstddef>
@@ -35,11 +35,11 @@ namespace iguana
  * @tparam d Number of parametric directions
  */
 template<std::floating_point T, std::size_t d>
-class DomainQuadrature : public Quadrature<T, d>
+class QuadratureDomain : public Quadrature<T, d>
 {
 public:
     /// @brief Constructs an empty quadrature, which integrates nothing
-    DomainQuadrature() = default;
+    QuadratureDomain() = default;
 
     /**
      * @brief Constructs the quadrature from its flat arrays
@@ -56,7 +56,7 @@ public:
      *         more than elements, or if the offsets do not run from zero to
      *         the number of points without decreasing
      */
-    DomainQuadrature(Eigen::VectorXi elements, Eigen::VectorXi offsets,
+    QuadratureDomain(Eigen::VectorXi elements, Eigen::VectorXi offsets,
                      Eigen::MatrixX<T> points, Eigen::VectorX<T> weights);
 
     /**
@@ -108,4 +108,4 @@ private:
 
 } // namespace iguana
 
-#endif // IGUANA_QUADRATURE_DOMAIN_QUADRATURE_HPP
+#endif // IGUANA_QUADRATURE_QUADRATURE_DOMAIN_HPP

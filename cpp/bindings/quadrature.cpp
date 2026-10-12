@@ -26,16 +26,16 @@ namespace iguana::bindings
 namespace
 {
 
-using DomainQuadrature2d = DomainQuadrature<double, 2>;
-using DomainQuadrature3d = DomainQuadrature<double, 3>;
-using BoundaryQuadrature2d = BoundaryQuadrature<double, 2>;
-using SkeletonQuadrature2d = SkeletonQuadrature<double, 2>;
+using DomainQuadrature2d = QuadratureDomain<double, 2>;
+using DomainQuadrature3d = QuadratureDomain<double, 3>;
+using BoundaryQuadrature2d = QuadratureBoundary<double, 2>;
+using SkeletonQuadrature2d = QuadratureSkeleton<double, 2>;
 using PlanarPatch = Patch<TensorBSpline<double, 2>, 2>;
 
 /// @brief Fills the cells of one type with a Gauss-Legendre rule, which
 ///        Python never handles itself
 template<std::size_t d>
-void fill_gauss_legendre(DomainQuadrature<double, d>& quadrature,
+void fill_gauss_legendre(QuadratureDomain<double, d>& quadrature,
                          const HierarchicalGrid<double, d>& grid,
                          const CellClassification<double, d>& classification,
                          CellType cell_type,
@@ -49,7 +49,7 @@ void fill_gauss_legendre(DomainQuadrature<double, d>& quadrature,
 ///        by facets in parameter space: segments with the domain on their
 ///        left, or triangles counterclockwise seen from outside
 template<std::size_t d>
-void fill_moment_fitting(DomainQuadrature<double, d>& quadrature,
+void fill_moment_fitting(QuadratureDomain<double, d>& quadrature,
                          const HierarchicalGrid<double, d>& grid,
                          const CellClassification<double, d>& classification,
                          CellType cell_type, const Eigen::MatrixXd& vertices,
@@ -96,7 +96,7 @@ int element_holding(const KnotVector<double>& knots, double parameter)
  */
 template<typename Basis, std::size_t n, typename Visit>
 void walk_held_elements(
-    const DomainQuadrature<double, Basis::dimension>& quadrature,
+    const QuadratureDomain<double, Basis::dimension>& quadrature,
     const Patch<Basis, n>& patch,
     const HierarchicalGrid<double, Basis::dimension>& grid, Visit&& visit)
 {
@@ -109,7 +109,7 @@ void walk_held_elements(
 
         if (coarse.degree() != knots.degree() ||
             coarse.values() != knots.values())
-            throw std::invalid_argument("DomainQuadrature: "
+            throw std::invalid_argument("QuadratureDomain: "
                                         "the grid must lie on the knots of "
                                         "the patch");
     }
@@ -123,7 +123,7 @@ void walk_held_elements(
         const int element = quadrature.elements()(position);
 
         if (element < 0 || element >= grid.num_elements())
-            throw std::invalid_argument("DomainQuadrature: "
+            throw std::invalid_argument("QuadratureDomain: "
                                         "the elements must lie in the grid");
 
         held[element] = position;
@@ -167,7 +167,7 @@ void walk_held_elements(
  */
 template<typename Basis, std::size_t n>
 PointMatrix<double, n> positions(
-    const DomainQuadrature<double, Basis::dimension>& quadrature,
+    const QuadratureDomain<double, Basis::dimension>& quadrature,
     const Patch<Basis, n>& patch,
     const HierarchicalGrid<double, Basis::dimension>& grid)
 {
@@ -203,7 +203,7 @@ PointMatrix<double, n> positions(
  */
 template<typename Basis, std::size_t n>
 Eigen::VectorXd physical_weights(
-    const DomainQuadrature<double, Basis::dimension>& quadrature,
+    const QuadratureDomain<double, Basis::dimension>& quadrature,
     const Patch<Basis, n>& patch,
     const HierarchicalGrid<double, Basis::dimension>& grid)
 {
@@ -285,7 +285,7 @@ void walk_held_elements(const BoundaryQuadrature2d& quadrature,
         const int element = quadrature.elements()(position);
 
         if (element < 0 || element >= grid.num_elements())
-            throw std::invalid_argument("BoundaryQuadrature: "
+            throw std::invalid_argument("QuadratureBoundary: "
                                         "the elements must lie in the grid "
                                         "of the patch");
 
@@ -383,7 +383,7 @@ PointMatrix<double, 2> skeleton_projections(
         const int cell = quadrature.cells()(face, 0);
 
         if (cell < 0 || cell >= grid.num_elements())
-            throw std::invalid_argument("SkeletonQuadrature: "
+            throw std::invalid_argument("QuadratureSkeleton: "
                                         "the faces must lie in the grid of "
                                         "the patch");
 

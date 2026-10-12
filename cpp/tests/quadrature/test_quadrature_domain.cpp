@@ -24,7 +24,7 @@ using iguana::HierarchicalGrid;
 using iguana::KnotVector;
 using iguana::TensorGrid;
 
-using Quadrature = iguana::DomainQuadrature<double, 3>;
+using Quadrature = iguana::QuadratureDomain<double, 3>;
 using Gauss = iguana::GaussLegendre<double, 3>;
 
 /// @brief Grid over uneven knot spans, with six elements
@@ -180,7 +180,7 @@ TEST_CASE("A hierarchical grid is filled over its whole parametric domain",
     // Exact up to degree 2n - 1 in each direction
     const std::array<int, 2> counts{3, 2};
 
-    iguana::DomainQuadrature<double, 2> quadrature;
+    iguana::QuadratureDomain<double, 2> quadrature;
     quadrature.fill(grid, classification, CellType::inside,
                     iguana::GaussLegendre<double, 2>(counts));
 

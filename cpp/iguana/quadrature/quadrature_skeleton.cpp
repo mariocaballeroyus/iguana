@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-#include "skeleton_quadrature.hpp"
+#include "quadrature_skeleton.hpp"
 
 #include <array>
 #include <cstddef>
@@ -18,14 +18,14 @@ namespace iguana
 {
 
 template<std::floating_point T, std::size_t d>
-SkeletonQuadrature<T, d>::SkeletonQuadrature(
+QuadratureSkeleton<T, d>::QuadratureSkeleton(
     const TensorGrid<T, d>& grid,
     std::span<const int> faces,
     const GaussLegendre<T, 1>& rule)
 {
     for (const int face : faces) {
         if (face < 0 || face >= grid.num_faces())
-            throw std::invalid_argument("SkeletonQuadrature: "
+            throw std::invalid_argument("QuadratureSkeleton: "
                                         "the faces must be interior faces "
                                         "of the grid");
     }
@@ -81,17 +81,17 @@ SkeletonQuadrature<T, d>::SkeletonQuadrature(
 
 template<std::floating_point T, std::size_t d>
 template<typename Basis> requires (Basis::dimension == d)
-void SkeletonQuadrature<T, d>::project_to_closest(
+void QuadratureSkeleton<T, d>::project_to_closest(
     const Patch<Basis, 2>& patch,
     const Boundary<T, 2>& boundary,
     int order)
 {
     if (order < 0)
-        throw std::invalid_argument("SkeletonQuadrature: "
+        throw std::invalid_argument("QuadratureSkeleton: "
                                     "the order must be non-negative");
 
     if (!patch.is_affine())
-        throw std::invalid_argument("SkeletonQuadrature: "
+        throw std::invalid_argument("QuadratureSkeleton: "
                                     "the map of the patch must be affine");
 
     // Physical positions of the points through the map, x = a + A xi
@@ -110,12 +110,12 @@ void SkeletonQuadrature<T, d>::project_to_closest(
     order_ = order;
 }
 
-template class SkeletonQuadrature<double, 2>;
+template class QuadratureSkeleton<double, 2>;
 
-template void SkeletonQuadrature<double, 2>::project_to_closest(
+template void QuadratureSkeleton<double, 2>::project_to_closest(
     const Patch<TensorBSpline<double, 2>, 2>&, const Boundary<double, 2>&,
     int);
-template void SkeletonQuadrature<double, 2>::project_to_closest(
+template void QuadratureSkeleton<double, 2>::project_to_closest(
     const Patch<TensorNURBS<double, 2>, 2>&, const Boundary<double, 2>&,
     int);
 

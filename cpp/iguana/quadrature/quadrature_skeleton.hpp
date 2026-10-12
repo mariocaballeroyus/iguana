@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef IGUANA_QUADRATURE_SKELETON_QUADRATURE_HPP
-#define IGUANA_QUADRATURE_SKELETON_QUADRATURE_HPP
+#ifndef IGUANA_QUADRATURE_QUADRATURE_SKELETON_HPP
+#define IGUANA_QUADRATURE_QUADRATURE_SKELETON_HPP
 
 #include <concepts>
 #include <cstddef>
@@ -31,10 +31,10 @@ namespace iguana
  *
  * @tparam T Floating-point type
  * @tparam d Number of parametric directions, two, as for a
- *         BoundaryQuadrature, so that the faces are segments
+ *         QuadratureBoundary, so that the faces are segments
  */
 template<std::floating_point T, std::size_t d>
-class SkeletonQuadrature : public Quadrature<T, d>
+class QuadratureSkeleton : public Quadrature<T, d>
 {
 public:
     /**
@@ -52,7 +52,7 @@ public:
      * @throws std::invalid_argument If an index does not number an interior
      *         face of @p grid
      */
-    SkeletonQuadrature(const TensorGrid<T, d>& grid,
+    QuadratureSkeleton(const TensorGrid<T, d>& grid,
                        std::span<const int> faces,
                        const GaussLegendre<T, 1>& rule);
 
@@ -137,4 +137,4 @@ private:
 
 } // namespace iguana
 
-#endif // IGUANA_QUADRATURE_SKELETON_QUADRATURE_HPP
+#endif // IGUANA_QUADRATURE_QUADRATURE_SKELETON_HPP

@@ -31,7 +31,7 @@ using iguana::CellType;
 using Embedded = iguana::EmbeddedBoundary<double, 2>;
 using Face = Boundary<double, 2>::Face;
 using Gauss = iguana::GaussLegendre<double, 1>;
-using Quadrature = iguana::BoundaryQuadrature<double, 2>;
+using Quadrature = iguana::QuadratureBoundary<double, 2>;
 using Region = iguana::Patch<TensorBSpline<double, 2>, 2>;
 using Surrogate = iguana::SurrogateBoundary<double, 2>;
 
@@ -104,7 +104,7 @@ Face circle(const Eigen::RowVector2d& center)
 } // namespace
 
 TEST_CASE("Weights and normals integrate over a polygon exactly",
-          "[boundary_quadrature]")
+          "[quadrature_boundary]")
 {
     // A tilted quadrilateral, counterclockwise, one face per side, across
     // uneven elements
@@ -152,7 +152,7 @@ TEST_CASE("Weights and normals integrate over a polygon exactly",
 }
 
 TEST_CASE("Points are grouped by the elements holding a piece",
-          "[boundary_quadrature]")
+          "[quadrature_boundary]")
 {
     // The circle misses the middle element, which lies inside it
     const Region square = patch_of({-3., -1., .5, 3.}, {-3., -1.5, 1., 3.});
@@ -209,7 +209,7 @@ TEST_CASE("Points are grouped by the elements holding a piece",
 }
 
 TEST_CASE("Points of a circle lie on it, with normals pointing away from "
-          "its center", "[boundary_quadrature]")
+          "its center", "[quadrature_boundary]")
 {
     const Eigen::RowVector2d center(.3, -.2);
     const Embedded embedded(
@@ -230,7 +230,7 @@ TEST_CASE("Points of a circle lie on it, with normals pointing away from "
 }
 
 TEST_CASE("A surrogate boundary carries a rule on each face of its cells",
-          "[boundary_quadrature]")
+          "[quadrature_boundary]")
 {
     // Four by three elements over uneven spans, the last column cut, and
     // the cell at (1, 1) outside and enclosed by inside cells
@@ -305,7 +305,7 @@ TEST_CASE("A surrogate boundary carries a rule on each face of its cells",
 }
 
 TEST_CASE("A projected quadrature reaches the closest points of a boundary",
-          "[boundary_quadrature]")
+          "[quadrature_boundary]")
 {
     // The middle element, [-1, .5] x [-1.5, 1] in parameters, is the only
     // cell inside the circle of radius two around (.3, -.2), both moved by

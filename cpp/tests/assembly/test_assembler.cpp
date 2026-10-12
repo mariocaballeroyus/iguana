@@ -117,10 +117,10 @@ CellClassification<double, 2> with_last_column(CellType type)
 
 /// @brief Gauss quadrature of the inside cells, exact for the products of
 ///        quadratic functions through an affine map
-iguana::DomainQuadrature<double, 2> inside_quadrature(
+iguana::QuadratureDomain<double, 2> inside_quadrature(
     const Basis& basis, const CellClassification<double, 2>& classification)
 {
-    iguana::DomainQuadrature<double, 2> quadrature;
+    iguana::QuadratureDomain<double, 2> quadrature;
     quadrature.fill(basis.grid(), classification, CellType::inside,
                     iguana::GaussLegendre<double, 2>(3));
 
@@ -191,7 +191,7 @@ Eigen::VectorXd linear_data(const Projected& quadrature,
 /// @brief Quadrature of the boundary of a quadrilateral in a patch, with
 ///        five points per piece, as biquadratic functions are of degree four
 ///        along a line and their products integrate exactly
-iguana::BoundaryQuadrature<double, 2> boundary_quadrature(
+iguana::QuadratureBoundary<double, 2> boundary_quadrature(
     const iguana::Patch<Basis, 2>& patch,
     const std::array<Eigen::RowVector2d, 4>& corners)
 {
@@ -216,7 +216,7 @@ TEST_CASE("The Poisson system of a rectangle integrates exactly",
     const CellClassification<double, 2> classification =
         with_last_column(CellType::inside);
     const iguana::FunctionSpace<Basis> space(basis, classification);
-    const iguana::DomainQuadrature<double, 2> quadrature =
+    const iguana::QuadratureDomain<double, 2> quadrature =
         inside_quadrature(basis, classification);
     const iguana::PoissonElement<Basis, 2> element;
 
@@ -258,7 +258,7 @@ TEST_CASE("The Poisson system leaves out the functions of outside cells",
     const CellClassification<double, 2> classification =
         with_last_column(CellType::outside);
     const iguana::FunctionSpace<Basis> space(basis, classification);
-    const iguana::DomainQuadrature<double, 2> quadrature =
+    const iguana::QuadratureDomain<double, 2> quadrature =
         inside_quadrature(basis, classification);
     const iguana::PoissonElement<Basis, 2> element;
 
@@ -286,7 +286,7 @@ TEST_CASE("A cleared assembler assembles the same system again",
     const CellClassification<double, 2> classification =
         with_last_column(CellType::inside);
     const iguana::FunctionSpace<Basis> space(basis, classification);
-    const iguana::DomainQuadrature<double, 2> quadrature =
+    const iguana::QuadratureDomain<double, 2> quadrature =
         inside_quadrature(basis, classification);
     const iguana::PoissonElement<Basis, 2> element;
 
@@ -317,7 +317,7 @@ TEST_CASE("An assembler needs one source value per point", "[assembler]")
     const CellClassification<double, 2> classification =
         with_last_column(CellType::inside);
     const iguana::FunctionSpace<Basis> space(basis, classification);
-    const iguana::DomainQuadrature<double, 2> quadrature =
+    const iguana::QuadratureDomain<double, 2> quadrature =
         inside_quadrature(basis, classification);
     const iguana::PoissonElement<Basis, 2> element;
 
@@ -345,7 +345,7 @@ TEST_CASE("Cell weights weight the test functions of each cell",
     const iguana::FunctionSpace<Basis> space(basis,
                                              all_cells(CellType::inside));
 
-    iguana::DomainQuadrature<double, 2> quadrature;
+    iguana::QuadratureDomain<double, 2> quadrature;
 
     for (const CellType type :
          {CellType::inside, CellType::cut, CellType::outside})
@@ -401,7 +401,7 @@ TEST_CASE("The mass of an element shares the pattern of the stiffness",
     const CellClassification<double, 2> classification =
         all_cells(CellType::inside);
     const iguana::FunctionSpace<Basis> space(basis, classification);
-    const iguana::DomainQuadrature<double, 2> quadrature =
+    const iguana::QuadratureDomain<double, 2> quadrature =
         inside_quadrature(basis, classification);
     const iguana::PoissonElement<Basis, 2> element;
 
@@ -460,7 +460,7 @@ TEST_CASE("A penalty on an embedded boundary imposes a field of the space",
         basis, with_last_column(CellType::inside));
 
     const std::array<Eigen::RowVector2d, 4> corners = quadrilateral();
-    const iguana::BoundaryQuadrature<double, 2> quadrature =
+    const iguana::QuadratureBoundary<double, 2> quadrature =
         boundary_quadrature(patch, corners);
     double perimeter = 0.;
 
@@ -511,7 +511,7 @@ TEST_CASE("A Neumann condition loads a trace with data along a boundary",
         basis, with_last_column(CellType::inside));
 
     const std::array<Eigen::RowVector2d, 4> corners = quadrilateral();
-    const iguana::BoundaryQuadrature<double, 2> quadrature =
+    const iguana::QuadratureBoundary<double, 2> quadrature =
         boundary_quadrature(patch, corners);
 
     const iguana::PoissonElement<Basis, 2>::U trace;
@@ -572,9 +572,9 @@ TEST_CASE("A shifted penalty imposes a field of the space from its closest "
 
     const iguana::Boundary<double, 2> boundary(faces, {1, 1, 1, 1});
 
-    const iguana::BoundaryQuadrature<double, 2> unprojected(
+    const iguana::QuadratureBoundary<double, 2> unprojected(
         surrogate, iguana::GaussLegendre<double, 1>(3));
-    iguana::BoundaryQuadrature<double, 2> projected = unprojected;
+    iguana::QuadratureBoundary<double, 2> projected = unprojected;
     projected.project_to_closest(patch, boundary, 2);
 
     // The data of b . x at the closest points, the points lying in parameter
@@ -635,7 +635,7 @@ TEST_CASE("A shifted Nitsche condition imposes a field of the space "
     for (std::size_t side = 0; side < 4; ++side)
         faces.push_back(segment(corners[side], corners[(side + 1) % 4]));
 
-    iguana::BoundaryQuadrature<double, 2> quadrature(
+    iguana::QuadratureBoundary<double, 2> quadrature(
         surrogate, iguana::GaussLegendre<double, 1>(3));
     quadrature.project_to_closest(
         patch, iguana::Boundary<double, 2>(faces, {1, 1, 1, 1}), 2);
@@ -651,7 +651,7 @@ TEST_CASE("A shifted Nitsche condition imposes a field of the space "
     const iguana::PoissonElement<Basis, 2> element;
     const iguana::PoissonElement<Basis, 2>::U trace;
     const iguana::PoissonElement<Basis, 2>::Q flux;
-    const iguana::DomainQuadrature<double, 2> cells =
+    const iguana::QuadratureDomain<double, 2> cells =
         inside_quadrature(basis, classification);
 
     // With every cell inside, each function keeps its own index, and the
@@ -713,7 +713,7 @@ TEST_CASE("A ghost penalty penalizes the jumps of the highest derivatives "
         iguana::ghost_faces(basis.grid(), all_cells(CellType::cut));
 
     // Four points integrate the squared jumps, of degree six along the faces
-    const iguana::SkeletonQuadrature<double, 2> quadrature(
+    const iguana::QuadratureSkeleton<double, 2> quadrature(
         basis.grid(), faces, iguana::GaussLegendre<double, 1>(4));
 
     const iguana::PoissonElement<Basis, 2>::U trace;
@@ -780,7 +780,7 @@ TEST_CASE("A ghost penalty needs coupled faces and an affine B-spline patch",
     const iguana::Patch<Basis, 2> patch = rectangle(basis);
     const iguana::FunctionSpace<Basis> space(basis,
                                              all_cells(CellType::inside));
-    const iguana::SkeletonQuadrature<double, 2> quadrature(
+    const iguana::QuadratureSkeleton<double, 2> quadrature(
         basis.grid(),
         iguana::ghost_faces(basis.grid(), all_cells(CellType::cut)),
         iguana::GaussLegendre<double, 1>(4));
@@ -852,12 +852,12 @@ TEST_CASE("Face Nitsche conditions with binary weights are Nitsche "
                    std::vector<CellType>(cell_types.size(),
                                          CellType::inside)));
 
-    iguana::BoundaryQuadrature<double, 2> surrogate(
+    iguana::QuadratureBoundary<double, 2> surrogate(
         iguana::SurrogateBoundary<double, 2>(basis.grid(), classification),
         iguana::GaussLegendre<double, 1>(3));
     surrogate.project_to_closest(patch, boundary, 2);
 
-    iguana::SkeletonQuadrature<double, 2> faces(
+    iguana::QuadratureSkeleton<double, 2> faces(
         basis.grid(), iguana::jump_faces(basis.grid(), classification),
         iguana::GaussLegendre<double, 1>(3));
     faces.project_to_closest(patch, boundary, 2);
@@ -906,19 +906,19 @@ TEST_CASE("A linear field solves the weighted problem with Nitsche "
         basis, CellClassification<double, 2>(std::vector<CellType>(
                    static_cast<std::size_t>(count), CellType::inside)));
 
-    iguana::DomainQuadrature<double, 2> cells;
+    iguana::QuadratureDomain<double, 2> cells;
 
     for (const CellType type :
          {CellType::inside, CellType::cut, CellType::outside})
         cells.fill(basis.grid(), classification, type,
                    iguana::GaussLegendre<double, 2>(3));
 
-    iguana::SkeletonQuadrature<double, 2> faces(
+    iguana::QuadratureSkeleton<double, 2> faces(
         basis.grid(), iguana::jump_faces(basis.grid(), classification),
         iguana::GaussLegendre<double, 1>(3));
     faces.project_to_closest(patch, boundary, 2);
 
-    const iguana::SkeletonQuadrature<double, 2> ghost_faces(
+    const iguana::QuadratureSkeleton<double, 2> ghost_faces(
         basis.grid(), iguana::ghost_faces(basis.grid(), classification),
         iguana::GaussLegendre<double, 1>(3));
 
@@ -964,7 +964,7 @@ TEST_CASE("Face conditions need coupled faces and one weight per cell",
     const iguana::FunctionSpace<Basis> space(
         basis, CellClassification<double, 2>(every));
 
-    iguana::SkeletonQuadrature<double, 2> faces(
+    iguana::QuadratureSkeleton<double, 2> faces(
         basis.grid(),
         iguana::jump_faces(
             basis.grid(),

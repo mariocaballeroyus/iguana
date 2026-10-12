@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-#include "boundary_quadrature.hpp"
+#include "quadrature_boundary.hpp"
 
 #include <array>
 #include <stdexcept>
@@ -20,7 +20,7 @@ namespace iguana
 {
 
 template<std::floating_point T, std::size_t d>
-BoundaryQuadrature<T, d>::BoundaryQuadrature(
+QuadratureBoundary<T, d>::QuadratureBoundary(
     const EmbeddedBoundary<T, d>& boundary, const GaussLegendre<T, 1>& rule)
 {
     using Face = typename Boundary<T, d>::Face;
@@ -101,7 +101,7 @@ BoundaryQuadrature<T, d>::BoundaryQuadrature(
 }
 
 template<std::floating_point T, std::size_t d>
-BoundaryQuadrature<T, d>::BoundaryQuadrature(
+QuadratureBoundary<T, d>::QuadratureBoundary(
     const SurrogateBoundary<T, d>& boundary, const GaussLegendre<T, 1>& rule)
 {
     using Face = typename SurrogateBoundary<T, d>::Face;
@@ -169,11 +169,11 @@ BoundaryQuadrature<T, d>::BoundaryQuadrature(
 template<std::floating_point T, std::size_t d>
 template<typename Basis>
     requires (Basis::dimension == d)
-void BoundaryQuadrature<T, d>::project_to_closest(
+void QuadratureBoundary<T, d>::project_to_closest(
     const Patch<Basis, 2>& patch, const Boundary<T, 2>& boundary, int order)
 {
     if (order < 0)
-        throw std::invalid_argument("BoundaryQuadrature: "
+        throw std::invalid_argument("QuadratureBoundary: "
                                     "the order must be non-negative");
 
     const Basis& basis = patch.basis();
@@ -222,12 +222,12 @@ void BoundaryQuadrature<T, d>::project_to_closest(
     order_ = order;
 }
 
-template class BoundaryQuadrature<double, 2>;
+template class QuadratureBoundary<double, 2>;
 
-template void BoundaryQuadrature<double, 2>::project_to_closest(
+template void QuadratureBoundary<double, 2>::project_to_closest(
     const Patch<TensorBSpline<double, 2>, 2>&, const Boundary<double, 2>&,
     int);
-template void BoundaryQuadrature<double, 2>::project_to_closest(
+template void QuadratureBoundary<double, 2>::project_to_closest(
     const Patch<TensorNURBS<double, 2>, 2>&, const Boundary<double, 2>&,
     int);
 

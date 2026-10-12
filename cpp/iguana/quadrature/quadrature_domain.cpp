@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-#include "domain_quadrature.hpp"
+#include "quadrature_domain.hpp"
 
 #include <stdexcept>
 #include <utility>
@@ -19,7 +19,7 @@ namespace iguana
 {
 
 template<std::floating_point T, std::size_t d>
-DomainQuadrature<T, d>::DomainQuadrature(Eigen::VectorXi elements,
+QuadratureDomain<T, d>::QuadratureDomain(Eigen::VectorXi elements,
                                          Eigen::VectorXi offsets,
                                          Eigen::MatrixX<T> points,
                                          Eigen::VectorX<T> weights)
@@ -28,15 +28,15 @@ DomainQuadrature<T, d>::DomainQuadrature(Eigen::VectorXi elements,
       elements_(std::move(elements))
 {
     if (points_.cols() != static_cast<Eigen::Index>(d))
-        throw std::invalid_argument("DomainQuadrature: "
+        throw std::invalid_argument("QuadratureDomain: "
                                     "the points must have d columns");
 
     if (weights_.size() != points_.rows())
-        throw std::invalid_argument("DomainQuadrature: "
+        throw std::invalid_argument("QuadratureDomain: "
                                     "there must be one weight per point");
 
     if (offsets_.size() != elements_.size() + 1)
-        throw std::invalid_argument("DomainQuadrature: "
+        throw std::invalid_argument("QuadratureDomain: "
                                     "there must be one offset more than "
                                     "elements");
 
@@ -47,19 +47,19 @@ DomainQuadrature<T, d>::DomainQuadrature(Eigen::VectorXi elements,
         (offsets_.tail(count).array() >= offsets_.head(count).array()).all();
 
     if (!ordered)
-        throw std::invalid_argument("DomainQuadrature: "
+        throw std::invalid_argument("QuadratureDomain: "
                                     "the offsets must run from zero to the "
                                     "number of points without decreasing");
 }
 
 template<std::floating_point T, std::size_t d>
 template<typename Grid, typename Rule>
-void DomainQuadrature<T, d>::fill(
+void QuadratureDomain<T, d>::fill(
     const Grid& grid, const CellClassification<T, d>& classification,
     CellType cell_type, const Rule& rule)
 {
     if (classification.num_elements() != grid.num_elements())
-        throw std::invalid_argument("DomainQuadrature: "
+        throw std::invalid_argument("QuadratureDomain: "
                                     "the classification must have one cell "
                                     "type per element");
 
@@ -68,7 +68,7 @@ void DomainQuadrature<T, d>::fill(
 
     for (const int element : elements_) {
         if (element < 0 || element >= grid.num_elements())
-            throw std::invalid_argument("DomainQuadrature: "
+            throw std::invalid_argument("QuadratureDomain: "
                                         "the elements already held must lie "
                                         "in the grid");
 
@@ -82,7 +82,7 @@ void DomainQuadrature<T, d>::fill(
             continue;
 
         if (held[element])
-            throw std::invalid_argument("DomainQuadrature: "
+            throw std::invalid_argument("QuadratureDomain: "
                                         "a cell of this type is already "
                                         "held");
 
@@ -146,41 +146,41 @@ void DomainQuadrature<T, d>::fill(
     weights_ = std::move(weights);
 }
 
-template class DomainQuadrature<double, 1>;
-template class DomainQuadrature<double, 2>;
-template class DomainQuadrature<double, 3>;
+template class QuadratureDomain<double, 1>;
+template class QuadratureDomain<double, 2>;
+template class QuadratureDomain<double, 3>;
 
-template void DomainQuadrature<double, 1>::fill(
+template void QuadratureDomain<double, 1>::fill(
     const TensorGrid<double, 1>&, const CellClassification<double, 1>&,
     CellType, const GaussLegendre<double, 1>&);
-template void DomainQuadrature<double, 2>::fill(
+template void QuadratureDomain<double, 2>::fill(
     const TensorGrid<double, 2>&, const CellClassification<double, 2>&,
     CellType, const GaussLegendre<double, 2>&);
-template void DomainQuadrature<double, 3>::fill(
+template void QuadratureDomain<double, 3>::fill(
     const TensorGrid<double, 3>&, const CellClassification<double, 3>&,
     CellType, const GaussLegendre<double, 3>&);
 
-template void DomainQuadrature<double, 2>::fill(
+template void QuadratureDomain<double, 2>::fill(
     const TensorGrid<double, 2>&, const CellClassification<double, 2>&,
     CellType, const MomentFitting<double, 2>&);
-template void DomainQuadrature<double, 3>::fill(
+template void QuadratureDomain<double, 3>::fill(
     const TensorGrid<double, 3>&, const CellClassification<double, 3>&,
     CellType, const MomentFitting<double, 3>&);
 
-template void DomainQuadrature<double, 1>::fill(
+template void QuadratureDomain<double, 1>::fill(
     const HierarchicalGrid<double, 1>&, const CellClassification<double, 1>&,
     CellType, const GaussLegendre<double, 1>&);
-template void DomainQuadrature<double, 2>::fill(
+template void QuadratureDomain<double, 2>::fill(
     const HierarchicalGrid<double, 2>&, const CellClassification<double, 2>&,
     CellType, const GaussLegendre<double, 2>&);
-template void DomainQuadrature<double, 3>::fill(
+template void QuadratureDomain<double, 3>::fill(
     const HierarchicalGrid<double, 3>&, const CellClassification<double, 3>&,
     CellType, const GaussLegendre<double, 3>&);
 
-template void DomainQuadrature<double, 2>::fill(
+template void QuadratureDomain<double, 2>::fill(
     const HierarchicalGrid<double, 2>&, const CellClassification<double, 2>&,
     CellType, const MomentFitting<double, 2>&);
-template void DomainQuadrature<double, 3>::fill(
+template void QuadratureDomain<double, 3>::fill(
     const HierarchicalGrid<double, 3>&, const CellClassification<double, 3>&,
     CellType, const MomentFitting<double, 3>&);
 
