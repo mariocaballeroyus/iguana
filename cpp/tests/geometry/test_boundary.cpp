@@ -150,9 +150,10 @@ double radial_error(const Boundary<double, n>& boundary, int face)
     return error;
 }
 
-/// @brief Patch of one bilinear element mapped onto itself, so that its
-///        parameters are positions in the plane
-iguana::Patch<TensorBSpline<double, 2>, 2> identity()
+/// @brief Patch of one bilinear element stretching the unit square onto a
+///        box of the plane, from its lowest corner and with its sizes
+iguana::Patch<TensorBSpline<double, 2>, 2> box(
+    const Eigen::RowVector2d& corner, const Eigen::RowVector2d& sizes)
 {
     const BSpline<double> unit(1, {0., 0., 1., 1.});
     const TensorBSpline<double, 2> basis({unit, unit});
@@ -163,8 +164,17 @@ iguana::Patch<TensorBSpline<double, 2>, 2> identity()
                1., 0.,
                0., 1.,
                1., 1.;
+    corners = corners.array().rowwise() * sizes.array();
+    corners.rowwise() += corner;
 
     return {basis, corners};
+}
+
+/// @brief Patch of one bilinear element mapped onto itself, so that its
+///        parameters are positions in the plane
+iguana::Patch<TensorBSpline<double, 2>, 2> identity()
+{
+    return box({0., 0.}, {1., 1.});
 }
 
 } // namespace
@@ -292,5 +302,58 @@ TEST_CASE("Points project onto the sides and corners of a square",
         iguana::project_closest_points(identity(), Curves({}, {}), points),
         std::invalid_argument);
     REQUIRE_THROWS_AS(iguana::project_closest_points(identity(), open, points),
+                      std::invalid_argument);
+}
+
+TEST_CASE("The distance vectors of a projection lie in the parameters of "
+          "its patch", "[boundary]")
+{
+    // A patch stretching the unit square onto [10, 14] x [5, 6], in the
+    // middle of which lies the circle
+    const Eigen::RowVector2d corner(10., 5.);
+    const Eigen::RowVector2d sizes(4., 1.);
+    const iguana::Patch<TensorBSpline<double, 2>, 2> stretched =
+        box(corner, sizes);
+
+    const Eigen::RowVector2d center(12., 5.5);
+    const Boundary<double, 2>::Face around_origin = circle();
+    const Boundary<double, 2> boundary(
+        {{around_origin.basis(),
+          around_origin.coefficients().rowwise() + center}},
+        {1});
+
+    // Points of the parameter space inside and outside the circle, none at
+    // its center
+    PointMatrix<double, 2> points(4, 2);
+    points << .1, .2,
+              .35, .8,
+              .6, .5,
+              .9, .2;
+
+    const iguana::BoundaryProjection<double> projection =
+        iguana::project_closest_points(stretched, boundary, points);
+
+    // The closest points lie on the circle along the radii, and the map
+    // carries each point moved by its distance vector onto its closest point
+    for (Eigen::Index point = 0; point < points.rows(); ++point) {
+        const Eigen::RowVector2d position =
+            corner + points.row(point).cwiseProduct(sizes);
+        const Eigen::RowVector2d radial = (position - center).normalized();
+        const Eigen::RowVector2d closest =
+            points.row(point) + projection.distances.row(point);
+
+        REQUIRE((projection.positions.row(point) - (center + radius * radial))
+                    .norm() < 1e-12);
+        REQUIRE((corner + closest.cwiseProduct(sizes)
+                 - projection.positions.row(point)).norm() < 1e-12);
+    }
+
+    // A map that is not affine, one corner of the box moved away
+    PointMatrix<double, 2> bent = stretched.coefficients();
+    bent(3, 0) += .5;
+    const iguana::Patch<TensorBSpline<double, 2>, 2> curved(
+        stretched.basis(), bent);
+
+    REQUIRE_THROWS_AS(iguana::project_closest_points(curved, boundary, points),
                       std::invalid_argument);
 }

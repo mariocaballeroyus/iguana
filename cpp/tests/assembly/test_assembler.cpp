@@ -959,8 +959,8 @@ TEST_CASE("A linear field solves the weighted problem with Nitsche "
             < 1e-12 * assembler.load().cwiseAbs().maxCoeff());
 }
 
-TEST_CASE("Face conditions need coupled faces and one weight per cell",
-          "[assembler]")
+TEST_CASE("Face conditions need coupled faces, one weight per cell and a "
+          "projection of their points", "[assembler]")
 {
     const Basis basis = five_by_five();
     const iguana::Patch<Basis, 2> patch = rectangle(basis);
@@ -1010,6 +1010,18 @@ TEST_CASE("Face conditions need coupled faces and one weight per cell",
                       std::invalid_argument);
     REQUIRE_THROWS_AS(assembler.assemble_load(face, faces, data.head(1),
                                               fractions),
+                      std::invalid_argument);
+
+    // A negative order, and a projection of other points
+    const iguana::BoundaryProjection<double> other =
+        iguana::project_closest_points(patch, boundary,
+                                       faces.points().topRows(1));
+
+    REQUIRE_THROWS_AS(assembler.assemble_stiffness(face, faces, projection,
+                                                   -1, fractions),
+                      std::invalid_argument);
+    REQUIRE_THROWS_AS(assembler.assemble_stiffness(face, faces, other, 2,
+                                                   fractions),
                       std::invalid_argument);
 
     // A NURBS patch has no Taylor series for a projection
