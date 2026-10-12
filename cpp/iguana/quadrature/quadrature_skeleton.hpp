@@ -24,8 +24,8 @@ namespace iguana
  *        grouped face by face
  *
  * @details Used in the Generalized Shifted Boundary Method to integrate the
- *          ghost penalty and the facet conditions, which couple the cells on
- *          either side of each face
+ *          ghost penalty and the skeleton conditions, which couple the cells
+ *          on either side of each face
  *
  * @tparam T Floating-point type
  * @tparam d Number of parametric directions, two, as for a
