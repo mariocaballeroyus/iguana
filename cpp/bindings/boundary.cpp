@@ -23,6 +23,7 @@ namespace
 
 using Boundary2d = Boundary<double, 2>;
 using Boundary3d = Boundary<double, 3>;
+using BoundaryProjection2d = BoundaryProjection<double>;
 
 /// @brief Faces of a boundary, copied so that Python never holds an index
 ///        outside them
@@ -73,6 +74,15 @@ void boundary(py::module_& module)
         .def_property_readonly("faces", &faces<2>)
         .def_property_readonly("signs", &signs<2>)
         .def("project_points", &projection_of, py::arg("points"));
+
+    // The projection of the points of a planar patch, which the conditions
+    // of the shifted boundary method pass to the assembly
+    py::class_<BoundaryProjection2d>(module, "BoundaryProjection2d")
+        .def_readonly("positions", &BoundaryProjection2d::positions);
+
+    module.def("project_closest_points",
+               &project_closest_points<TensorBSpline<double, 2>>,
+               py::arg("patch"), py::arg("boundary"), py::arg("points"));
 
     py::class_<Boundary3d>(module, "Boundary3d")
         .def(py::init<std::vector<Boundary3d::Face>, std::vector<int>>(),

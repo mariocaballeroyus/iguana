@@ -113,10 +113,7 @@ class PenaltyCondition:
         assembler of a planar space."""
         condition = _cpp.PenaltyCondition2d(self._trace._cpp_trace(),
                                             self._penalty)
-        quadrature = self._quadrature._cpp_object
-
-        assembler.assemble_stiffness(condition, quadrature)
-        assembler.assemble_load(condition, quadrature, self._values)
+        _assemble_along(assembler, condition, self._quadrature, self._values)
 
     def __repr__(self) -> str:
         return f'PenaltyCondition({self._trace!r}, penalty={self._penalty})'
@@ -210,10 +207,7 @@ class NitscheCondition:
         condition = _cpp.NitscheCondition2d(self._trace._cpp_trace(),
                                             self._trace._cpp_flux(),
                                             self._penalty)
-        quadrature = self._quadrature._cpp_object
-
-        assembler.assemble_stiffness(condition, quadrature)
-        assembler.assemble_load(condition, quadrature, self._values)
+        _assemble_along(assembler, condition, self._quadrature, self._values)
 
     def __repr__(self) -> str:
         return f'NitscheCondition({self._trace!r}, penalty={self._penalty})'
@@ -373,19 +367,23 @@ class FaceNitscheCondition:
         if order is None:
             order = max(patch.degrees)
 
+        if order < 0:
+            raise ValueError('the order must be non-negative')
+
         # The faces between cells whose weights may jump, with as many
-        # points as on those of a ghost penalty, shifted onto the boundary
+        # points as on those of a ghost penalty, projected onto the boundary
         faces = _cpp.jump_faces(
             patch=patch._cpp_object,
             classification=_cpp.CellClassification2d(cell_types))
         quadrature = _cpp.QuadratureSkeleton2d(
             patch=patch._cpp_object, faces=faces,
             num_points=max(patch.degrees) + 1)
-        quadrature.project_to_closest(patch._cpp_object,
-                                      boundary._cpp_object, order)
+        projection = _cpp.project_closest_points(
+            patch=patch._cpp_object, boundary=boundary._cpp_object,
+            points=quadrature.points)
 
         if callable(values):
-            values = values(quadrature.projections(patch._cpp_object))
+            values = values(np.array(projection.positions))
 
         values = np.asarray(values, dtype=np.float64)
 
@@ -395,6 +393,8 @@ class FaceNitscheCondition:
         self._trace = trace
         self._patch = patch
         self._quadrature = quadrature
+        self._projection = projection
+        self._order = order
         self._values = values
         self._penalty = float(penalty)
 
@@ -434,13 +434,36 @@ class FaceNitscheCondition:
                                                 self._penalty)
 
         assembler.assemble_stiffness(condition, self._quadrature,
+                                     self._projection, self._order,
                                      cell_weights)
-        assembler.assemble_load(condition, self._quadrature, self._values,
+        assembler.assemble_load(condition, self._quadrature,
+                                self._projection, self._order, self._values,
                                 cell_weights)
 
     def __repr__(self) -> str:
         return (f'FaceNitscheCondition({self._trace!r}, '
                 f'penalty={self._penalty})')
+
+
+def _assemble_along(
+    assembler: _cpp.Assembler2d,
+    condition: _cpp.PenaltyCondition2d | _cpp.NitscheCondition2d,
+    quadrature: QuadratureBoundary,
+    values: npt.NDArray[np.float64],
+) -> None:
+    """Add the stiffness and load of a compiled condition along a boundary
+    quadrature into a compiled assembler, shifted along the projection of
+    a shifted quadrature."""
+    if quadrature._projection is None:
+        assembler.assemble_stiffness(condition, quadrature._cpp_object)
+        assembler.assemble_load(condition, quadrature._cpp_object, values)
+    else:
+        assembler.assemble_stiffness(condition, quadrature._cpp_object,
+                                     quadrature._projection,
+                                     quadrature.order)
+        assembler.assemble_load(condition, quadrature._cpp_object,
+                                quadrature._projection, quadrature.order,
+                                values)
 
 
 def _values(
