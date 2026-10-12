@@ -7,11 +7,11 @@ import numpy as np
 import pytest
 
 import iguana
-from iguana import (Boundary, CellType, FaceNitscheCondition, FunctionSpace,
-                    GhostPenalty, HierarchicalGrid, NeumannCondition,
-                    NitscheCondition, PenaltyCondition, PoissonElement,
-                    QuadratureBoundary, QuadratureDomain, SurrogateBoundary,
-                    classify_cells, cpp, solve)
+from iguana import (Boundary, CellType, FunctionSpace, GhostPenalty,
+                    HierarchicalGrid, NeumannCondition, NitscheCondition,
+                    PenaltyCondition, PoissonElement, QuadratureBoundary,
+                    QuadratureDomain, SkeletonNitscheCondition,
+                    SurrogateBoundary, classify_cells, cpp, solve)
 
 # Sides of the rectangle, and of the square inside it, whose edges halve
 # the cells they cut, so that no cut is a sliver
@@ -194,7 +194,7 @@ def test_face_nitsche_condition_imposes_a_linear_field():
         quadrature.fill_gauss_legendre(cell_type, 3)
 
     element = PoissonElement()
-    condition = FaceNitscheCondition(element.u, patch, cell_types,
+    condition = SkeletonNitscheCondition(element.u, patch, cell_types,
                                      square_sides(), lambda x: x @ GRADIENT,
                                      40.)
     ghost = GhostPenalty(element.u, patch, cell_types, .1)
@@ -228,7 +228,7 @@ def test_face_nitsche_condition_steps_a_field_linear_in_time():
 
     # du/dt = b . x, and the Laplacian vanishes
     for time in np.arange(1, 6) / 5.:
-        condition = FaceNitscheCondition(
+        condition = SkeletonNitscheCondition(
             element.u, patch, cell_types, square_sides(),
             lambda x, time=time: time * (x @ GRADIENT), 40.)
         u = solve(element, space, quadrature, lambda x: x @ GRADIENT,
@@ -325,28 +325,28 @@ def test_invalid_face_nitsche_conditions():
     sides = square_sides()
 
     with pytest.raises(TypeError):
-        FaceNitscheCondition('u', patch, cell_types, sides, 0., 1.)
+        SkeletonNitscheCondition('u', patch, cell_types, sides, 0., 1.)
 
     with pytest.raises(TypeError):
-        FaceNitscheCondition(element.u, patch.isocurves()[0], cell_types,
+        SkeletonNitscheCondition(element.u, patch.isocurves()[0], cell_types,
                              sides, 0., 1.)
 
     with pytest.raises(TypeError):
-        FaceNitscheCondition(element.u, patch, cell_types, patch, 0., 1.)
+        SkeletonNitscheCondition(element.u, patch, cell_types, patch, 0., 1.)
 
     with pytest.raises(ValueError):
-        FaceNitscheCondition(element.u, patch, cell_types[:-1], sides, 0.,
+        SkeletonNitscheCondition(element.u, patch, cell_types[:-1], sides, 0.,
                              1.)
 
     with pytest.raises(ValueError):
-        FaceNitscheCondition(element.u, patch, cell_types, sides, [0.], 1.)
+        SkeletonNitscheCondition(element.u, patch, cell_types, sides, [0.], 1.)
 
     with pytest.raises(ValueError):
-        FaceNitscheCondition(element.u, patch, cell_types, sides,
+        SkeletonNitscheCondition(element.u, patch, cell_types, sides,
                              lambda x: x[:, 0], 0.)
 
     with pytest.raises(ValueError):
-        FaceNitscheCondition(element.u, patch, cell_types, sides,
+        SkeletonNitscheCondition(element.u, patch, cell_types, sides,
                              lambda x: x[:, 0], 1., order=-1)
 
     # The map of the patch must be affine
@@ -356,7 +356,7 @@ def test_invalid_face_nitsche_conditions():
         basis=patch._cpp_object.basis, coefficients=bent))
 
     with pytest.raises(ValueError):
-        FaceNitscheCondition(element.u, curved, cell_types, sides,
+        SkeletonNitscheCondition(element.u, curved, cell_types, sides,
                              lambda x: x[:, 0], 1.)
 
     # The solve gives the condition the weights of the cells, which it
@@ -365,9 +365,9 @@ def test_invalid_face_nitsche_conditions():
     quadrature = QuadratureDomain(patch)
     quadrature.fill_gauss_legendre(CellType.inside, 3)
     source = np.zeros(quadrature.num_points)
-    condition = FaceNitscheCondition(element.u, patch, cell_types, sides,
+    condition = SkeletonNitscheCondition(element.u, patch, cell_types, sides,
                                      lambda x: x[:, 0], 1.)
-    other = FaceNitscheCondition(element.u, rectangle(), cell_types, sides,
+    other = SkeletonNitscheCondition(element.u, rectangle(), cell_types, sides,
                                  lambda x: x[:, 0], 1.)
 
     with pytest.raises(ValueError):

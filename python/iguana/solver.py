@@ -21,8 +21,8 @@ from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import spsolve
 
 from iguana import cpp as _cpp
-from iguana.condition import (FaceNitscheCondition, NeumannCondition,
-                              NitscheCondition, PenaltyCondition)
+from iguana.condition import (NeumannCondition, NitscheCondition,
+                              PenaltyCondition, SkeletonNitscheCondition)
 from iguana.element import PoissonElement
 from iguana.fspace import FunctionSpace
 from iguana.patch import PlanarPatch, VolumePatch
@@ -40,7 +40,7 @@ def solve(
     values: npt.ArrayLike | None = None,
     cell_weights: npt.ArrayLike | None = None,
     conditions: Sequence[PenaltyCondition | NitscheCondition
-                         | NeumannCondition | FaceNitscheCondition] = (),
+                         | NeumannCondition | SkeletonNitscheCondition] = (),
     stabilizations: Sequence[GhostPenalty] = (),
     step: float | None = None,
     previous: npt.ArrayLike | None = None,
@@ -102,20 +102,20 @@ def solve(
         TypeError: If the element is not a Poisson element, if the space
             is not a function space on a planar or volume patch, if the
             quadrature is not a domain quadrature, if a condition is neither
-            a penalty, a Nitsche, a Neumann nor a face Nitsche condition, if
-            a stabilization is not a ghost penalty, or if either is given on
-            a volume patch.
+            a penalty, a Nitsche, a Neumann nor a skeleton Nitsche
+            condition, if a stabilization is not a ghost penalty, or if
+            either is given on a volume patch.
         ValueError: If the quadrature, the boundary of a condition or the
             cells of a stabilization do not lie on the elements of the patch
             of the space, if a stabilization is given on a patch whose map
             is not affine, if the source does not give one value per point,
             if a fixed degree of freedom lies outside the space or repeats,
             if there is not one value per fixed one, if the cell weights are
-            not one per cell, if a face Nitsche condition is given without
-            them, if a time step comes without the previous solution or the
-            previous solution without a time step, if the time step is not
-            positive, or if the previous solution does not give one
-            coefficient per degree of freedom.
+            not one per cell, if a skeleton Nitsche condition is given
+            without them, if a time step comes without the previous
+            solution or the previous solution without a time step, if the
+            time step is not positive, or if the previous solution does not
+            give one coefficient per degree of freedom.
     """
     if (step is None) != (previous is None):
         raise ValueError('a time step and the previous solution go together')
@@ -159,7 +159,7 @@ def _assemble(
              | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
     cell_weights: npt.ArrayLike | None,
     conditions: Sequence[PenaltyCondition | NitscheCondition
-                         | NeumannCondition | FaceNitscheCondition],
+                         | NeumannCondition | SkeletonNitscheCondition],
     stabilizations: Sequence[GhostPenalty],
     with_mass: bool,
 ) -> tuple[csr_matrix, npt.NDArray[np.float64], csr_matrix | None]:
@@ -177,7 +177,7 @@ def _assemble(
     stabilizations = list(stabilizations)
 
     conditions = list(conditions)
-    on_faces = any(isinstance(condition, FaceNitscheCondition)
+    on_faces = any(isinstance(condition, SkeletonNitscheCondition)
                    for condition in conditions)
 
     if isinstance(patch, PlanarPatch):
@@ -214,9 +214,9 @@ def _assemble(
     # The quadrature lies on the elements of the patch, its cells
     num_cells = quadrature.grid.num_elements
 
-    # Without weights, every face condition would see no jump
+    # Without weights, every skeleton condition would see no jump
     if cell_weights is None and on_faces:
-        raise ValueError('face Nitsche conditions need cell weights')
+        raise ValueError('skeleton Nitsche conditions need cell weights')
 
     if cell_weights is None:
         cell_weights = np.ones(num_cells)
@@ -239,15 +239,15 @@ def _assemble(
     for condition in conditions:
         if not isinstance(condition, (PenaltyCondition, NitscheCondition,
                                       NeumannCondition,
-                                      FaceNitscheCondition)):
+                                      SkeletonNitscheCondition)):
             raise TypeError('the conditions must be penalty, Nitsche, '
-                            'Neumann or face Nitsche conditions')
+                            'Neumann or skeleton Nitsche conditions')
 
         # Boundaries and faces lie in the plane
         if not isinstance(patch, PlanarPatch):
             raise TypeError('conditions need a planar patch')
 
-        if isinstance(condition, FaceNitscheCondition):
+        if isinstance(condition, SkeletonNitscheCondition):
             if condition.patch is not patch:
                 raise ValueError('the faces of a condition must lie on the '
                                  'patch of the space')

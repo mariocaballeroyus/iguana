@@ -288,7 +288,7 @@ class NeumannCondition:
         return f'NeumannCondition({self._trace!r})'
 
 
-class FaceNitscheCondition:
+class SkeletonNitscheCondition:
     """Values imposed on a trace of an element by Nitsche's method across the
     faces of a patch where the weights of the cells jump, as the
     generalized shifted boundary method does."""
@@ -441,7 +441,7 @@ class FaceNitscheCondition:
                                 cell_weights)
 
     def __repr__(self) -> str:
-        return (f'FaceNitscheCondition({self._trace!r}, '
+        return (f'SkeletonNitscheCondition({self._trace!r}, '
                 f'penalty={self._penalty})')
 
 
