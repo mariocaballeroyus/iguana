@@ -18,6 +18,7 @@
 #include "iguana/condition/face_condition.hpp"
 #include "iguana/element/element.hpp"
 #include "iguana/fspace/function_space.hpp"
+#include "iguana/geometry/boundary_projection.hpp"
 #include "iguana/geometry/patch.hpp"
 #include "iguana/quadrature/quadrature_boundary.hpp"
 #include "iguana/quadrature/quadrature_domain.hpp"
@@ -207,19 +208,13 @@ public:
      *
      * The patch maps the weights of the quadrature, which measure the
      * boundary in parameter space, into the boundary weights the condition
-     * takes, and its normals into physical ones. On a projected quadrature
-     * the condition also receives the values expanded towards the boundary
-     * it is projected onto, as the shifted boundary method needs, while the
-     * weights and normals stay those of its points
+     * takes, and its normals into physical ones
      *
      * @tparam C Condition, a final class derived from Condition
      *
      * @param condition Condition whose local stiffness is added
      * @param quadrature Quadrature of a boundary embedded in the grid of the
      *        basis
-     *
-     * @throws std::invalid_argument If @p quadrature is projected and the patch
-     *         is not a B-spline one
      *
      * @pre @p quadrature is built on the grid of the basis, and every element
      *      it holds has its degrees of freedom in the space
@@ -238,12 +233,10 @@ public:
      * @param quadrature Quadrature of a boundary embedded in the grid of the
      *        basis
      * @param data Value the condition imposes at each point of the
-     *        quadrature, in its order, given at its closest point on a
-     *        projected quadrature
+     *        quadrature, in its order
      *
      * @throws std::invalid_argument If @p data does not have one value per
-     *         point of @p quadrature, or if @p quadrature is projected and the
-     *         patch is not a B-spline one
+     *         point of @p quadrature
      *
      * @pre @p quadrature is built as for the stiffness of a condition
      */
@@ -251,6 +244,69 @@ public:
     void assemble_load(const C& condition,
                        const QuadratureBoundary<Scalar, dim>& quadrature,
                        const Eigen::VectorX<Scalar>& data);
+
+    /**
+     * @brief Adds the stiffness of a condition along the points of a
+     *        boundary quadrature, with the values expanded along the
+     *        distance vectors of a projection
+     *
+     * As for a quadrature without a projection, but the condition also
+     * receives the values expanded from each point to its closest point on
+     * the boundary, as the shifted boundary method needs, while the weights
+     * and normals stay those of the points
+     *
+     * @tparam C Condition, a final class derived from Condition
+     *
+     * @param condition Condition whose local stiffness is added
+     * @param quadrature Quadrature of a boundary embedded in the grid of the
+     *        basis
+     * @param projection Projection of the points of @p quadrature onto the
+     *        boundary the condition is shifted from
+     * @param order Highest total order of the Taylor series, as in
+     *        ElementValues::shift()
+     *
+     * @throws std::invalid_argument If @p order is negative, if
+     *         @p projection does not have one distance vector per point of
+     *         @p quadrature, or if the patch is not a B-spline one
+     *
+     * @pre @p quadrature is built as for the stiffness of a condition, and
+     *      @p projection was computed from its points through the patch
+     */
+    template<std::derived_from<Condition<Basis, n>> C>
+    void assemble_stiffness(const C& condition,
+                            const QuadratureBoundary<Scalar, dim>& quadrature,
+                            const BoundaryProjection<Scalar>& projection,
+                            int order) requires (dim == 2);
+
+    /**
+     * @brief Adds the load of a condition along the points of a boundary
+     *        quadrature, from data given at their closest points, with the
+     *        values expanded along the distance vectors of a projection
+     *
+     * @tparam C Condition, a final class derived from Condition
+     *
+     * @param condition Condition whose local load is added
+     * @param quadrature Quadrature of a boundary embedded in the grid of the
+     *        basis
+     * @param projection Projection of the points of @p quadrature onto the
+     *        boundary the condition is shifted from
+     * @param order Highest total order of the Taylor series, as in
+     *        ElementValues::shift()
+     * @param data Value the condition imposes at the closest point of each
+     *        point of the quadrature, in its order
+     *
+     * @throws std::invalid_argument If @p data does not have one value per
+     *         point of @p quadrature, or as for the projected stiffness of a
+     *         condition
+     *
+     * @pre As for the projected stiffness of a condition
+     */
+    template<std::derived_from<Condition<Basis, n>> C>
+    void assemble_load(const C& condition,
+                       const QuadratureBoundary<Scalar, dim>& quadrature,
+                       const BoundaryProjection<Scalar>& projection,
+                       int order, const Eigen::VectorX<Scalar>& data)
+        requires (dim == 2);
 
     /**
      * @brief Adds the stiffness of a ghost penalty over the points of a
@@ -284,14 +340,12 @@ public:
      *
      * On each face whose two cells weigh differently, the values of the
      * cells before and after it, each with its own polynomial, are filled
-     * at its points and, on a projected quadrature, also expanded towards the
-     * boundary it is projected onto. The patch maps the weights of the
-     * quadrature into face weights and its normals into physical ones,
-     * pointing from the cell before to the cell after. Faces whose cells
-     * weigh the same carry no jump of the test functions and are skipped.
-     * Only interior faces carry the condition, so the cells of non-zero
-     * weight must stay off the edge of the grid, or take conditions of
-     * their own there
+     * at its points. The patch maps the weights of the quadrature into face
+     * weights and its normals into physical ones, pointing from the cell
+     * before to the cell after. Faces whose cells weigh the same carry no
+     * jump of the test functions and are skipped. Only interior faces carry
+     * the condition, so the cells of non-zero weight must stay off the edge
+     * of the grid, or take conditions of their own there
      *
      * @tparam C Face condition, a final class derived from FaceCondition
      *
@@ -301,10 +355,9 @@ public:
      * @param cell_weights Weight of the test functions on each element of
      *        the grid, in its numbering
      *
-     * @throws std::invalid_argument If the faces are not coupled, if
+     * @throws std::invalid_argument If the faces are not coupled, or if
      *         @p cell_weights does not have one value per element of the
-     *         grid, or if @p quadrature is projected and the patch is not a
-     *         B-spline one
+     *         grid
      *
      * @pre @p quadrature is built on the grid of the basis, and every cell
      *      of a face across which the weights jump has its degrees of
@@ -327,8 +380,7 @@ public:
      * @param quadrature Quadrature over interior faces of the grid of the
      *        basis
      * @param data Value the condition imposes at each point of the
-     *        quadrature, in its order, given at its closest point on a
-     *        projected quadrature
+     *        quadrature, in its order
      * @param cell_weights Weight of the test functions on each element of
      *        the grid, in its numbering
      *
@@ -342,6 +394,78 @@ public:
     void assemble_load(const C& condition,
                        const QuadratureSkeleton<Scalar, dim>& quadrature,
                        const Eigen::VectorX<Scalar>& data,
+                       const Eigen::VectorX<Scalar>& cell_weights)
+        requires (dim == 2);
+
+    /**
+     * @brief Adds the stiffness of a face condition over the points of a
+     *        skeleton quadrature, with the test functions of each cell
+     *        weighted and the values expanded along the distance vectors of
+     *        a projection
+     *
+     * As for a quadrature without a projection, but the values of both
+     * cells of a face are also expanded from each point to its closest
+     * point on the boundary, along the same distance vectors
+     *
+     * @tparam C Face condition, a final class derived from FaceCondition
+     *
+     * @param condition Face condition whose local stiffness is added
+     * @param quadrature Quadrature over interior faces of the grid of the
+     *        basis
+     * @param projection Projection of the points of @p quadrature onto the
+     *        boundary the condition is shifted from
+     * @param order Highest total order of the Taylor series, as in
+     *        ElementValues::shift()
+     * @param cell_weights Weight of the test functions on each element of
+     *        the grid, in its numbering
+     *
+     * @throws std::invalid_argument As for the stiffness of a face
+     *         condition, if @p order is negative, if @p projection does not
+     *         have one distance vector per point of @p quadrature, or if the
+     *         patch is not a B-spline one
+     *
+     * @pre As for the stiffness of a face condition, and @p projection was
+     *      computed from the points of @p quadrature through the patch
+     */
+    template<std::derived_from<FaceCondition<Basis, n>> C>
+    void assemble_stiffness(const C& condition,
+                            const QuadratureSkeleton<Scalar, dim>& quadrature,
+                            const BoundaryProjection<Scalar>& projection,
+                            int order,
+                            const Eigen::VectorX<Scalar>& cell_weights)
+        requires (dim == 2);
+
+    /**
+     * @brief Adds the load of a face condition over the points of a
+     *        skeleton quadrature, from data given at their closest points,
+     *        with the test functions of each cell weighted and the values
+     *        expanded along the distance vectors of a projection
+     *
+     * @tparam C Face condition, a final class derived from FaceCondition
+     *
+     * @param condition Face condition whose local load is added
+     * @param quadrature Quadrature over interior faces of the grid of the
+     *        basis
+     * @param projection Projection of the points of @p quadrature onto the
+     *        boundary the condition is shifted from
+     * @param order Highest total order of the Taylor series, as in
+     *        ElementValues::shift()
+     * @param data Value the condition imposes at the closest point of each
+     *        point of the quadrature, in its order
+     * @param cell_weights Weight of the test functions on each element of
+     *        the grid, in its numbering
+     *
+     * @throws std::invalid_argument If @p data does not have one value per
+     *         point of @p quadrature, or as for the projected stiffness of a
+     *         face condition
+     *
+     * @pre As for the projected stiffness of a face condition
+     */
+    template<std::derived_from<FaceCondition<Basis, n>> C>
+    void assemble_load(const C& condition,
+                       const QuadratureSkeleton<Scalar, dim>& quadrature,
+                       const BoundaryProjection<Scalar>& projection,
+                       int order, const Eigen::VectorX<Scalar>& data,
                        const Eigen::VectorX<Scalar>& cell_weights)
         requires (dim == 2);
 
@@ -364,6 +488,50 @@ public:
     { return load_; }
 
 private:
+    /**
+     * @brief Adds the stiffness of a condition along the points of a
+     *        boundary quadrature, shifted along a projection when one is
+     *        given, the work of both public overloads
+     */
+    template<std::derived_from<Condition<Basis, n>> C>
+    void add_condition_stiffness(
+        const C& condition, const QuadratureBoundary<Scalar, dim>& quadrature,
+        const BoundaryProjection<Scalar>* projection, int order);
+
+    /**
+     * @brief Adds the load of a condition along the points of a boundary
+     *        quadrature, shifted along a projection when one is given, the
+     *        work of both public overloads
+     */
+    template<std::derived_from<Condition<Basis, n>> C>
+    void add_condition_load(
+        const C& condition, const QuadratureBoundary<Scalar, dim>& quadrature,
+        const BoundaryProjection<Scalar>* projection, int order,
+        const Eigen::VectorX<Scalar>& data);
+
+    /**
+     * @brief Adds the stiffness of a face condition over the points of a
+     *        skeleton quadrature, shifted along a projection when one is
+     *        given, the work of both public overloads
+     */
+    template<std::derived_from<FaceCondition<Basis, n>> C>
+    void add_face_condition_stiffness(
+        const C& condition, const QuadratureSkeleton<Scalar, dim>& quadrature,
+        const BoundaryProjection<Scalar>* projection, int order,
+        const Eigen::VectorX<Scalar>& cell_weights) requires (dim == 2);
+
+    /**
+     * @brief Adds the load of a face condition over the points of a
+     *        skeleton quadrature, shifted along a projection when one is
+     *        given, the work of both public overloads
+     */
+    template<std::derived_from<FaceCondition<Basis, n>> C>
+    void add_face_condition_load(
+        const C& condition, const QuadratureSkeleton<Scalar, dim>& quadrature,
+        const BoundaryProjection<Scalar>* projection, int order,
+        const Eigen::VectorX<Scalar>& data,
+        const Eigen::VectorX<Scalar>& cell_weights) requires (dim == 2);
+
     /**
      * @brief Adds a local matrix at degrees of freedom, those of a cell or
      *        of the two cells of a face, into the stiffness or the mass, the

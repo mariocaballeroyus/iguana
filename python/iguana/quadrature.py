@@ -289,6 +289,9 @@ class QuadratureBoundary:
 
             if not isinstance(boundary, SurrogateBoundary):
                 raise ValueError('only a surrogate boundary is shifted')
+
+            if order is not None and order < 0:
+                raise ValueError('the order must be non-negative')
         elif order is not None:
             raise ValueError('an order needs a shift')
 
@@ -296,14 +299,19 @@ class QuadratureBoundary:
                                                      num_points=num_points)
         self._patch = patch
         self._boundary = boundary
+        self._projection = None
+        self._order = None
 
         if shift is not None:
             if order is None:
                 order = max(patch.degrees)
 
-            self._cpp_object.project_to_closest(
+            # The points projected onto the true boundary, whose distance
+            # vectors the conditions along the quadrature are shifted by
+            self._projection = _cpp.project_closest_points(
                 patch=patch._cpp_object, boundary=shift._cpp_object,
-                order=order)
+                points=self._cpp_object.points)
+            self._order = order
 
     @property
     def patch(self) -> PlanarPatch:
@@ -346,16 +354,16 @@ class QuadratureBoundary:
         On a quadrature that is not shifted, they are the positions
         themselves.
         """
-        return self._cpp_object.projections(self._patch._cpp_object)
+        if self._projection is None:
+            return self.positions
+
+        return np.array(self._projection.positions)
 
     @property
     def order(self) -> int | None:
         """Total order of the Taylor expansion of a shifted quadrature, or
         `None` if it is not shifted."""
-        if not self._cpp_object.is_projected:
-            return None
-
-        return self._cpp_object.order
+        return self._order
 
     @property
     def weights(self) -> npt.NDArray[np.float64]:

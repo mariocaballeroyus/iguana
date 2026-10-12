@@ -29,30 +29,48 @@ namespace
 {
 
 /**
- * @brief Expands the values at the points of one element or face of a
- *        projected quadrature towards the boundary it is projected onto
- *
- * @tparam Projected QuadratureBoundary or QuadratureSkeleton
+ * @brief Expands the values at the points of one element or face towards
+ *        the boundary they are projected onto, along their distance vectors
  *
  * @throws std::invalid_argument If the patch is not a B-spline one, whose
  *         basis alone provides the Taylor series
  */
-template<typename Basis, std::size_t n, typename Projected>
+template<typename Basis, std::size_t n>
 void shift_values(ElementValues<Basis, n>& values,
-                  const Projected& quadrature, int first, int count)
+                  const Eigen::MatrixX<typename Basis::Scalar>& distances,
+                  int order)
 {
     using Scalar = typename Basis::Scalar;
     constexpr std::size_t dim = Basis::dimension;
 
     if constexpr (std::same_as<Basis, TensorBSpline<Scalar, dim>>) {
-        values.shift(quadrature.distances().middleRows(first, count),
-                     quadrature.order());
+        values.shift(distances, order);
     }
     else if constexpr (std::same_as<Basis, TensorNURBS<Scalar, dim>>) {
         throw std::invalid_argument("Assembler: "
-                                    "a projected quadrature needs a B-spline "
-                                    "patch");
+                                    "a projection needs a B-spline patch");
     }
+}
+
+/**
+ * @brief Checks that a projection and an order can shift the values at the
+ *        points of a quadrature
+ *
+ * @throws std::invalid_argument If the order is negative, or if the
+ *         projection does not have one distance vector per point
+ */
+template<std::floating_point T>
+void check_projection(const BoundaryProjection<T>& projection, int order,
+                      int num_points)
+{
+    if (order < 0)
+        throw std::invalid_argument("Assembler: "
+                                    "the order must be non-negative");
+
+    if (projection.distances.rows() != num_points)
+        throw std::invalid_argument("Assembler: "
+                                    "the projection must have one distance "
+                                    "vector per point");
 }
 
 /**
@@ -313,6 +331,28 @@ template<std::derived_from<Condition<Basis, n>> C>
 void Assembler<Basis, n>::assemble_stiffness(
     const C& condition, const QuadratureBoundary<Scalar, dim>& quadrature)
 {
+    add_condition_stiffness(condition, quadrature, nullptr, 0);
+}
+
+template<typename Basis, std::size_t n>
+template<std::derived_from<Condition<Basis, n>> C>
+void Assembler<Basis, n>::assemble_stiffness(
+    const C& condition, const QuadratureBoundary<Scalar, dim>& quadrature,
+    const BoundaryProjection<Scalar>& projection, int order)
+    requires (dim == 2)
+{
+    add_condition_stiffness(condition, quadrature, &projection, order);
+}
+
+template<typename Basis, std::size_t n>
+template<std::derived_from<Condition<Basis, n>> C>
+void Assembler<Basis, n>::add_condition_stiffness(
+    const C& condition, const QuadratureBoundary<Scalar, dim>& quadrature,
+    const BoundaryProjection<Scalar>* projection, int order)
+{
+    if (projection != nullptr)
+        check_projection(*projection, order, quadrature.num_points());
+
     ElementValues<Basis, n> values(patch_, condition.flags());
     ElementValues<Basis, n> shifted_values(patch_, condition.flags());
     Eigen::MatrixX<Scalar> points;
@@ -330,16 +370,19 @@ void Assembler<Basis, n>::assemble_stiffness(
         points = quadrature.points().middleRows(first, count);
         values.reinit(cell, points);
 
-        // A projected quadrature also expands the values towards the boundary
-        // it is projected onto, its weights and normals staying those of its
-        // points. Otherwise the shifted values are the values themselves
-        if (quadrature.is_projected()) {
+        // With a projection, the values are also expanded towards the
+        // boundary along the distance vectors, the weights and normals
+        // staying those of the points. Otherwise the shifted values are the
+        // values themselves
+        if (projection != nullptr) {
             shifted_values.reinit(cell, points);
-            shift_values(shifted_values, quadrature, first, count);
+            shift_values(shifted_values,
+                         projection->distances.middleRows(first, count),
+                         order);
         }
 
         const ElementValues<Basis, n>& shifted =
-            quadrature.is_projected() ? shifted_values : values;
+            projection != nullptr ? shifted_values : values;
 
         // Boundary weights, the quadrature weights times the measure of the
         // boundary through the map, and the normals in physical space, from
@@ -366,9 +409,32 @@ void Assembler<Basis, n>::assemble_load(
     const C& condition, const QuadratureBoundary<Scalar, dim>& quadrature,
     const Eigen::VectorX<Scalar>& data)
 {
+    add_condition_load(condition, quadrature, nullptr, 0, data);
+}
+
+template<typename Basis, std::size_t n>
+template<std::derived_from<Condition<Basis, n>> C>
+void Assembler<Basis, n>::assemble_load(
+    const C& condition, const QuadratureBoundary<Scalar, dim>& quadrature,
+    const BoundaryProjection<Scalar>& projection, int order,
+    const Eigen::VectorX<Scalar>& data) requires (dim == 2)
+{
+    add_condition_load(condition, quadrature, &projection, order, data);
+}
+
+template<typename Basis, std::size_t n>
+template<std::derived_from<Condition<Basis, n>> C>
+void Assembler<Basis, n>::add_condition_load(
+    const C& condition, const QuadratureBoundary<Scalar, dim>& quadrature,
+    const BoundaryProjection<Scalar>* projection, int order,
+    const Eigen::VectorX<Scalar>& data)
+{
     if (data.size() != quadrature.num_points())
         throw std::invalid_argument("Assembler: "
                                     "the data must have one value per point");
+
+    if (projection != nullptr)
+        check_projection(*projection, order, quadrature.num_points());
 
     ElementValues<Basis, n> values(patch_, condition.flags());
     ElementValues<Basis, n> shifted_values(patch_, condition.flags());
@@ -388,16 +454,19 @@ void Assembler<Basis, n>::assemble_load(
         points = quadrature.points().middleRows(first, count);
         values.reinit(cell, points);
 
-        // A projected quadrature also expands the values towards the boundary
-        // it is projected onto, its weights and normals staying those of its
-        // points. Otherwise the shifted values are the values themselves
-        if (quadrature.is_projected()) {
+        // With a projection, the values are also expanded towards the
+        // boundary along the distance vectors, the weights and normals
+        // staying those of the points. Otherwise the shifted values are the
+        // values themselves
+        if (projection != nullptr) {
             shifted_values.reinit(cell, points);
-            shift_values(shifted_values, quadrature, first, count);
+            shift_values(shifted_values,
+                         projection->distances.middleRows(first, count),
+                         order);
         }
 
         const ElementValues<Basis, n>& shifted =
-            quadrature.is_projected() ? shifted_values : values;
+            projection != nullptr ? shifted_values : values;
 
         // Boundary weights, the quadrature weights times the measure of the
         // boundary through the map, and the normals in physical space, from
@@ -481,6 +550,28 @@ void Assembler<Basis, n>::assemble_stiffness(
     const C& condition, const QuadratureSkeleton<Scalar, dim>& quadrature,
     const Eigen::VectorX<Scalar>& cell_weights) requires (dim == 2)
 {
+    add_face_condition_stiffness(condition, quadrature, nullptr, 0,
+                                 cell_weights);
+}
+
+template<typename Basis, std::size_t n>
+template<std::derived_from<FaceCondition<Basis, n>> C>
+void Assembler<Basis, n>::assemble_stiffness(
+    const C& condition, const QuadratureSkeleton<Scalar, dim>& quadrature,
+    const BoundaryProjection<Scalar>& projection, int order,
+    const Eigen::VectorX<Scalar>& cell_weights) requires (dim == 2)
+{
+    add_face_condition_stiffness(condition, quadrature, &projection, order,
+                                 cell_weights);
+}
+
+template<typename Basis, std::size_t n>
+template<std::derived_from<FaceCondition<Basis, n>> C>
+void Assembler<Basis, n>::add_face_condition_stiffness(
+    const C& condition, const QuadratureSkeleton<Scalar, dim>& quadrature,
+    const BoundaryProjection<Scalar>* projection, int order,
+    const Eigen::VectorX<Scalar>& cell_weights) requires (dim == 2)
+{
     // Without the faces coupled, the pattern would grow with each new face
     if (!couple_faces_)
         throw std::invalid_argument("Assembler: "
@@ -491,6 +582,9 @@ void Assembler<Basis, n>::assemble_stiffness(
         throw std::invalid_argument("Assembler: "
                                     "the cell weights must have one value "
                                     "per element");
+
+    if (projection != nullptr)
+        check_projection(*projection, order, quadrature.num_points());
 
     ElementValues<Basis, n> before(patch_, condition.flags());
     ElementValues<Basis, n> after(patch_, condition.flags());
@@ -518,20 +612,23 @@ void Assembler<Basis, n>::assemble_stiffness(
         const int count = quadrature.offsets()(face + 1) - first;
 
         // The values of each cell, with its own polynomial, at the same
-        // points, and on a projected quadrature also expanded towards the
-        // boundary along the same distances
+        // points, and with a projection also expanded towards the boundary
+        // along the same distance vectors
         points = quadrature.points().middleRows(first, count);
         before.reinit(cell_before, points);
         after.reinit(cell_after, points);
 
-        if (quadrature.is_projected()) {
+        if (projection != nullptr) {
+            const Eigen::MatrixX<Scalar> distances =
+                projection->distances.middleRows(first, count);
+
             shifted_before.reinit(cell_before, points);
             shifted_after.reinit(cell_after, points);
-            shift_values(shifted_before, quadrature, first, count);
-            shift_values(shifted_after, quadrature, first, count);
+            shift_values(shifted_before, distances, order);
+            shift_values(shifted_after, distances, order);
         }
 
-        const bool shifted = quadrature.is_projected();
+        const bool shifted = projection != nullptr;
 
         // Face weights and physical normals through the map, which is
         // continuous across the face, from the cell before to the cell after
@@ -562,6 +659,30 @@ void Assembler<Basis, n>::assemble_load(
     const Eigen::VectorX<Scalar>& data,
     const Eigen::VectorX<Scalar>& cell_weights) requires (dim == 2)
 {
+    add_face_condition_load(condition, quadrature, nullptr, 0, data,
+                            cell_weights);
+}
+
+template<typename Basis, std::size_t n>
+template<std::derived_from<FaceCondition<Basis, n>> C>
+void Assembler<Basis, n>::assemble_load(
+    const C& condition, const QuadratureSkeleton<Scalar, dim>& quadrature,
+    const BoundaryProjection<Scalar>& projection, int order,
+    const Eigen::VectorX<Scalar>& data,
+    const Eigen::VectorX<Scalar>& cell_weights) requires (dim == 2)
+{
+    add_face_condition_load(condition, quadrature, &projection, order, data,
+                            cell_weights);
+}
+
+template<typename Basis, std::size_t n>
+template<std::derived_from<FaceCondition<Basis, n>> C>
+void Assembler<Basis, n>::add_face_condition_load(
+    const C& condition, const QuadratureSkeleton<Scalar, dim>& quadrature,
+    const BoundaryProjection<Scalar>* projection, int order,
+    const Eigen::VectorX<Scalar>& data,
+    const Eigen::VectorX<Scalar>& cell_weights) requires (dim == 2)
+{
     if (data.size() != quadrature.num_points())
         throw std::invalid_argument("Assembler: "
                                     "the data must have one value per point");
@@ -576,6 +697,9 @@ void Assembler<Basis, n>::assemble_load(
         throw std::invalid_argument("Assembler: "
                                     "the cell weights must have one value "
                                     "per element");
+
+    if (projection != nullptr)
+        check_projection(*projection, order, quadrature.num_points());
 
     ElementValues<Basis, n> before(patch_, condition.flags());
     ElementValues<Basis, n> after(patch_, condition.flags());
@@ -604,20 +728,23 @@ void Assembler<Basis, n>::assemble_load(
         const int count = quadrature.offsets()(face + 1) - first;
 
         // The values of each cell, with its own polynomial, at the same
-        // points, and on a projected quadrature also expanded towards the
-        // boundary along the same distances
+        // points, and with a projection also expanded towards the boundary
+        // along the same distance vectors
         points = quadrature.points().middleRows(first, count);
         before.reinit(cell_before, points);
         after.reinit(cell_after, points);
 
-        if (quadrature.is_projected()) {
+        if (projection != nullptr) {
+            const Eigen::MatrixX<Scalar> distances =
+                projection->distances.middleRows(first, count);
+
             shifted_before.reinit(cell_before, points);
             shifted_after.reinit(cell_after, points);
-            shift_values(shifted_before, quadrature, first, count);
-            shift_values(shifted_after, quadrature, first, count);
+            shift_values(shifted_before, distances, order);
+            shift_values(shifted_after, distances, order);
         }
 
-        const bool shifted = quadrature.is_projected();
+        const bool shifted = projection != nullptr;
 
         // Face weights and physical normals through the map, which is
         // continuous across the face, from the cell before to the cell after
@@ -828,5 +955,67 @@ template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
     const FaceNitscheCondition<TensorNURBS<double, 2>, 2>&,
     const QuadratureSkeleton<double, 2>&, const Eigen::VectorX<double>&,
     const Eigen::VectorX<double>&);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_stiffness(
+    const PenaltyCondition<TensorBSpline<double, 2>, 2>&,
+    const QuadratureBoundary<double, 2>&,
+    const BoundaryProjection<double>&, int);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_stiffness(
+    const PenaltyCondition<TensorNURBS<double, 2>, 2>&,
+    const QuadratureBoundary<double, 2>&,
+    const BoundaryProjection<double>&, int);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
+    const PenaltyCondition<TensorBSpline<double, 2>, 2>&,
+    const QuadratureBoundary<double, 2>&,
+    const BoundaryProjection<double>&, int,
+    const Eigen::VectorX<double>&);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
+    const PenaltyCondition<TensorNURBS<double, 2>, 2>&,
+    const QuadratureBoundary<double, 2>&,
+    const BoundaryProjection<double>&, int,
+    const Eigen::VectorX<double>&);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_stiffness(
+    const NitscheCondition<TensorBSpline<double, 2>, 2>&,
+    const QuadratureBoundary<double, 2>&,
+    const BoundaryProjection<double>&, int);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_stiffness(
+    const NitscheCondition<TensorNURBS<double, 2>, 2>&,
+    const QuadratureBoundary<double, 2>&,
+    const BoundaryProjection<double>&, int);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
+    const NitscheCondition<TensorBSpline<double, 2>, 2>&,
+    const QuadratureBoundary<double, 2>&,
+    const BoundaryProjection<double>&, int,
+    const Eigen::VectorX<double>&);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
+    const NitscheCondition<TensorNURBS<double, 2>, 2>&,
+    const QuadratureBoundary<double, 2>&,
+    const BoundaryProjection<double>&, int,
+    const Eigen::VectorX<double>&);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_stiffness(
+    const FaceNitscheCondition<TensorBSpline<double, 2>, 2>&,
+    const QuadratureSkeleton<double, 2>&,
+    const BoundaryProjection<double>&, int,
+    const Eigen::VectorX<double>&);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_stiffness(
+    const FaceNitscheCondition<TensorNURBS<double, 2>, 2>&,
+    const QuadratureSkeleton<double, 2>&,
+    const BoundaryProjection<double>&, int,
+    const Eigen::VectorX<double>&);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
+    const FaceNitscheCondition<TensorBSpline<double, 2>, 2>&,
+    const QuadratureSkeleton<double, 2>&,
+    const BoundaryProjection<double>&, int,
+    const Eigen::VectorX<double>&, const Eigen::VectorX<double>&);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
+    const FaceNitscheCondition<TensorNURBS<double, 2>, 2>&,
+    const QuadratureSkeleton<double, 2>&,
+    const BoundaryProjection<double>&, int,
+    const Eigen::VectorX<double>&, const Eigen::VectorX<double>&);
 
 } // namespace iguana

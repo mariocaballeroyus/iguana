@@ -6,13 +6,9 @@
 #include "quadrature_boundary.hpp"
 
 #include <array>
-#include <stdexcept>
 #include <vector>
 
-#include "iguana/basis/tensor_bspline.hpp"
-#include "iguana/basis/tensor_nurbs.hpp"
 #include "iguana/geometry/boundary.hpp"
-#include "iguana/geometry/boundary_projection.hpp"
 #include "iguana/geometry/patch.hpp"
 #include "iguana/quadrature/box_rule.hpp"
 
@@ -166,69 +162,6 @@ QuadratureBoundary<T, d>::QuadratureBoundary(
     }
 }
 
-template<std::floating_point T, std::size_t d>
-template<typename Basis>
-    requires (Basis::dimension == d)
-void QuadratureBoundary<T, d>::project_to_closest(
-    const Patch<Basis, 2>& patch, const Boundary<T, 2>& boundary, int order)
-{
-    if (order < 0)
-        throw std::invalid_argument("QuadratureBoundary: "
-                                    "the order must be non-negative");
-
-    const Basis& basis = patch.basis();
-
-    // Physical positions of the points, element by element
-    PointMatrix<T, 2> positions(points_.rows(), 2);
-    Eigen::MatrixX<T> element_points;
-    Eigen::MatrixX<T> values;
-    Eigen::VectorXi actives;
-    PointMatrix<T, 2> element_positions;
-
-    for (int position = 0; position < num_elements(); ++position) {
-        const int element = elements_(position);
-        const int first = offsets_(position);
-        const int count = offsets_(position + 1) - first;
-
-        // First active function of each direction, from the element of each
-        // direction with the first one running fastest
-        std::array<int, d> first_active{};
-        int remaining = element;
-
-        for (std::size_t direction = 0; direction < d; ++direction) {
-            const KnotVector<T>& knots = basis.grid().knots(direction);
-            const int axis_element = remaining % knots.num_elements();
-
-            first_active[direction] =
-                knots.element_span(axis_element) - knots.degree();
-            remaining /= knots.num_elements();
-        }
-
-        element_points = points_.middleRows(first, count);
-        basis.eval_on_element(first_active, element_points, values);
-        basis.active_on_element(element, actives);
-        patch.position_on_element(actives, values, element_positions);
-
-        positions.middleRows(first, count) = element_positions;
-    }
-
-    // Closest points on the boundary, pulled back into parameter space
-    const BoundaryProjection<T> projection =
-        project_points(boundary, positions);
-    PointMatrix<T, 2> parameters;
-    patch.invert_points(projection.positions, parameters);
-
-    distances_ = parameters - points_;
-    order_ = order;
-}
-
 template class QuadratureBoundary<double, 2>;
-
-template void QuadratureBoundary<double, 2>::project_to_closest(
-    const Patch<TensorBSpline<double, 2>, 2>&, const Boundary<double, 2>&,
-    int);
-template void QuadratureBoundary<double, 2>::project_to_closest(
-    const Patch<TensorNURBS<double, 2>, 2>&, const Boundary<double, 2>&,
-    int);
 
 } // namespace iguana

@@ -4,7 +4,6 @@
  */
 
 #include <cstddef>
-#include <utility>
 #include <vector>
 
 #include <pybind11/eigen.h>
@@ -23,6 +22,7 @@ namespace
 
 using Boundary2d = Boundary<double, 2>;
 using Boundary3d = Boundary<double, 3>;
+using BoundaryProjection2d = BoundaryProjection<double>;
 
 /// @brief Faces of a boundary, copied so that Python never holds an index
 ///        outside them
@@ -50,18 +50,6 @@ std::vector<int> signs(const Boundary<double, n>& boundary)
     return result;
 }
 
-/// @brief Closest points of a boundary of curves to points of the plane, as
-///        the tuple (positions, normals, faces) the wrapper names
-py::tuple projection_of(const Boundary2d& boundary,
-                        const PointMatrix<double, 2>& points)
-{
-    BoundaryProjection<double> projection = project_points(boundary, points);
-
-    return py::make_tuple(std::move(projection.positions),
-                          std::move(projection.normals),
-                          std::move(projection.faces));
-}
-
 } // namespace
 
 void boundary(py::module_& module)
@@ -71,8 +59,16 @@ void boundary(py::module_& module)
              py::arg("faces"), py::arg("signs"))
         .def_property_readonly("num_faces", &Boundary2d::num_faces)
         .def_property_readonly("faces", &faces<2>)
-        .def_property_readonly("signs", &signs<2>)
-        .def("project_points", &projection_of, py::arg("points"));
+        .def_property_readonly("signs", &signs<2>);
+
+    // The projection of the points of a planar patch, which the conditions
+    // of the shifted boundary method pass to the assembly
+    py::class_<BoundaryProjection2d>(module, "BoundaryProjection2d")
+        .def_readonly("positions", &BoundaryProjection2d::positions);
+
+    module.def("project_closest_points",
+               &project_closest_points<TensorBSpline<double, 2>>,
+               py::arg("patch"), py::arg("boundary"), py::arg("points"));
 
     py::class_<Boundary3d>(module, "Boundary3d")
         .def(py::init<std::vector<Boundary3d::Face>, std::vector<int>>(),

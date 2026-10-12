@@ -333,83 +333,6 @@ PointMatrix<double, 2> boundary_positions(
 }
 
 /**
- * @brief Closest points of the points of a boundary quadrature, in the
- *        plane: their positions moved by their distances, which an affine
- *        map carries by its linear part, or the positions themselves on a
- *        quadrature that is not projected
- *
- * @throws std::invalid_argument As walk_held_elements() does
- *
- * @pre A projected quadrature was projected through @p patch
- */
-PointMatrix<double, 2> boundary_projections(
-    const QuadratureBoundary2d& quadrature, const PlanarPatch& patch)
-{
-    PointMatrix<double, 2> result = boundary_positions(quadrature, patch);
-
-    if (quadrature.is_projected())
-        result += quadrature.distances() * patch.linear_part().transpose();
-
-    return result;
-}
-
-/**
- * @brief Closest points of the points of a skeleton quadrature, in the plane:
- *        their positions, through the cell before each face, moved by their
- *        distances, which an affine map carries by its linear part, or the
- *        positions themselves on a quadrature that is not projected
- *
- * @throws std::invalid_argument If a cell of a face lies outside the grid
- *         of the patch
- *
- * @pre A projected quadrature was projected through @p patch
- */
-PointMatrix<double, 2> skeleton_projections(
-    const QuadratureSkeleton2d& quadrature, const PlanarPatch& patch)
-{
-    const TensorBSpline<double, 2>& basis = patch.basis();
-    const TensorGrid<double, 2>& grid = basis.grid();
-    const std::array<int, 2> counts{grid.knots(0).num_elements(),
-                                    grid.knots(1).num_elements()};
-    PointMatrix<double, 2> result(quadrature.num_points(), 2);
-
-    // Buffers reused over the faces
-    Eigen::MatrixXd parameters;
-    Eigen::MatrixXd values;
-    Eigen::VectorXi actives;
-    PointMatrix<double, 2> face_positions;
-
-    for (int face = 0; face < quadrature.num_faces(); ++face) {
-        const int cell = quadrature.cells()(face, 0);
-
-        if (cell < 0 || cell >= grid.num_elements())
-            throw std::invalid_argument("QuadratureSkeleton: "
-                                        "the faces must lie in the grid of "
-                                        "the patch");
-
-        const std::array<int, 2> axis_elements = unflatten(cell, counts);
-        const std::array<int, 2> first_active{
-            basis.axis(0).first_active(axis_elements[0]),
-            basis.axis(1).first_active(axis_elements[1])};
-
-        const int first = quadrature.offsets()(face);
-        const int count = quadrature.offsets()(face + 1) - first;
-
-        parameters = quadrature.points().middleRows(first, count);
-        basis.eval_on_element(first_active, parameters, values);
-        basis.active_on_element(cell, actives);
-        patch.position_on_element(actives, values, face_positions);
-
-        result.middleRows(first, count) = face_positions;
-    }
-
-    if (quadrature.is_projected())
-        result += quadrature.distances() * patch.linear_part().transpose();
-
-    return result;
-}
-
-/**
  * @brief Weights of the points of a boundary quadrature in the plane, their
  *        weights in parameter space times the measure of the boundary
  *
@@ -549,16 +472,8 @@ void quadrature(py::module_& module)
                                &QuadratureBoundary2d::num_elements)
         .def_property_readonly("num_points", &QuadratureBoundary2d::num_points)
         .def_property_readonly("faces", &QuadratureBoundary2d::faces)
-        .def("project_to_closest",
-             &QuadratureBoundary2d::project_to_closest<
-                 TensorBSpline<double, 2>>,
-             py::arg("patch"), py::arg("boundary"), py::arg("order"))
-        .def_property_readonly("is_projected",
-                               &QuadratureBoundary2d::is_projected)
-        .def_property_readonly("distances", &QuadratureBoundary2d::distances)
-        .def_property_readonly("order", &QuadratureBoundary2d::order)
+        .def_property_readonly("points", &QuadratureBoundary2d::points)
         .def("positions", &boundary_positions, py::arg("patch"))
-        .def("projections", &boundary_projections, py::arg("patch"))
         .def("physical_weights", &physical_boundary_weights, py::arg("patch"))
         .def("physical_normals", &physical_boundary_normals,
              py::arg("patch"));
@@ -569,15 +484,7 @@ void quadrature(py::module_& module)
         .def_property_readonly("num_faces", &QuadratureSkeleton2d::num_faces)
         .def_property_readonly("num_points",
                                &QuadratureSkeleton2d::num_points)
-        .def("project_to_closest",
-             &QuadratureSkeleton2d::project_to_closest<
-                 TensorBSpline<double, 2>>,
-             py::arg("patch"), py::arg("boundary"), py::arg("order"))
-        .def_property_readonly("is_projected",
-                               &QuadratureSkeleton2d::is_projected)
-        .def_property_readonly("distances", &QuadratureSkeleton2d::distances)
-        .def_property_readonly("order", &QuadratureSkeleton2d::order)
-        .def("projections", &skeleton_projections, py::arg("patch"));
+        .def_property_readonly("points", &QuadratureSkeleton2d::points);
 }
 
 } // namespace iguana::bindings

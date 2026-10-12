@@ -27,13 +27,16 @@ using NitscheCondition2d = NitscheCondition<TensorBSpline<double, 2>, 2>;
 using FaceNitscheCondition2d =
     FaceNitscheCondition<TensorBSpline<double, 2>, 2>;
 using GhostPenalty2d = GhostPenalty<TensorBSpline<double, 2>, 2>;
+using BoundaryProjection2d = BoundaryProjection<double>;
+using QuadratureBoundary2d = QuadratureBoundary<double, 2>;
+using QuadratureSkeleton2d = QuadratureSkeleton<double, 2>;
 using Assembler2d = Assembler<TensorBSpline<double, 2>, 2>;
 using Assembler3d = Assembler<TensorBSpline<double, 3>, 3>;
 
 /// @brief Assembly of a ghost penalty over faces, the one overload of
 ///        assemble_stiffness that is not a template
 using AssembleFaces2d = void (Assembler2d::*)(
-    const GhostPenalty2d&, const QuadratureSkeleton<double, 2>&);
+    const GhostPenalty2d&, const QuadratureSkeleton2d&);
 
 } // namespace
 
@@ -120,27 +123,96 @@ void assembly(py::module_& module)
              py::arg("element"), py::arg("quadrature"), py::arg("source"),
              py::arg("cell_weights"))
         .def("assemble_stiffness",
-             &Assembler2d::assemble_stiffness<PenaltyCondition2d>,
+             py::overload_cast<const PenaltyCondition2d&,
+                               const QuadratureBoundary2d&>(
+                 &Assembler2d::assemble_stiffness<PenaltyCondition2d>),
              py::arg("condition"), py::arg("quadrature"))
         .def("assemble_load",
-             &Assembler2d::assemble_load<PenaltyCondition2d>,
+             py::overload_cast<const PenaltyCondition2d&,
+                               const QuadratureBoundary2d&,
+                               const Eigen::VectorXd&>(
+                 &Assembler2d::assemble_load<PenaltyCondition2d>),
              py::arg("condition"), py::arg("quadrature"), py::arg("data"))
         .def("assemble_load",
-             &Assembler2d::assemble_load<NeumannCondition2d>,
+             py::overload_cast<const NeumannCondition2d&,
+                               const QuadratureBoundary2d&,
+                               const Eigen::VectorXd&>(
+                 &Assembler2d::assemble_load<NeumannCondition2d>),
              py::arg("condition"), py::arg("quadrature"), py::arg("data"))
         .def("assemble_stiffness",
-             &Assembler2d::assemble_stiffness<NitscheCondition2d>,
+             py::overload_cast<const NitscheCondition2d&,
+                               const QuadratureBoundary2d&>(
+                 &Assembler2d::assemble_stiffness<NitscheCondition2d>),
              py::arg("condition"), py::arg("quadrature"))
         .def("assemble_load",
-             &Assembler2d::assemble_load<NitscheCondition2d>,
+             py::overload_cast<const NitscheCondition2d&,
+                               const QuadratureBoundary2d&,
+                               const Eigen::VectorXd&>(
+                 &Assembler2d::assemble_load<NitscheCondition2d>),
              py::arg("condition"), py::arg("quadrature"), py::arg("data"))
         .def("assemble_stiffness",
-             &Assembler2d::assemble_stiffness<FaceNitscheCondition2d>,
+             py::overload_cast<const FaceNitscheCondition2d&,
+                               const QuadratureSkeleton2d&,
+                               const Eigen::VectorXd&>(
+                 &Assembler2d::assemble_stiffness<FaceNitscheCondition2d>),
              py::arg("condition"), py::arg("quadrature"),
              py::arg("cell_weights"))
         .def("assemble_load",
-             &Assembler2d::assemble_load<FaceNitscheCondition2d>,
+             py::overload_cast<const FaceNitscheCondition2d&,
+                               const QuadratureSkeleton2d&,
+                               const Eigen::VectorXd&,
+                               const Eigen::VectorXd&>(
+                 &Assembler2d::assemble_load<FaceNitscheCondition2d>),
              py::arg("condition"), py::arg("quadrature"), py::arg("data"),
+             py::arg("cell_weights"))
+        .def("assemble_stiffness",
+             py::overload_cast<const PenaltyCondition2d&,
+                               const QuadratureBoundary2d&,
+                               const BoundaryProjection2d&, int>(
+                 &Assembler2d::assemble_stiffness<PenaltyCondition2d>),
+             py::arg("condition"), py::arg("quadrature"),
+             py::arg("projection"), py::arg("order"))
+        .def("assemble_load",
+             py::overload_cast<const PenaltyCondition2d&,
+                               const QuadratureBoundary2d&,
+                               const BoundaryProjection2d&, int,
+                               const Eigen::VectorXd&>(
+                 &Assembler2d::assemble_load<PenaltyCondition2d>),
+             py::arg("condition"), py::arg("quadrature"),
+             py::arg("projection"), py::arg("order"), py::arg("data"))
+        .def("assemble_stiffness",
+             py::overload_cast<const NitscheCondition2d&,
+                               const QuadratureBoundary2d&,
+                               const BoundaryProjection2d&, int>(
+                 &Assembler2d::assemble_stiffness<NitscheCondition2d>),
+             py::arg("condition"), py::arg("quadrature"),
+             py::arg("projection"), py::arg("order"))
+        .def("assemble_load",
+             py::overload_cast<const NitscheCondition2d&,
+                               const QuadratureBoundary2d&,
+                               const BoundaryProjection2d&, int,
+                               const Eigen::VectorXd&>(
+                 &Assembler2d::assemble_load<NitscheCondition2d>),
+             py::arg("condition"), py::arg("quadrature"),
+             py::arg("projection"), py::arg("order"), py::arg("data"))
+        .def("assemble_stiffness",
+             py::overload_cast<const FaceNitscheCondition2d&,
+                               const QuadratureSkeleton2d&,
+                               const BoundaryProjection2d&, int,
+                               const Eigen::VectorXd&>(
+                 &Assembler2d::assemble_stiffness<FaceNitscheCondition2d>),
+             py::arg("condition"), py::arg("quadrature"),
+             py::arg("projection"), py::arg("order"),
+             py::arg("cell_weights"))
+        .def("assemble_load",
+             py::overload_cast<const FaceNitscheCondition2d&,
+                               const QuadratureSkeleton2d&,
+                               const BoundaryProjection2d&, int,
+                               const Eigen::VectorXd&,
+                               const Eigen::VectorXd&>(
+                 &Assembler2d::assemble_load<FaceNitscheCondition2d>),
+             py::arg("condition"), py::arg("quadrature"),
+             py::arg("projection"), py::arg("order"), py::arg("data"),
              py::arg("cell_weights"))
         .def("assemble_stiffness",
              static_cast<AssembleFaces2d>(&Assembler2d::assemble_stiffness),

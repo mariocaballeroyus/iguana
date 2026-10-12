@@ -12,8 +12,6 @@
 
 #include <Eigen/Core>
 
-#include "iguana/geometry/boundary.hpp"
-#include "iguana/geometry/patch.hpp"
 #include "iguana/grid/tensor_grid.hpp"
 #include "iguana/quadrature/gauss_legendre/gauss_legendre.hpp"
 #include "iguana/quadrature/quadrature.hpp"
@@ -56,29 +54,6 @@ public:
                        std::span<const int> faces,
                        const GaussLegendre<T, 1>& rule);
 
-    /**
-     * @brief Projects each point onto a boundary, keeping the distance vector
-     *        to its closest point there and the order of the Taylor series
-     *        along it
-     *
-     * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
-     *
-     * @param patch Patch whose grid holds the points
-     * @param boundary Boundary of curves in the physical space of the patch,
-     *        the true one
-     * @param order Highest total order of the Taylor series, as in
-     *        ElementValues::shift()
-     *
-     * @throws std::invalid_argument If the order is negative, if the map of
-     *         the patch is not affine, or if the boundary has nothing to
-     *         project onto, as for project_points()
-     *
-     * @pre The points lie on the grid of @p patch
-     */
-    template<typename Basis> requires (Basis::dimension == d)
-    void project_to_closest(const Patch<Basis, 2>& patch,
-                            const Boundary<T, 2>& boundary, int order);
-
     /// @brief Number of faces
     constexpr int num_faces() const noexcept
     { return static_cast<int>(directions_.size()); }
@@ -98,21 +73,6 @@ public:
     constexpr const Eigen::MatrixX<T>& normals() const noexcept
     { return normals_; }
 
-    /// @brief Whether the quadrature is projected onto a boundary
-    constexpr bool is_projected() const noexcept
-    { return distances_.rows() > 0; }
-
-    /// @brief Distance vector from each point to its closest point on the
-    ///        boundary the quadrature is projected onto, in parameter space,
-    ///        with size (num_points, d), empty unless projected
-    constexpr const Eigen::MatrixX<T>& distances() const noexcept
-    { return distances_; }
-
-    /// @brief Highest total order of the Taylor series of a projected
-    ///        quadrature, zero unless projected
-    constexpr int order() const noexcept
-    { return order_; }
-
 private:
     using Quadrature<T, d>::offsets_;
     using Quadrature<T, d>::points_;
@@ -126,13 +86,6 @@ private:
 
     /// @brief Unit normals in parameter space, with size (num_points, d)
     Eigen::MatrixX<T> normals_;
-
-    /// @brief Distance vector from each point to its closest point, empty
-    ///        unless projected
-    Eigen::MatrixX<T> distances_;
-
-    /// @brief Highest total order of the Taylor series
-    int order_ = 0;
 };
 
 } // namespace iguana

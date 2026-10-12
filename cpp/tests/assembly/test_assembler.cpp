@@ -175,15 +175,15 @@ iguana::Boundary<double, 2> inner_quadrilateral()
     return {faces, {1, 1, 1, 1}};
 }
 
-/// @brief Data of b . x at the closest points of a projected quadrature, the
-///        points lying in parameter space, where the map scales each axis by
-///        its side
-template<typename Projected>
-Eigen::VectorXd linear_data(const Projected& quadrature,
-                            const Eigen::Vector2d& b)
+/// @brief Data of b . x at the closest points of some points, which a
+///        projection gives in parameter space, where the map scales each axis
+///        by its side
+Eigen::VectorXd linear_data(
+    const Eigen::MatrixXd& points,
+    const iguana::BoundaryProjection<double>& projection,
+    const Eigen::Vector2d& b)
 {
-    const Eigen::MatrixXd closest =
-        quadrature.points() + quadrature.distances();
+    const Eigen::MatrixXd closest = points + projection.distances;
 
     return width * b(0) * closest.col(0) + height * b(1) * closest.col(1);
 }
@@ -572,15 +572,15 @@ TEST_CASE("A shifted penalty imposes a field of the space from its closest "
 
     const iguana::Boundary<double, 2> boundary(faces, {1, 1, 1, 1});
 
-    const iguana::QuadratureBoundary<double, 2> unprojected(
+    const iguana::QuadratureBoundary<double, 2> quadrature(
         surrogate, iguana::GaussLegendre<double, 1>(3));
-    iguana::QuadratureBoundary<double, 2> projected = unprojected;
-    projected.project_to_closest(patch, boundary, 2);
+    const iguana::BoundaryProjection<double> projection =
+        iguana::project_closest_points(patch, boundary, quadrature.points());
 
     // The data of b . x at the closest points, the points lying in parameter
     // space, where the map scales each axis by its side
     const Eigen::Vector2d b(1., -2.);
-    const Eigen::MatrixXd closest = projected.points() + projected.distances();
+    const Eigen::MatrixXd closest = quadrature.points() + projection.distances;
     const Eigen::VectorXd data = width * b(0) * closest.col(0)
                                  + height * b(1) * closest.col(1);
 
@@ -594,8 +594,8 @@ TEST_CASE("A shifted penalty imposes a field of the space from its closest "
     // The series of b . x from each point reaches the closest point exactly,
     // so the shifted penalty imposes it consistently
     iguana::Assembler<Basis, 2> assembler(space, patch);
-    assembler.assemble_stiffness(condition, projected);
-    assembler.assemble_load(condition, projected, data);
+    assembler.assemble_stiffness(condition, quadrature, projection, 2);
+    assembler.assemble_load(condition, quadrature, projection, 2, data);
 
     REQUIRE((assembler.stiffness() * u - assembler.load()).cwiseAbs()
                 .maxCoeff() < 1e-12);
@@ -603,8 +603,8 @@ TEST_CASE("A shifted penalty imposes a field of the space from its closest "
     // Without the shift, the data is imposed a distance away from where it
     // belongs
     assembler.clear();
-    assembler.assemble_stiffness(condition, unprojected);
-    assembler.assemble_load(condition, unprojected, data);
+    assembler.assemble_stiffness(condition, quadrature);
+    assembler.assemble_load(condition, quadrature, data);
 
     REQUIRE((assembler.stiffness() * u - assembler.load()).cwiseAbs()
                 .maxCoeff() > 1e-2);
@@ -635,16 +635,17 @@ TEST_CASE("A shifted Nitsche condition imposes a field of the space "
     for (std::size_t side = 0; side < 4; ++side)
         faces.push_back(segment(corners[side], corners[(side + 1) % 4]));
 
-    iguana::QuadratureBoundary<double, 2> quadrature(
+    const iguana::QuadratureBoundary<double, 2> quadrature(
         surrogate, iguana::GaussLegendre<double, 1>(3));
-    quadrature.project_to_closest(
-        patch, iguana::Boundary<double, 2>(faces, {1, 1, 1, 1}), 2);
+    const iguana::BoundaryProjection<double> projection =
+        iguana::project_closest_points(
+            patch, iguana::Boundary<double, 2>(faces, {1, 1, 1, 1}),
+            quadrature.points());
 
     // The data of b . x at the closest points, the points lying in parameter
     // space, where the map scales each axis by its side
     const Eigen::Vector2d b(1., -2.);
-    const Eigen::MatrixXd closest =
-        quadrature.points() + quadrature.distances();
+    const Eigen::MatrixXd closest = quadrature.points() + projection.distances;
     const Eigen::VectorXd data = width * b(0) * closest.col(0)
                                  + height * b(1) * closest.col(1);
 
@@ -671,8 +672,8 @@ TEST_CASE("A shifted Nitsche condition imposes a field of the space "
                                                            penalty);
         iguana::Assembler<Basis, 2> assembler(space, patch);
         assembler.assemble_stiffness(element, cells);
-        assembler.assemble_stiffness(condition, quadrature);
-        assembler.assemble_load(condition, quadrature, data);
+        assembler.assemble_stiffness(condition, quadrature, projection, 2);
+        assembler.assemble_load(condition, quadrature, projection, 2, data);
 
         REQUIRE((assembler.stiffness() * u - assembler.load()).cwiseAbs()
                     .maxCoeff() < 1e-12 * penalty);
@@ -686,8 +687,8 @@ TEST_CASE("A shifted Nitsche condition imposes a field of the space "
     const iguana::PenaltyCondition<Basis, 2> penalty(trace, 1e3);
     iguana::Assembler<Basis, 2> assembler(space, patch);
     assembler.assemble_stiffness(element, cells);
-    assembler.assemble_stiffness(penalty, quadrature);
-    assembler.assemble_load(penalty, quadrature, data);
+    assembler.assemble_stiffness(penalty, quadrature, projection, 2);
+    assembler.assemble_load(penalty, quadrature, projection, 2, data);
 
     REQUIRE((assembler.stiffness() * u - assembler.load()).cwiseAbs()
                 .maxCoeff() > 1e-2);
@@ -852,15 +853,17 @@ TEST_CASE("Face Nitsche conditions with binary weights are Nitsche "
                    std::vector<CellType>(cell_types.size(),
                                          CellType::inside)));
 
-    iguana::QuadratureBoundary<double, 2> surrogate(
+    const iguana::QuadratureBoundary<double, 2> surrogate(
         iguana::SurrogateBoundary<double, 2>(basis.grid(), classification),
         iguana::GaussLegendre<double, 1>(3));
-    surrogate.project_to_closest(patch, boundary, 2);
+    const iguana::BoundaryProjection<double> to_surrogate =
+        iguana::project_closest_points(patch, boundary, surrogate.points());
 
-    iguana::QuadratureSkeleton<double, 2> faces(
+    const iguana::QuadratureSkeleton<double, 2> faces(
         basis.grid(), iguana::jump_faces(basis.grid(), classification),
         iguana::GaussLegendre<double, 1>(3));
-    faces.project_to_closest(patch, boundary, 2);
+    const iguana::BoundaryProjection<double> to_faces =
+        iguana::project_closest_points(patch, boundary, faces.points());
 
     const iguana::PoissonElement<Basis, 2>::U trace;
     const iguana::PoissonElement<Basis, 2>::Q flux;
@@ -869,12 +872,16 @@ TEST_CASE("Face Nitsche conditions with binary weights are Nitsche "
     const Eigen::Vector2d b(1., -2.);
 
     iguana::Assembler<Basis, 2> on_surrogate(space, patch, true);
-    on_surrogate.assemble_stiffness(nitsche, surrogate);
-    on_surrogate.assemble_load(nitsche, surrogate, linear_data(surrogate, b));
+    on_surrogate.assemble_stiffness(nitsche, surrogate, to_surrogate, 2);
+    on_surrogate.assemble_load(
+        nitsche, surrogate, to_surrogate, 2,
+        linear_data(surrogate.points(), to_surrogate, b));
 
     iguana::Assembler<Basis, 2> on_faces(space, patch, true);
-    on_faces.assemble_stiffness(face, faces, cell_weights);
-    on_faces.assemble_load(face, faces, linear_data(faces, b), cell_weights);
+    on_faces.assemble_stiffness(face, faces, to_faces, 2, cell_weights);
+    on_faces.assemble_load(face, faces, to_faces, 2,
+                           linear_data(faces.points(), to_faces, b),
+                           cell_weights);
 
     // The jump selects the inside cell of every face of the surrogate
     // boundary, whichever side it lies on, and with it its normal
@@ -913,10 +920,11 @@ TEST_CASE("A linear field solves the weighted problem with Nitsche "
         cells.fill(basis.grid(), classification, type,
                    iguana::GaussLegendre<double, 2>(3));
 
-    iguana::QuadratureSkeleton<double, 2> faces(
+    const iguana::QuadratureSkeleton<double, 2> faces(
         basis.grid(), iguana::jump_faces(basis.grid(), classification),
         iguana::GaussLegendre<double, 1>(3));
-    faces.project_to_closest(patch, boundary, 2);
+    const iguana::BoundaryProjection<double> projection =
+        iguana::project_closest_points(patch, boundary, faces.points());
 
     const iguana::QuadratureSkeleton<double, 2> ghost_faces(
         basis.grid(), iguana::ghost_faces(basis.grid(), classification),
@@ -934,8 +942,10 @@ TEST_CASE("A linear field solves the weighted problem with Nitsche "
     assembler.assemble_load(element, cells,
                             Eigen::VectorXd::Zero(cells.num_points()),
                             fractions);
-    assembler.assemble_stiffness(face, faces, fractions);
-    assembler.assemble_load(face, faces, linear_data(faces, b), fractions);
+    assembler.assemble_stiffness(face, faces, projection, 2, fractions);
+    assembler.assemble_load(face, faces, projection, 2,
+                            linear_data(faces.points(), projection, b),
+                            fractions);
     assembler.assemble_stiffness(ghost, ghost_faces);
 
     // Cell by cell, the weighted volume terms of b . x leave the jumps of
@@ -949,8 +959,8 @@ TEST_CASE("A linear field solves the weighted problem with Nitsche "
             < 1e-12 * assembler.load().cwiseAbs().maxCoeff());
 }
 
-TEST_CASE("Face conditions need coupled faces and one weight per cell",
-          "[assembler]")
+TEST_CASE("Face conditions need coupled faces, one weight per cell and a "
+          "projection of their points", "[assembler]")
 {
     const Basis basis = five_by_five();
     const iguana::Patch<Basis, 2> patch = rectangle(basis);
@@ -964,13 +974,14 @@ TEST_CASE("Face conditions need coupled faces and one weight per cell",
     const iguana::FunctionSpace<Basis> space(
         basis, CellClassification<double, 2>(every));
 
-    iguana::QuadratureSkeleton<double, 2> faces(
+    const iguana::QuadratureSkeleton<double, 2> faces(
         basis.grid(),
         iguana::jump_faces(
             basis.grid(),
             CellClassification<double, 2>(iguana::cell_types(fractions))),
         iguana::GaussLegendre<double, 1>(3));
-    faces.project_to_closest(patch, boundary, 2);
+    const iguana::BoundaryProjection<double> projection =
+        iguana::project_closest_points(patch, boundary, faces.points());
 
     const iguana::PoissonElement<Basis, 2>::U trace;
     const iguana::PoissonElement<Basis, 2>::Q flux;
@@ -1001,7 +1012,19 @@ TEST_CASE("Face conditions need coupled faces and one weight per cell",
                                               fractions),
                       std::invalid_argument);
 
-    // A NURBS patch has no Taylor series for a projected quadrature
+    // A negative order, and a projection of other points
+    const iguana::BoundaryProjection<double> other =
+        iguana::project_closest_points(patch, boundary,
+                                       faces.points().topRows(1));
+
+    REQUIRE_THROWS_AS(assembler.assemble_stiffness(face, faces, projection,
+                                                   -1, fractions),
+                      std::invalid_argument);
+    REQUIRE_THROWS_AS(assembler.assemble_stiffness(face, faces, other, 2,
+                                                   fractions),
+                      std::invalid_argument);
+
+    // A NURBS patch has no Taylor series for a projection
     using Rational = iguana::TensorNURBS<double, 2>;
     const Rational rational(basis,
                             Eigen::VectorXd::Ones(basis.num_functions()));
@@ -1017,6 +1040,7 @@ TEST_CASE("Face conditions need coupled faces and one weight per cell",
                                                true);
 
     REQUIRE_THROWS_AS(on_rational.assemble_stiffness(rational_face, faces,
+                                                     projection, 2,
                                                      fractions),
                       std::invalid_argument);
 }
