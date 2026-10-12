@@ -208,19 +208,13 @@ public:
      *
      * The patch maps the weights of the quadrature, which measure the
      * boundary in parameter space, into the boundary weights the condition
-     * takes, and its normals into physical ones. On a projected quadrature
-     * the condition also receives the values expanded towards the boundary
-     * it is projected onto, as the shifted boundary method needs, while the
-     * weights and normals stay those of its points
+     * takes, and its normals into physical ones
      *
      * @tparam C Condition, a final class derived from Condition
      *
      * @param condition Condition whose local stiffness is added
      * @param quadrature Quadrature of a boundary embedded in the grid of the
      *        basis
-     *
-     * @throws std::invalid_argument If @p quadrature is projected and the patch
-     *         is not a B-spline one
      *
      * @pre @p quadrature is built on the grid of the basis, and every element
      *      it holds has its degrees of freedom in the space
@@ -239,12 +233,10 @@ public:
      * @param quadrature Quadrature of a boundary embedded in the grid of the
      *        basis
      * @param data Value the condition imposes at each point of the
-     *        quadrature, in its order, given at its closest point on a
-     *        projected quadrature
+     *        quadrature, in its order
      *
      * @throws std::invalid_argument If @p data does not have one value per
-     *         point of @p quadrature, or if @p quadrature is projected and the
-     *         patch is not a B-spline one
+     *         point of @p quadrature
      *
      * @pre @p quadrature is built as for the stiffness of a condition
      */
@@ -348,14 +340,12 @@ public:
      *
      * On each face whose two cells weigh differently, the values of the
      * cells before and after it, each with its own polynomial, are filled
-     * at its points and, on a projected quadrature, also expanded towards the
-     * boundary it is projected onto. The patch maps the weights of the
-     * quadrature into face weights and its normals into physical ones,
-     * pointing from the cell before to the cell after. Faces whose cells
-     * weigh the same carry no jump of the test functions and are skipped.
-     * Only interior faces carry the condition, so the cells of non-zero
-     * weight must stay off the edge of the grid, or take conditions of
-     * their own there
+     * at its points. The patch maps the weights of the quadrature into face
+     * weights and its normals into physical ones, pointing from the cell
+     * before to the cell after. Faces whose cells weigh the same carry no
+     * jump of the test functions and are skipped. Only interior faces carry
+     * the condition, so the cells of non-zero weight must stay off the edge
+     * of the grid, or take conditions of their own there
      *
      * @tparam C Face condition, a final class derived from FaceCondition
      *
@@ -365,10 +355,9 @@ public:
      * @param cell_weights Weight of the test functions on each element of
      *        the grid, in its numbering
      *
-     * @throws std::invalid_argument If the faces are not coupled, if
+     * @throws std::invalid_argument If the faces are not coupled, or if
      *         @p cell_weights does not have one value per element of the
-     *         grid, or if @p quadrature is projected and the patch is not a
-     *         B-spline one
+     *         grid
      *
      * @pre @p quadrature is built on the grid of the basis, and every cell
      *      of a face across which the weights jump has its degrees of
@@ -391,8 +380,7 @@ public:
      * @param quadrature Quadrature over interior faces of the grid of the
      *        basis
      * @param data Value the condition imposes at each point of the
-     *        quadrature, in its order, given at its closest point on a
-     *        projected quadrature
+     *        quadrature, in its order
      * @param cell_weights Weight of the test functions on each element of
      *        the grid, in its numbering
      *

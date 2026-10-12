@@ -48,8 +48,7 @@ void shift_values(ElementValues<Basis, n>& values,
     }
     else if constexpr (std::same_as<Basis, TensorNURBS<Scalar, dim>>) {
         throw std::invalid_argument("Assembler: "
-                                    "a projected quadrature needs a B-spline "
-                                    "patch");
+                                    "a projection needs a B-spline patch");
     }
 }
 
@@ -351,16 +350,6 @@ void Assembler<Basis, n>::add_condition_stiffness(
     const C& condition, const QuadratureBoundary<Scalar, dim>& quadrature,
     const BoundaryProjection<Scalar>* projection, int order)
 {
-    // A quadrature that still holds its own projection shifts as if it
-    // were given
-    BoundaryProjection<Scalar> own;
-
-    if (projection == nullptr && quadrature.is_projected()) {
-        own.distances = quadrature.distances();
-        projection = &own;
-        order = quadrature.order();
-    }
-
     if (projection != nullptr)
         check_projection(*projection, order, quadrature.num_points());
 
@@ -443,16 +432,6 @@ void Assembler<Basis, n>::add_condition_load(
     if (data.size() != quadrature.num_points())
         throw std::invalid_argument("Assembler: "
                                     "the data must have one value per point");
-
-    // A quadrature that still holds its own projection shifts as if it
-    // were given
-    BoundaryProjection<Scalar> own;
-
-    if (projection == nullptr && quadrature.is_projected()) {
-        own.distances = quadrature.distances();
-        projection = &own;
-        order = quadrature.order();
-    }
 
     if (projection != nullptr)
         check_projection(*projection, order, quadrature.num_points());
@@ -604,16 +583,6 @@ void Assembler<Basis, n>::add_face_condition_stiffness(
                                     "the cell weights must have one value "
                                     "per element");
 
-    // A quadrature that still holds its own projection shifts as if it
-    // were given
-    BoundaryProjection<Scalar> own;
-
-    if (projection == nullptr && quadrature.is_projected()) {
-        own.distances = quadrature.distances();
-        projection = &own;
-        order = quadrature.order();
-    }
-
     if (projection != nullptr)
         check_projection(*projection, order, quadrature.num_points());
 
@@ -728,16 +697,6 @@ void Assembler<Basis, n>::add_face_condition_load(
         throw std::invalid_argument("Assembler: "
                                     "the cell weights must have one value "
                                     "per element");
-
-    // A quadrature that still holds its own projection shifts as if it
-    // were given
-    BoundaryProjection<Scalar> own;
-
-    if (projection == nullptr && quadrature.is_projected()) {
-        own.distances = quadrature.distances();
-        projection = &own;
-        order = quadrature.order();
-    }
 
     if (projection != nullptr)
         check_projection(*projection, order, quadrature.num_points());

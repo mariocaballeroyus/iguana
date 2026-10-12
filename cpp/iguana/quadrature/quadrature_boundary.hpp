@@ -13,8 +13,6 @@
 
 #include "iguana/embedding/embedded_boundary.hpp"
 #include "iguana/embedding/surrogate_boundary.hpp"
-#include "iguana/geometry/boundary.hpp"
-#include "iguana/geometry/patch.hpp"
 #include "iguana/quadrature/gauss_legendre/gauss_legendre.hpp"
 #include "iguana/quadrature/quadrature.hpp"
 
@@ -73,37 +71,6 @@ public:
     QuadratureBoundary(const SurrogateBoundary<T, d>& boundary,
                        const GaussLegendre<T, 1>& rule);
 
-    /**
-     * @brief Projects each point onto a boundary, keeping the distance vector
-     *        to its closest point there and the order of the Taylor series
-     *        along it
-     *
-     * This is the closest-point projection of the shifted boundary method.
-     * The points stay where they are, and so do the weights, normals and
-     * faces, so that an integrand is still integrated over this boundary,
-     * the surrogate one, with the functions expanded from each point along
-     * its distance. The closest points are found in physical space and
-     * pulled back through the map of the patch
-     *
-     * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
-     *
-     * @param patch Patch whose grid holds the points
-     * @param boundary Boundary of curves in the physical space of the patch,
-     *        the true one
-     * @param order Highest total order of the Taylor series, as in
-     *        ElementValues::shift()
-     *
-     * @throws std::invalid_argument If the order is negative, if the boundary
-     *         has nothing to project onto, as for project_points(), or if the
-     *         map of the patch is not affine
-     *
-     * @pre The points lie on the grid of @p patch
-     */
-    template<typename Basis>
-        requires (Basis::dimension == d)
-    void project_to_closest(const Patch<Basis, 2>& patch,
-                            const Boundary<T, 2>& boundary, int order);
-
     /// @brief Number of elements holding a piece of the boundary
     constexpr int num_elements() const noexcept
     { return static_cast<int>(elements_.size()); }
@@ -124,21 +91,6 @@ public:
     constexpr const Eigen::VectorXi& faces() const noexcept
     { return faces_; }
 
-    /// @brief Whether the quadrature is projected onto a boundary
-    constexpr bool is_projected() const noexcept
-    { return distances_.rows() > 0; }
-
-    /// @brief Distance vector from each point to its closest point on the
-    ///        boundary the quadrature is projected onto, in parameter space,
-    ///        with size (num_points, d), empty unless projected
-    constexpr const Eigen::MatrixX<T>& distances() const noexcept
-    { return distances_; }
-
-    /// @brief Highest total order of the Taylor series of a projected
-    ///        quadrature, zero unless projected
-    constexpr int order() const noexcept
-    { return order_; }
-
 private:
     using Quadrature<T, d>::offsets_;
     using Quadrature<T, d>::points_;
@@ -152,13 +104,6 @@ private:
 
     /// @brief Face of the boundary holding each point
     Eigen::VectorXi faces_;
-
-    /// @brief Distance vector from each point to its closest point, empty
-    ///        unless projected
-    Eigen::MatrixX<T> distances_;
-
-    /// @brief Highest total order of the Taylor series
-    int order_ = 0;
 };
 
 } // namespace iguana

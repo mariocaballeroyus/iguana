@@ -40,7 +40,7 @@ namespace iguana
  * weighted test functions, whose traces are continuous, against the flux
  * F along n. The other two impose the values where the data is given,
  * S N expanding each cell's own functions to the closest points of a
- * projected quadrature. With weights of one inside and zero outside, the
+ * projection. With weights of one inside and zero outside, the
  * condition is NitscheCondition on the surrogate boundary between two
  * cells
  *
