@@ -304,7 +304,7 @@ TEST_CASE("A surrogate boundary carries a rule on each face of its cells",
     REQUIRE_THAT(flux, WithinAbs(2. * (.7 - .06), 1e-14));
 }
 
-TEST_CASE("A shifted quadrature reaches the closest points of a boundary",
+TEST_CASE("A projected quadrature reaches the closest points of a boundary",
           "[boundary_quadrature]")
 {
     // The middle element, [-1, .5] x [-1.5, 1] in parameters, is the only
@@ -321,13 +321,13 @@ TEST_CASE("A shifted quadrature reaches the closest points of a boundary",
     const Surrogate surrogate(
         square.basis().grid(),
         iguana::CellClassification<double, 2>(cell_types));
-    const Quadrature unshifted(surrogate, Gauss(3));
+    const Quadrature unprojected(surrogate, Gauss(3));
 
     const Eigen::RowVector2d center(.3, -.2);
     const Boundary<double, 2> boundary({circle(center + offset)}, {1});
 
-    Quadrature quadrature = unshifted;
-    quadrature.shift(square, boundary, 2);
+    Quadrature quadrature = unprojected;
+    quadrature.project_to_closest(square, boundary, 2);
 
     // In parameters, each distance reaches the circle along the radius
     // through its point
@@ -340,20 +340,22 @@ TEST_CASE("A shifted quadrature reaches the closest points of a boundary",
     }
 
     // The points, weights and normals stay those of the surrogate boundary
-    REQUIRE(quadrature.is_shifted());
+    REQUIRE(quadrature.is_projected());
     REQUIRE(quadrature.order() == 2);
-    REQUIRE_FALSE(unshifted.is_shifted());
-    REQUIRE(quadrature.points() == unshifted.points());
-    REQUIRE(quadrature.weights() == unshifted.weights());
-    REQUIRE(quadrature.normals() == unshifted.normals());
+    REQUIRE_FALSE(unprojected.is_projected());
+    REQUIRE(quadrature.points() == unprojected.points());
+    REQUIRE(quadrature.weights() == unprojected.weights());
+    REQUIRE(quadrature.normals() == unprojected.normals());
 
-    // A negative order, or a map that is not affine, cannot shift
+    // A negative order, or a map that is not affine, cannot project
     PointMatrix<double, 2> bent = square.coefficients();
     bent(5, 0) += .1;
     const Region curved(square.basis(), bent);
 
-    REQUIRE_THROWS_AS(Quadrature(unshifted).shift(square, boundary, -1),
-                      std::invalid_argument);
-    REQUIRE_THROWS_AS(Quadrature(unshifted).shift(curved, boundary, 2),
-                      std::invalid_argument);
+    REQUIRE_THROWS_AS(
+        Quadrature(unprojected).project_to_closest(square, boundary, -1),
+        std::invalid_argument);
+    REQUIRE_THROWS_AS(
+        Quadrature(unprojected).project_to_closest(curved, boundary, 2),
+        std::invalid_argument);
 }

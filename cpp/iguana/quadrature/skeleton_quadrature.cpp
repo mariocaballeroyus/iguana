@@ -18,9 +18,10 @@ namespace iguana
 {
 
 template<std::floating_point T, std::size_t d>
-SkeletonQuadrature<T, d>::SkeletonQuadrature(const TensorGrid<T, d>& grid,
-                                             std::span<const int> faces,
-                                             const GaussLegendre<T, 1>& rule)
+SkeletonQuadrature<T, d>::SkeletonQuadrature(
+    const TensorGrid<T, d>& grid,
+    std::span<const int> faces,
+    const GaussLegendre<T, 1>& rule)
 {
     for (const int face : faces) {
         if (face < 0 || face >= grid.num_faces())
@@ -60,8 +61,9 @@ SkeletonQuadrature<T, d>::SkeletonQuadrature(const TensorGrid<T, d>& grid,
         // The rule placed on the interval the face spans
         parameters = rule.points();
         weights = rule.weights();
-        BoxRule<T, 1>::map_to_parameter_space({start[across]}, {end[across]},
-                                              parameters, weights);
+
+        BoxRule<T, 1>::map_to_parameter_space(
+            {start[across]}, {end[across]}, parameters, weights);
 
         points_.block(first, across, count, 1) = parameters;
         points_.block(first, direction, count, 1).setConstant(start[direction]);
@@ -78,10 +80,11 @@ SkeletonQuadrature<T, d>::SkeletonQuadrature(const TensorGrid<T, d>& grid,
 }
 
 template<std::floating_point T, std::size_t d>
-template<typename Basis>
-    requires (Basis::dimension == d)
-void SkeletonQuadrature<T, d>::shift(const Patch<Basis, 2>& patch,
-                                     const Boundary<T, 2>& boundary, int order)
+template<typename Basis> requires (Basis::dimension == d)
+void SkeletonQuadrature<T, d>::project_to_closest(
+    const Patch<Basis, 2>& patch,
+    const Boundary<T, 2>& boundary,
+    int order)
 {
     if (order < 0)
         throw std::invalid_argument("SkeletonQuadrature: "
@@ -95,9 +98,11 @@ void SkeletonQuadrature<T, d>::shift(const Patch<Basis, 2>& patch,
     PointMatrix<T, 2> positions = points_ * patch.linear_part().transpose();
     positions.rowwise() += patch.offset().transpose();
 
-    // Closest points on the boundary, pulled back into parameter space
-    const BoundaryProjection<T> projection =
-        project_points(boundary, positions);
+    // Closest points on the boundary in the physical space
+    const BoundaryProjection<T> projection
+        = project_points(boundary, positions);
+
+    // Pulled back into parameter space
     PointMatrix<T, 2> parameters;
     patch.invert_points(projection.positions, parameters);
 
@@ -107,10 +112,10 @@ void SkeletonQuadrature<T, d>::shift(const Patch<Basis, 2>& patch,
 
 template class SkeletonQuadrature<double, 2>;
 
-template void SkeletonQuadrature<double, 2>::shift(
+template void SkeletonQuadrature<double, 2>::project_to_closest(
     const Patch<TensorBSpline<double, 2>, 2>&, const Boundary<double, 2>&,
     int);
-template void SkeletonQuadrature<double, 2>::shift(
+template void SkeletonQuadrature<double, 2>::project_to_closest(
     const Patch<TensorNURBS<double, 2>, 2>&, const Boundary<double, 2>&,
     int);
 

@@ -30,7 +30,7 @@ namespace
 
 /**
  * @brief Expands the values at the points of one element or face of a
- *        shifted quadrature towards the boundary it is shifted onto
+ *        projected quadrature towards the boundary it is projected onto
  *
  * @tparam Quadrature BoundaryQuadrature or SkeletonQuadrature
  *
@@ -50,7 +50,7 @@ void shift_values(ElementValues<Basis, n>& values,
     }
     else if constexpr (std::same_as<Basis, TensorNURBS<Scalar, dim>>) {
         throw std::invalid_argument("Assembler: "
-                                    "a shifted quadrature needs a B-spline "
+                                    "a projected quadrature needs a B-spline "
                                     "patch");
     }
 }
@@ -330,16 +330,16 @@ void Assembler<Basis, n>::assemble_stiffness(
         points = quadrature.points().middleRows(first, count);
         values.reinit(cell, points);
 
-        // A shifted quadrature also expands the values towards the boundary
-        // it is shifted onto, its weights and normals staying those of its
+        // A projected quadrature also expands the values towards the boundary
+        // it is projected onto, its weights and normals staying those of its
         // points. Otherwise the shifted values are the values themselves
-        if (quadrature.is_shifted()) {
+        if (quadrature.is_projected()) {
             shifted_values.reinit(cell, points);
             shift_values(shifted_values, quadrature, first, count);
         }
 
         const ElementValues<Basis, n>& shifted =
-            quadrature.is_shifted() ? shifted_values : values;
+            quadrature.is_projected() ? shifted_values : values;
 
         // Boundary weights, the quadrature weights times the measure of the
         // boundary through the map, and the normals in physical space, from
@@ -388,16 +388,16 @@ void Assembler<Basis, n>::assemble_load(
         points = quadrature.points().middleRows(first, count);
         values.reinit(cell, points);
 
-        // A shifted quadrature also expands the values towards the boundary
-        // it is shifted onto, its weights and normals staying those of its
+        // A projected quadrature also expands the values towards the boundary
+        // it is projected onto, its weights and normals staying those of its
         // points. Otherwise the shifted values are the values themselves
-        if (quadrature.is_shifted()) {
+        if (quadrature.is_projected()) {
             shifted_values.reinit(cell, points);
             shift_values(shifted_values, quadrature, first, count);
         }
 
         const ElementValues<Basis, n>& shifted =
-            quadrature.is_shifted() ? shifted_values : values;
+            quadrature.is_projected() ? shifted_values : values;
 
         // Boundary weights, the quadrature weights times the measure of the
         // boundary through the map, and the normals in physical space, from
@@ -518,20 +518,20 @@ void Assembler<Basis, n>::assemble_stiffness(
         const int count = quadrature.offsets()(face + 1) - first;
 
         // The values of each cell, with its own polynomial, at the same
-        // points, and on a shifted quadrature also expanded towards the
+        // points, and on a projected quadrature also expanded towards the
         // boundary along the same distances
         points = quadrature.points().middleRows(first, count);
         before.reinit(cell_before, points);
         after.reinit(cell_after, points);
 
-        if (quadrature.is_shifted()) {
+        if (quadrature.is_projected()) {
             shifted_before.reinit(cell_before, points);
             shifted_after.reinit(cell_after, points);
             shift_values(shifted_before, quadrature, first, count);
             shift_values(shifted_after, quadrature, first, count);
         }
 
-        const bool shifted = quadrature.is_shifted();
+        const bool shifted = quadrature.is_projected();
 
         // Face weights and physical normals through the map, which is
         // continuous across the face, from the cell before to the cell after
@@ -604,20 +604,20 @@ void Assembler<Basis, n>::assemble_load(
         const int count = quadrature.offsets()(face + 1) - first;
 
         // The values of each cell, with its own polynomial, at the same
-        // points, and on a shifted quadrature also expanded towards the
+        // points, and on a projected quadrature also expanded towards the
         // boundary along the same distances
         points = quadrature.points().middleRows(first, count);
         before.reinit(cell_before, points);
         after.reinit(cell_after, points);
 
-        if (quadrature.is_shifted()) {
+        if (quadrature.is_projected()) {
             shifted_before.reinit(cell_before, points);
             shifted_after.reinit(cell_after, points);
             shift_values(shifted_before, quadrature, first, count);
             shift_values(shifted_after, quadrature, first, count);
         }
 
-        const bool shifted = quadrature.is_shifted();
+        const bool shifted = quadrature.is_projected();
 
         // Face weights and physical normals through the map, which is
         // continuous across the face, from the cell before to the cell after

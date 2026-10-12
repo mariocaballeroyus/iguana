@@ -301,8 +301,9 @@ class BoundaryQuadrature:
             if order is None:
                 order = max(patch.degrees)
 
-            self._cpp_object.shift(patch=patch._cpp_object,
-                                   boundary=shift._cpp_object, order=order)
+            self._cpp_object.project_to_closest(
+                patch=patch._cpp_object, boundary=shift._cpp_object,
+                order=order)
 
     @property
     def patch(self) -> PlanarPatch:
@@ -351,7 +352,7 @@ class BoundaryQuadrature:
     def order(self) -> int | None:
         """Total order of the Taylor expansion of a shifted quadrature, or
         `None` if it is not shifted."""
-        if not self._cpp_object.is_shifted:
+        if not self._cpp_object.is_projected:
             return None
 
         return self._cpp_object.order

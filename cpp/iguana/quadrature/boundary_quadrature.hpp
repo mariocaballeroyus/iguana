@@ -77,16 +77,16 @@ public:
                        const GaussLegendre<T, 1>& rule);
 
     /**
-     * @brief Shifts the quadrature onto a boundary, keeping the distance
-     *        from each point to its closest point there and the order of the
-     *        Taylor series that cross it
+     * @brief Projects each point onto a boundary, keeping the distance vector
+     *        to its closest point there and the order of the Taylor series
+     *        along it
      *
-     * This is the shift of the shifted boundary method. The points stay
-     * where they are, and so do the weights, normals and faces, so that an
-     * integrand is still integrated over this boundary, the surrogate one,
-     * with the functions expanded from each point along its distance. The
-     * closest points are found in physical space and pulled back through the
-     * map of the patch
+     * This is the closest-point projection of the shifted boundary method.
+     * The points stay where they are, and so do the weights, normals and
+     * faces, so that an integrand is still integrated over this boundary,
+     * the surrogate one, with the functions expanded from each point along
+     * its distance. The closest points are found in physical space and
+     * pulled back through the map of the patch
      *
      * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
      *
@@ -104,8 +104,8 @@ public:
      */
     template<typename Basis>
         requires (Basis::dimension == d)
-    void shift(const Patch<Basis, 2>& patch, const Boundary<T, 2>& boundary,
-               int order);
+    void project_to_closest(const Patch<Basis, 2>& patch,
+                            const Boundary<T, 2>& boundary, int order);
 
     /// @brief Number of elements holding a piece of the boundary
     constexpr int num_elements() const noexcept
@@ -143,18 +143,18 @@ public:
     constexpr const Eigen::VectorXi& faces() const noexcept
     { return faces_; }
 
-    /// @brief Whether the quadrature is shifted onto a boundary
-    constexpr bool is_shifted() const noexcept
+    /// @brief Whether the quadrature is projected onto a boundary
+    constexpr bool is_projected() const noexcept
     { return distances_.rows() > 0; }
 
-    /// @brief Distance from each point to its closest point on the boundary
-    ///        the quadrature is shifted onto, in parameter space, with size
-    ///        (num_points, d), empty unless shifted
+    /// @brief Distance vector from each point to its closest point on the
+    ///        boundary the quadrature is projected onto, in parameter space,
+    ///        with size (num_points, d), empty unless projected
     constexpr const Eigen::MatrixX<T>& distances() const noexcept
     { return distances_; }
 
-    /// @brief Highest total order of the Taylor series of a shifted
-    ///        quadrature, zero unless shifted
+    /// @brief Highest total order of the Taylor series of a projected
+    ///        quadrature, zero unless projected
     constexpr int order() const noexcept
     { return order_; }
 

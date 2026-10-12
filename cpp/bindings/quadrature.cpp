@@ -336,18 +336,18 @@ PointMatrix<double, 2> boundary_positions(
  * @brief Closest points of the points of a boundary quadrature, in the
  *        plane: their positions moved by their distances, which an affine
  *        map carries by its linear part, or the positions themselves on a
- *        quadrature that is not shifted
+ *        quadrature that is not projected
  *
  * @throws std::invalid_argument As walk_held_elements() does
  *
- * @pre A shifted quadrature was shifted through @p patch
+ * @pre A projected quadrature was projected through @p patch
  */
 PointMatrix<double, 2> boundary_projections(
     const BoundaryQuadrature2d& quadrature, const PlanarPatch& patch)
 {
     PointMatrix<double, 2> result = boundary_positions(quadrature, patch);
 
-    if (quadrature.is_shifted())
+    if (quadrature.is_projected())
         result += quadrature.distances() * patch.linear_part().transpose();
 
     return result;
@@ -357,12 +357,12 @@ PointMatrix<double, 2> boundary_projections(
  * @brief Closest points of the points of a skeleton quadrature, in the plane:
  *        their positions, through the cell before each face, moved by their
  *        distances, which an affine map carries by its linear part, or the
- *        positions themselves on a quadrature that is not shifted
+ *        positions themselves on a quadrature that is not projected
  *
  * @throws std::invalid_argument If a cell of a face lies outside the grid
  *         of the patch
  *
- * @pre A shifted quadrature was shifted through @p patch
+ * @pre A projected quadrature was projected through @p patch
  */
 PointMatrix<double, 2> skeleton_projections(
     const SkeletonQuadrature2d& quadrature, const PlanarPatch& patch)
@@ -403,7 +403,7 @@ PointMatrix<double, 2> skeleton_projections(
         result.middleRows(first, count) = face_positions;
     }
 
-    if (quadrature.is_shifted())
+    if (quadrature.is_projected())
         result += quadrature.distances() * patch.linear_part().transpose();
 
     return result;
@@ -549,10 +549,12 @@ void quadrature(py::module_& module)
                                &BoundaryQuadrature2d::num_elements)
         .def_property_readonly("num_points", &BoundaryQuadrature2d::num_points)
         .def_property_readonly("faces", &BoundaryQuadrature2d::faces)
-        .def("shift", &BoundaryQuadrature2d::shift<TensorBSpline<double, 2>>,
+        .def("project_to_closest",
+             &BoundaryQuadrature2d::project_to_closest<
+                 TensorBSpline<double, 2>>,
              py::arg("patch"), py::arg("boundary"), py::arg("order"))
-        .def_property_readonly("is_shifted",
-                               &BoundaryQuadrature2d::is_shifted)
+        .def_property_readonly("is_projected",
+                               &BoundaryQuadrature2d::is_projected)
         .def_property_readonly("distances", &BoundaryQuadrature2d::distances)
         .def_property_readonly("order", &BoundaryQuadrature2d::order)
         .def("positions", &boundary_positions, py::arg("patch"))
@@ -567,10 +569,12 @@ void quadrature(py::module_& module)
         .def_property_readonly("num_faces", &SkeletonQuadrature2d::num_faces)
         .def_property_readonly("num_points",
                                &SkeletonQuadrature2d::num_points)
-        .def("shift", &SkeletonQuadrature2d::shift<TensorBSpline<double, 2>>,
+        .def("project_to_closest",
+             &SkeletonQuadrature2d::project_to_closest<
+                 TensorBSpline<double, 2>>,
              py::arg("patch"), py::arg("boundary"), py::arg("order"))
-        .def_property_readonly("is_shifted",
-                               &SkeletonQuadrature2d::is_shifted)
+        .def_property_readonly("is_projected",
+                               &SkeletonQuadrature2d::is_projected)
         .def_property_readonly("distances", &SkeletonQuadrature2d::distances)
         .def_property_readonly("order", &SkeletonQuadrature2d::order)
         .def("projections", &skeleton_projections, py::arg("patch"));

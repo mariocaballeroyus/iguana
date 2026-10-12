@@ -381,7 +381,8 @@ class FaceNitscheCondition:
         quadrature = _cpp.SkeletonQuadrature2d(
             patch=patch._cpp_object, faces=faces,
             num_points=max(patch.degrees) + 1)
-        quadrature.shift(patch._cpp_object, boundary._cpp_object, order)
+        quadrature.project_to_closest(patch._cpp_object,
+                                      boundary._cpp_object, order)
 
         if callable(values):
             values = values(quadrature.projections(patch._cpp_object))

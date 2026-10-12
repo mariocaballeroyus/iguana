@@ -32,7 +32,7 @@ namespace iguana
  *
  * Its load is F_i = integral of (gamma T(S N_i) / h - F(N_i)) g ds. The
  * boundary term holds at the points, while S N reaches where the data is
- * given, the closest points of a shifted quadrature as the shifted boundary
+ * given, the closest points of a projected quadrature as the shifted boundary
  * method needs, and N itself otherwise. Unlike a penalty, the method is
  * consistent, so it imposes the values exactly for any penalty large enough
  * to keep it stable
