@@ -6,7 +6,6 @@
 #include <iguana/iguana.hpp>
 
 #include <array>
-#include <cstddef>
 #include <stdexcept>
 #include <vector>
 
@@ -58,23 +57,6 @@ TEST_CASE("The ghost faces surround the cut and outside cells",
     }
 
     REQUIRE(found == expected);
-
-    // Each face lies on the knot line at the end of the cell before it,
-    // across the span of that cell
-    const std::array<std::vector<double>, 2> lines = grid.lines();
-
-    for (const int face : ghost) {
-        const int before = grid.face_elements(face)[0];
-        const std::array<int, 2> cell{before % 3, before / 3};
-
-        for (std::size_t axis = 0; axis < 2; ++axis) {
-            const int offset = axis == grid.face_direction(face);
-
-            REQUIRE(grid.face_start(face)[axis]
-                    == lines[axis][cell[axis] + offset]);
-            REQUIRE(grid.face_end(face)[axis] == lines[axis][cell[axis] + 1]);
-        }
-    }
 
     // One cell type for nine elements
     const CellClassification<double, 2> one_cell({CellType::inside});

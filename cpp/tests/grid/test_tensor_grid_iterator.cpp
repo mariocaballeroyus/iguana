@@ -7,6 +7,7 @@
 
 #include <array>
 #include <cstddef>
+#include <set>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -128,4 +129,78 @@ TEST_CASE("The lines of a grid bound the elements of the walk", "[grid]")
             REQUIRE(element.end()[direction] == lines[direction][index + 1]);
         }
     }
+}
+
+TEST_CASE("The faces of a grid join each pair of neighboring elements once",
+          "[grid]")
+{
+    const TensorGrid<double, 3> grid = mixed();
+
+    std::vector<std::array<double, 3>> starts;
+    std::vector<std::array<double, 3>> ends;
+
+    for (const auto& element : grid) {
+        starts.push_back(element.start());
+        ends.push_back(element.end());
+    }
+
+    // Each pair of elements one apart along a direction, as direction,
+    // element before and element after
+    std::set<std::array<int, 3>> neighbors;
+
+    for (const auto& element : grid) {
+        const std::array<int, 3> indices =
+            element_of(grid, element.index());
+
+        for (std::size_t direction = 0; direction < 3; ++direction) {
+            if (indices[direction] + 1 == grid.knots(direction).num_elements())
+                continue;
+
+            int stride = 1;
+
+            for (std::size_t axis = 0; axis < direction; ++axis)
+                stride *= grid.knots(axis).num_elements();
+
+            neighbors.insert({static_cast<int>(direction), element.index(),
+                              element.index() + stride});
+        }
+    }
+
+    std::set<std::array<int, 3>> joined;
+
+    for (int face = 0; face < grid.num_faces(); ++face) {
+        const std::size_t direction = grid.face_direction(face);
+        const std::array<int, 2> elements = grid.face_elements(face);
+        const std::size_t before = static_cast<std::size_t>(elements[0]);
+        const std::size_t after = static_cast<std::size_t>(elements[1]);
+
+        joined.insert({static_cast<int>(direction), elements[0], elements[1]});
+
+        // Numbered direction by direction
+        if (face > 0)
+            REQUIRE(grid.face_direction(face - 1) <= direction);
+
+        // The common side: the element before flattened onto its end along
+        // the direction, where the element after starts
+        for (std::size_t axis = 0; axis < 3; ++axis) {
+            const double start = axis == direction ? ends[before][axis]
+                                                   : starts[before][axis];
+
+            REQUIRE(grid.face_start(face)[axis] == start);
+            REQUIRE(grid.face_end(face)[axis] == ends[before][axis]);
+        }
+
+        REQUIRE(starts[after][direction] == ends[before][direction]);
+    }
+
+    REQUIRE(grid.num_faces() == static_cast<int>(neighbors.size()));
+    REQUIRE(joined == neighbors);
+
+    // Along a direction of a single element, no face is normal to it
+    const TensorGrid<double, 2> strip(
+        {KnotVector<double>(1, {0., 0., .5, 1., 1.}),
+         KnotVector<double>(1, {0., 0., 1., 1.})});
+
+    REQUIRE(strip.num_faces() == 1);
+    REQUIRE(strip.face_direction(0) == 0);
 }
