@@ -11,6 +11,8 @@
 #include <stdexcept>
 #include <vector>
 
+#include "iguana/basis/tensor_bspline.hpp"
+#include "iguana/basis/tensor_nurbs.hpp"
 #include "iguana/geometry/nurbs/bezier_points.hpp"
 #include "iguana/geometry/nurbs/curve_projection.hpp"
 #include "iguana/grid/knot_vector.hpp"
@@ -120,7 +122,42 @@ BoundaryProjection<T> project_points(const Boundary<T, 2>& boundary,
     return projection;
 }
 
+template<typename Basis> requires (Basis::dimension == 2)
+BoundaryProjection<typename Basis::Scalar> project_closest_points(
+    const Patch<Basis, 2>& patch,
+    const Boundary<typename Basis::Scalar, 2>& boundary,
+    const PointMatrix<typename Basis::Scalar, 2>& points)
+{
+    using T = typename Basis::Scalar;
+
+    if (!patch.is_affine())
+        throw std::invalid_argument("project_closest_points: "
+                                    "the map of the patch must be affine");
+
+    // Use the patch for the physical points, through the map, x = a + A xi
+    PointMatrix<T, 2> positions = points * patch.linear_part().transpose();
+    positions.rowwise() += patch.offset().transpose();
+
+    // Closest points on the boundary in physical space
+    BoundaryProjection<T> projection = project_points(boundary, positions);
+
+    // Pulled back into parameter space
+    PointMatrix<T, 2> closest;
+    patch.invert_points(projection.positions, closest);
+
+    projection.distances = closest - points;
+
+    return projection;
+}
+
 template BoundaryProjection<double> project_points(
     const Boundary<double, 2>&, const PointMatrix<double, 2>&);
+
+template BoundaryProjection<double> project_closest_points(
+    const Patch<TensorBSpline<double, 2>, 2>&, const Boundary<double, 2>&,
+    const PointMatrix<double, 2>&);
+template BoundaryProjection<double> project_closest_points(
+    const Patch<TensorNURBS<double, 2>, 2>&, const Boundary<double, 2>&,
+    const PointMatrix<double, 2>&);
 
 } // namespace iguana
