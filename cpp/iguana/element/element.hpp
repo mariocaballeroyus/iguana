@@ -16,14 +16,13 @@ namespace iguana
 {
 
 /**
- * @brief Physics of a problem on one element, giving its local matrix and
- *        vector from the values at the points of the element
+ * @brief Physics of a problem on one element, giving its stiffness, load
+ *        and mass there
  *
- * An element reads from ElementValues the values its flags() request and
- * integrates with physical weights, the quadrature weights times the
- * measure of the patch. It neither evaluates the basis nor adds into a
- * global system, which the assembler does. The rows and columns follow
- * the rows of the values, the functions active on the element
+ * @details It reads the values its flags() request, at the points of the
+ *          element, and integrates with the physical weights the assembler
+ *          maps. Its rows and columns follow the functions active on the
+ *          element
  *
  * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
  * @tparam n Dimension of the physical space of the patch

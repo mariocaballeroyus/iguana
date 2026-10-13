@@ -21,10 +21,10 @@ namespace iguana
 
 /**
  * @brief Trace of the field u of the Poisson problem, its only essential
- *        quantity, the flux being natural
+ *        quantity
  *
- * Its matrix B holds the values of the active functions at the boundary
- * points
+ * @details Its matrix B holds the values of the active functions at the
+ *          boundary points
  *
  * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
  * @tparam n Dimension of the physical space, the number of parametric
@@ -46,9 +46,8 @@ public:
  * @brief Flux of the field u of the Poisson problem, its normal derivative
  *        du/dn, conjugate to the trace U
  *
- * Its matrix F holds the physical gradients of the active functions along
- * the outward normals at the boundary points: the derivative itself,
- * without the sign or the conductivity of a heat flux
+ * @details The derivative itself, without the sign or the conductivity of a
+ *          heat flux
  *
  * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
  * @tparam n Dimension of the physical space, the number of parametric

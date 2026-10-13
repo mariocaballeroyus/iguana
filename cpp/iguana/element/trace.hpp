@@ -19,20 +19,11 @@ namespace iguana
  * @brief Trace of the field of an element on a boundary, the quantity a
  *        condition imposes values on or loads with natural data
  *
- * A trace is an essential quantity of the weak form of an element: one of
- * its degrees of freedom, or a combination of them such as a rotation.
- * Each element declares its traces as nested classes, such as
- * PoissonElement::U for the field of the Poisson problem. Fluxes are
- * natural, so they have no trace, and a Neumann condition loads the trace
- * of the test functions they do work on instead. A trace gives one value
- * per boundary point, linear in the coefficients of the element,
- * T(u)(x_q) = sum over i of B_iq u_i, so that a vector quantity is imposed
- * through one trace per component
- *
- * A trace belongs to the element alone and needs no boundary. Projections
- * onto the normal or the tangent of the boundary, such as a normal
- * displacement, belong to the conditions, which combine the traces of the
- * components with the normals
+ * @details An essential quantity of the weak form, such as the field or a
+ *          rotation, one per component of a vector quantity. Each element
+ *          declares its traces as nested classes, such as PoissonElement::U.
+ *          Projections onto the normal of a boundary belong to the
+ *          conditions
  *
  * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
  * @tparam n Dimension of the physical space of the patch
@@ -52,6 +43,8 @@ public:
     /**
      * @brief Trace of each active function at the boundary points in the
      *        element, the matrix B
+     *
+     *     T(u)(x_q) = Σ_i B_iq u_i
      *
      * @param values Values at the boundary points in the element
      * @param trace Output of size (num_active, num_points), the layout of

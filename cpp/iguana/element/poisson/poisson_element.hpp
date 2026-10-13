@@ -17,15 +17,12 @@ namespace iguana
 {
 
 /**
- * @brief Element of the Poisson problem -div(grad u) = f, and of the heat
- *        equation du/dt - div(grad u) = f with its mass
+ * @brief Element of the Poisson problem −div(grad u) = f, and of the heat
+ *        equation du/dt − div(grad u) = f with its mass
  *
- * Its stiffness pairs the physical gradients of the active functions,
- * K_AB = integral of grad N_A . grad N_B, its load weights their values by
- * the source, F_A = integral of f N_A, and its mass pairs their values,
- * M_AB = integral of N_A N_B. It holds no state. The patch must
- * be a domain, as only a domain has physical gradients. Its only trace is
- * the field, U, and its flux the normal derivative of the field, Q
+ * @details It holds no state, and its patch must be a domain, the only one
+ *          with physical gradients. Its trace is the field, U, and its flux
+ *          the normal derivative of the field, Q
  *
  * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
  * @tparam n Dimension of the physical space, the number of parametric
