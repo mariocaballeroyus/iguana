@@ -551,7 +551,7 @@ void Assembler<Basis, n>::assemble_stiffness(
     const Eigen::VectorX<Scalar>& cell_weights) requires (dim == 2)
 {
     add_skeleton_condition_stiffness(condition, quadrature, nullptr, 0,
-                                 cell_weights);
+                                     cell_weights);
 }
 
 template<typename Basis, std::size_t n>
@@ -562,7 +562,7 @@ void Assembler<Basis, n>::assemble_stiffness(
     const Eigen::VectorX<Scalar>& cell_weights) requires (dim == 2)
 {
     add_skeleton_condition_stiffness(condition, quadrature, &projection, order,
-                                 cell_weights);
+                                     cell_weights);
 }
 
 template<typename Basis, std::size_t n>
@@ -660,7 +660,7 @@ void Assembler<Basis, n>::assemble_load(
     const Eigen::VectorX<Scalar>& cell_weights) requires (dim == 2)
 {
     add_skeleton_condition_load(condition, quadrature, nullptr, 0, data,
-                            cell_weights);
+                                cell_weights);
 }
 
 template<typename Basis, std::size_t n>
@@ -672,7 +672,7 @@ void Assembler<Basis, n>::assemble_load(
     const Eigen::VectorX<Scalar>& cell_weights) requires (dim == 2)
 {
     add_skeleton_condition_load(condition, quadrature, &projection, order, data,
-                            cell_weights);
+                                cell_weights);
 }
 
 template<typename Basis, std::size_t n>
