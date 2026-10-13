@@ -19,7 +19,7 @@ void PoissonElement<Basis, n>::local_stiffness(
     const Eigen::Index num_active = values.values().rows();
     stiffness.setZero(num_active, num_active);
 
-    // K_ij = ∫ ∇N_i · ∇N_j dx
+    // K_ij = ( ∇N_i, ∇N_j )_Ω
     //      ≈ Σ_q w_q ∇N_i(x_q) · ∇N_j(x_q)
     for (const Eigen::MatrixX<Scalar>& derivs : values.physical_gradients())
         stiffness += derivs * weights.asDiagonal() * derivs.transpose();
@@ -32,7 +32,7 @@ void PoissonElement<Basis, n>::local_load(
     const Eigen::VectorX<Scalar>& source,
     Eigen::VectorX<Scalar>& load) const
 {
-    // F_i = ∫ f N_i dx
+    // F_i = ( N_i, f )_Ω
     //     ≈ Σ_q w_q f(x_q) N_i(x_q)
     load = values.values() * weights.cwiseProduct(source);
 }
@@ -43,7 +43,7 @@ void PoissonElement<Basis, n>::local_mass(
     const Eigen::VectorX<Scalar>& weights,
     Eigen::MatrixX<Scalar>& mass) const
 {
-    // M_ij = ∫ N_i N_j dx
+    // M_ij = ( N_i, N_j )_Ω
     //      ≈ Σ_q w_q N_i(x_q) N_j(x_q)
     mass = values.values() * weights.asDiagonal()
            * values.values().transpose();

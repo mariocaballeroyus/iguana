@@ -387,7 +387,7 @@ public:
      *        the grid, in its numbering
      *
      * @throws std::invalid_argument If @p data does not have one value per
-     *         point of @p quadrature, or as for the stiffness of a face
+     *         point of @p quadrature, or as for the stiffness of a skeleton
      *         condition
      *
      * @pre @p quadrature is built as for the stiffness of a skeleton condition
@@ -422,7 +422,7 @@ public:
      * @param cell_weights Weight of the test functions on each element of
      *        the grid, in its numbering
      *
-     * @throws std::invalid_argument As for the stiffness of a face
+     * @throws std::invalid_argument As for the stiffness of a skeleton
      *         condition, if @p order is negative, if @p projection does not
      *         have one distance vector per point of @p quadrature, or if the
      *         patch is not a B-spline one

@@ -20,15 +20,10 @@ namespace iguana
  * @brief Flux of the field of an element through a boundary, the natural
  *        quantity conjugate to one of its traces
  *
- * Integrating the weak form of an element by parts leaves a boundary term
- * that pairs each trace T with a flux F, the integral of F(u) T(v) ds, such
- * as the normal derivative du/dn with the field u of the Poisson problem.
- * Conditions that keep this term, such as Nitsche's, read the flux, while a
- * Neumann condition replaces it by data. Each element declares its fluxes
- * as nested classes next to its traces, such as PoissonElement::Q. A
- * flux gives one value per boundary point, linear in the coefficients of
- * the element, F(u)(x_q) = sum over i of F_iq u_i. Unlike a trace, it
- * needs the normals of the boundary
+ * @details Integrating the weak form by parts leaves the boundary term
+ *          which pairs each trace with a flux, such as the field u of the
+ *          Poisson problem with its normal derivative du/dn. Each element
+ *          declares its fluxes next to its traces
  *
  * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
  * @tparam n Dimension of the physical space of the patch
@@ -48,6 +43,8 @@ public:
     /**
      * @brief Flux of each active function at the boundary points in the
      *        element, the matrix F
+     *
+     *     F(u)(x_q) = Σ_i F_iq u_i
      *
      * @param values Values at the boundary points in the element
      * @param normals Unit normals of the boundary in physical space,
