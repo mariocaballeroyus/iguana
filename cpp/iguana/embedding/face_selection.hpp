@@ -43,7 +43,7 @@ std::vector<int> ghost_faces(const TensorGrid<T, d>& grid,
  *        cells may jump
  *
  * @details Used in the Generalized Shifted Boundary Method to impose the
- *          facet conditions on faces with non-zero volume fraction jump
+ *          skeleton conditions on faces with non-zero volume fraction jump
  *
  * @tparam T Floating-point type
  * @tparam d Number of parametric directions

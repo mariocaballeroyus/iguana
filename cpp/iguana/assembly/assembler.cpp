@@ -15,10 +15,10 @@
 #include "iguana/assembly/element_values.hpp"
 #include "iguana/basis/tensor_bspline.hpp"
 #include "iguana/basis/tensor_nurbs.hpp"
-#include "iguana/condition/face_nitsche_condition.hpp"
 #include "iguana/condition/neumann_condition.hpp"
 #include "iguana/condition/nitsche_condition.hpp"
 #include "iguana/condition/penalty_condition.hpp"
+#include "iguana/condition/skeleton_nitsche_condition.hpp"
 #include "iguana/element/poisson/poisson_element.hpp"
 #include "iguana/utils/multi_index.hpp"
 
@@ -489,7 +489,7 @@ void Assembler<Basis, n>::add_condition_load(
 
 template<typename Basis, std::size_t n>
 void Assembler<Basis, n>::assemble_stiffness(
-    const GhostPenalty<Basis, n>& penalty,
+    const SkeletonGhostPenalty<Basis, n>& penalty,
     const QuadratureSkeleton<Scalar, dim>& quadrature) requires (dim == 2)
 {
     // Without the faces coupled, the pattern would grow with each new face
@@ -545,29 +545,29 @@ void Assembler<Basis, n>::assemble_stiffness(
 }
 
 template<typename Basis, std::size_t n>
-template<std::derived_from<FaceCondition<Basis, n>> C>
+template<std::derived_from<SkeletonCondition<Basis, n>> C>
 void Assembler<Basis, n>::assemble_stiffness(
     const C& condition, const QuadratureSkeleton<Scalar, dim>& quadrature,
     const Eigen::VectorX<Scalar>& cell_weights) requires (dim == 2)
 {
-    add_face_condition_stiffness(condition, quadrature, nullptr, 0,
+    add_skeleton_condition_stiffness(condition, quadrature, nullptr, 0,
                                  cell_weights);
 }
 
 template<typename Basis, std::size_t n>
-template<std::derived_from<FaceCondition<Basis, n>> C>
+template<std::derived_from<SkeletonCondition<Basis, n>> C>
 void Assembler<Basis, n>::assemble_stiffness(
     const C& condition, const QuadratureSkeleton<Scalar, dim>& quadrature,
     const BoundaryProjection<Scalar>& projection, int order,
     const Eigen::VectorX<Scalar>& cell_weights) requires (dim == 2)
 {
-    add_face_condition_stiffness(condition, quadrature, &projection, order,
+    add_skeleton_condition_stiffness(condition, quadrature, &projection, order,
                                  cell_weights);
 }
 
 template<typename Basis, std::size_t n>
-template<std::derived_from<FaceCondition<Basis, n>> C>
-void Assembler<Basis, n>::add_face_condition_stiffness(
+template<std::derived_from<SkeletonCondition<Basis, n>> C>
+void Assembler<Basis, n>::add_skeleton_condition_stiffness(
     const C& condition, const QuadratureSkeleton<Scalar, dim>& quadrature,
     const BoundaryProjection<Scalar>* projection, int order,
     const Eigen::VectorX<Scalar>& cell_weights) requires (dim == 2)
@@ -575,7 +575,7 @@ void Assembler<Basis, n>::add_face_condition_stiffness(
     // Without the faces coupled, the pattern would grow with each new face
     if (!couple_faces_)
         throw std::invalid_argument("Assembler: "
-                                    "a face condition needs the faces "
+                                    "a skeleton condition needs the faces "
                                     "coupled");
 
     if (cell_weights.size() != space_.dof_map().num_elements())
@@ -653,31 +653,31 @@ void Assembler<Basis, n>::add_face_condition_stiffness(
 }
 
 template<typename Basis, std::size_t n>
-template<std::derived_from<FaceCondition<Basis, n>> C>
+template<std::derived_from<SkeletonCondition<Basis, n>> C>
 void Assembler<Basis, n>::assemble_load(
     const C& condition, const QuadratureSkeleton<Scalar, dim>& quadrature,
     const Eigen::VectorX<Scalar>& data,
     const Eigen::VectorX<Scalar>& cell_weights) requires (dim == 2)
 {
-    add_face_condition_load(condition, quadrature, nullptr, 0, data,
+    add_skeleton_condition_load(condition, quadrature, nullptr, 0, data,
                             cell_weights);
 }
 
 template<typename Basis, std::size_t n>
-template<std::derived_from<FaceCondition<Basis, n>> C>
+template<std::derived_from<SkeletonCondition<Basis, n>> C>
 void Assembler<Basis, n>::assemble_load(
     const C& condition, const QuadratureSkeleton<Scalar, dim>& quadrature,
     const BoundaryProjection<Scalar>& projection, int order,
     const Eigen::VectorX<Scalar>& data,
     const Eigen::VectorX<Scalar>& cell_weights) requires (dim == 2)
 {
-    add_face_condition_load(condition, quadrature, &projection, order, data,
+    add_skeleton_condition_load(condition, quadrature, &projection, order, data,
                             cell_weights);
 }
 
 template<typename Basis, std::size_t n>
-template<std::derived_from<FaceCondition<Basis, n>> C>
-void Assembler<Basis, n>::add_face_condition_load(
+template<std::derived_from<SkeletonCondition<Basis, n>> C>
+void Assembler<Basis, n>::add_skeleton_condition_load(
     const C& condition, const QuadratureSkeleton<Scalar, dim>& quadrature,
     const BoundaryProjection<Scalar>* projection, int order,
     const Eigen::VectorX<Scalar>& data,
@@ -690,7 +690,7 @@ void Assembler<Basis, n>::add_face_condition_load(
     // Without the faces coupled, the pattern would grow with each new face
     if (!couple_faces_)
         throw std::invalid_argument("Assembler: "
-                                    "a face condition needs the faces "
+                                    "a skeleton condition needs the faces "
                                     "coupled");
 
     if (cell_weights.size() != space_.dof_map().num_elements())
@@ -941,18 +941,18 @@ template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
     const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_stiffness(
-    const FaceNitscheCondition<TensorBSpline<double, 2>, 2>&,
+    const SkeletonNitscheCondition<TensorBSpline<double, 2>, 2>&,
     const QuadratureSkeleton<double, 2>&, const Eigen::VectorX<double>&);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_stiffness(
-    const FaceNitscheCondition<TensorNURBS<double, 2>, 2>&,
+    const SkeletonNitscheCondition<TensorNURBS<double, 2>, 2>&,
     const QuadratureSkeleton<double, 2>&, const Eigen::VectorX<double>&);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
-    const FaceNitscheCondition<TensorBSpline<double, 2>, 2>&,
+    const SkeletonNitscheCondition<TensorBSpline<double, 2>, 2>&,
     const QuadratureSkeleton<double, 2>&, const Eigen::VectorX<double>&,
     const Eigen::VectorX<double>&);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
-    const FaceNitscheCondition<TensorNURBS<double, 2>, 2>&,
+    const SkeletonNitscheCondition<TensorNURBS<double, 2>, 2>&,
     const QuadratureSkeleton<double, 2>&, const Eigen::VectorX<double>&,
     const Eigen::VectorX<double>&);
 
@@ -997,23 +997,23 @@ template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
     const Eigen::VectorX<double>&);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_stiffness(
-    const FaceNitscheCondition<TensorBSpline<double, 2>, 2>&,
+    const SkeletonNitscheCondition<TensorBSpline<double, 2>, 2>&,
     const QuadratureSkeleton<double, 2>&,
     const BoundaryProjection<double>&, int,
     const Eigen::VectorX<double>&);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_stiffness(
-    const FaceNitscheCondition<TensorNURBS<double, 2>, 2>&,
+    const SkeletonNitscheCondition<TensorNURBS<double, 2>, 2>&,
     const QuadratureSkeleton<double, 2>&,
     const BoundaryProjection<double>&, int,
     const Eigen::VectorX<double>&);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
-    const FaceNitscheCondition<TensorBSpline<double, 2>, 2>&,
+    const SkeletonNitscheCondition<TensorBSpline<double, 2>, 2>&,
     const QuadratureSkeleton<double, 2>&,
     const BoundaryProjection<double>&, int,
     const Eigen::VectorX<double>&, const Eigen::VectorX<double>&);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
-    const FaceNitscheCondition<TensorNURBS<double, 2>, 2>&,
+    const SkeletonNitscheCondition<TensorNURBS<double, 2>, 2>&,
     const QuadratureSkeleton<double, 2>&,
     const BoundaryProjection<double>&, int,
     const Eigen::VectorX<double>&, const Eigen::VectorX<double>&);

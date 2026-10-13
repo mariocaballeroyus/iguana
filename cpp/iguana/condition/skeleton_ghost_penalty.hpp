@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef IGUANA_STABILIZATION_GHOST_PENALTY_HPP
-#define IGUANA_STABILIZATION_GHOST_PENALTY_HPP
+#ifndef IGUANA_CONDITION_SKELETON_GHOST_PENALTY_HPP
+#define IGUANA_CONDITION_SKELETON_GHOST_PENALTY_HPP
 
 #include <cstddef>
 
@@ -17,27 +17,21 @@ namespace iguana
 {
 
 /**
- * @brief Ghost penalty on a trace of an element, which extends its field
- *        smoothly across interior faces of a grid
+ * @brief Ghost penalty extending the field of a trace smoothly across the
+ *        interior faces of a grid
  *
- * Its stiffness penalizes the jump across each face of the derivative of
- * order p of the trace along the normal, K_ij = gamma integral of
- * h^(2p - 1) [[d_n^p T(N_i)]] [[d_n^p T(N_j)]] ds, with p the degree across
- * the face, the only order that jumps for splines of maximal continuity.
- * It vanishes on any field that is one polynomial across the faces, so it
- * is consistent, and where the physical domain leaves the field
- * undetermined, it determines it as the extension of its neighbors
- *
- * It reads the values of the two cells of a face differentiated across it
- * by ElementValues::differentiate(), so that the trace gives the derivative
- * of the trace. The rows and columns follow the functions active on the
- * cell before the face, then those active on the cell after it
+ * @details It penalizes the jumps of the derivatives of order p, the degree
+ *          across a face, the only ones that jump for splines of maximal
+ *          continuity. They vanish on a field that is one polynomial across
+ *          the faces, so the penalty is consistent. Rows and columns follow
+ *          the functions active on the cell before the face, then those of
+ *          the cell after
  *
  * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
  * @tparam n Dimension of the physical space of the patch
  */
 template<typename Basis, std::size_t n>
-class GhostPenalty final
+class SkeletonGhostPenalty final
 {
 public:
     /// @brief Floating-point type of the basis
@@ -47,7 +41,7 @@ public:
      * @brief Constructs the penalty on a trace
      *
      * @param trace Trace whose jumps are penalized
-     * @param penalty Penalty gamma, which the size of the elements scales
+     * @param penalty Penalty beta, which the size of the cells scales
      *
      * @throws std::invalid_argument If the penalty is not positive
      *
@@ -55,9 +49,9 @@ public:
      *      does, so that it differentiates with them, and it outlives the
      *      penalty, which keeps a reference to it
      */
-    GhostPenalty(const Trace<Basis, n>& trace, Scalar penalty);
+    SkeletonGhostPenalty(const Trace<Basis, n>& trace, Scalar penalty);
 
-    /// @brief Penalty gamma
+    /// @brief Penalty beta
     constexpr Scalar penalty() const noexcept
     { return penalty_; }
 
@@ -89,10 +83,10 @@ private:
     /// @brief Trace whose jumps are penalized
     const Trace<Basis, n>& trace_;
 
-    /// @brief Penalty gamma
+    /// @brief Penalty beta
     Scalar penalty_;
 };
 
 } // namespace iguana
 
-#endif // IGUANA_STABILIZATION_GHOST_PENALTY_HPP
+#endif // IGUANA_CONDITION_SKELETON_GHOST_PENALTY_HPP

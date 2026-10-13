@@ -43,11 +43,11 @@
 #include "element/poisson/poisson_traces.hpp"
 #include "element/trace.hpp"
 #include "condition/condition.hpp"
-#include "condition/face_condition.hpp"
+#include "condition/skeleton_condition.hpp"
 #include "condition/penalty_condition.hpp"
 #include "condition/nitsche_condition.hpp"
 #include "condition/neumann_condition.hpp"
-#include "condition/face_nitsche_condition.hpp"
-#include "stabilization/ghost_penalty.hpp"
+#include "condition/skeleton_nitsche_condition.hpp"
+#include "condition/skeleton_ghost_penalty.hpp"
 
 #endif // IGUANA_IGUANA_HPP

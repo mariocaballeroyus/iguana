@@ -33,11 +33,12 @@ void NeumannCondition<Basis, n>::local_load(
     const Eigen::VectorX<Scalar>& weights, const PointMatrix<Scalar, n>&,
     const Eigen::VectorX<Scalar>& data, Eigen::VectorX<Scalar>& load) const
 {
+    // T(N_i), traces of the test functions the data does work on
     Eigen::MatrixX<Scalar> trace;
     trace_.local_trace(values, trace);
 
-    // F_i = ∫ h T(N_i) ds
-    //     ≈ Σ_q w_q h(x_q) B_iq
+    // F_i = ( T(N_i), g )_Γ
+    //     ≈ Σ_q w_q g(x_q) B_iq
     load = trace * weights.cwiseProduct(data);
 }
 

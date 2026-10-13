@@ -30,19 +30,26 @@ void NitscheCondition<Basis, n>::local_stiffness(
     const PointMatrix<Scalar, n>& normals,
     Eigen::MatrixX<Scalar>& stiffness) const
 {
+    // T(N_i), traces of the test functions
     Eigen::MatrixX<Scalar> trace;
-    Eigen::MatrixX<Scalar> shifted_trace;
-    Eigen::MatrixX<Scalar> flux;
     trace_.local_trace(values, trace);
+
+    // T(S N_i), traces where the data is given
+    Eigen::MatrixX<Scalar> shifted_trace;
     trace_.local_trace(shifted, shifted_trace);
+
+    // F(N_i), fluxes along the normal
+    Eigen::MatrixX<Scalar> flux;
     flux_.local_flux(values, normals, flux);
 
+    // Penalty over the size h of the element
     const Eigen::VectorX<Scalar> penalized =
         penalty_ * weights.cwiseQuotient(values.sizes());
 
-    // K_ij = − ∫ F(N_j) T(N_i) ds − ∫ F(N_i) T(S N_j) ds
-    //        + γ ∫ T(S N_i) T(S N_j) / h ds
-    //      ≈ Σ_q w_q (γ B̃_iq B̃_jq / h_q − B_iq F_jq − F_iq B̃_jq)
+    // K_ij = − ( T(N_i), F(N_j) )_Γ
+    //        − ( F(N_i), T(S N_j) )_Γ
+    //        + β ( T(S N_i), T(S N_j) / h )_Γ
+    //      ≈ Σ_q w_q (β B̃_iq B̃_jq / h_q − B_iq F_jq − F_iq B̃_jq)
     stiffness =
         shifted_trace * penalized.asDiagonal() * shifted_trace.transpose()
         - trace * weights.asDiagonal() * flux.transpose()
@@ -58,16 +65,20 @@ void NitscheCondition<Basis, n>::local_load(
     const Eigen::VectorX<Scalar>& data,
     Eigen::VectorX<Scalar>& load) const
 {
+    // T(S N_i), traces where the data is given
     Eigen::MatrixX<Scalar> shifted_trace;
-    Eigen::MatrixX<Scalar> flux;
     trace_.local_trace(shifted, shifted_trace);
+
+    // F(N_i), fluxes along the normal
+    Eigen::MatrixX<Scalar> flux;
     flux_.local_flux(values, normals, flux);
 
+    // Penalty over the size h of the element
     const Eigen::VectorX<Scalar> penalized =
         penalty_ * weights.cwiseQuotient(values.sizes());
 
-    // F_i = ∫ (γ T(S N_i) / h − F(N_i)) g ds
-    //     ≈ Σ_q w_q g(x_q) (γ B̃_iq / h_q − F_iq)
+    // F_i = β ( T(S N_i) / h, g )_Γ − ( F(N_i), g )_Γ
+    //     ≈ Σ_q w_q g(x_q) (β B̃_iq / h_q − F_iq)
     load = shifted_trace * penalized.cwiseProduct(data)
            - flux * weights.cwiseProduct(data);
 }
