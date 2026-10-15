@@ -46,7 +46,7 @@ set_target_properties(iguana PROPERTIES
 
 target_compile_options(iguana PRIVATE
     $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall;-Wextra;-Wpedantic>
-    $<$<CXX_COMPILER_ID:MSVC>:/W4>)
+    $<$<CXX_COMPILER_ID:MSVC>:/W4;/MP>)
 
 target_include_directories(iguana PUBLIC ${PROJECT_SOURCE_DIR}/cpp)
 

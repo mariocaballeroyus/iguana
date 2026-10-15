@@ -15,7 +15,7 @@ target_compile_definitions(iguana_python PRIVATE
 
 target_compile_options(iguana_python PRIVATE
     $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall;-Wextra;-Wpedantic>
-    $<$<CXX_COMPILER_ID:MSVC>:/W4>)
+    $<$<CXX_COMPILER_ID:MSVC>:/W4;/MP>)
 
 target_link_libraries(iguana_python PRIVATE IGUANA::iguana)
 
