@@ -3,12 +3,13 @@
 
 """PETSc problems, the solution of a problem on a function space
 
-A problem holds the element, quadrature, conditions and stabilizations of a
-problem on a space, assembles them in compiled code into PETSc matrices and
-vectors, and solves the system with a PETSc solver set up from options. Its
-data, the source, the values of its conditions and the previous solution of
-a transient problem, change in place between solves, so that a time loop
-keeps one problem. It needs a build of iguana with PETSc.
+A problem compiles the element, quadrature, conditions and stabilizations
+of a problem on a space into one form, assembles the form in a single
+compiled call into PETSc matrices and vectors, and solves the system with a
+PETSc solver set up from options. Its data, the source, the values of its
+conditions and the previous solution of a transient problem, change in
+place between solves, where the form reads them, so that a time loop keeps
+one problem. It needs a build of iguana with PETSc.
 """
 
 from __future__ import annotations
@@ -133,21 +134,40 @@ class LinearProblem:
                        for condition in conditions)
 
         self._quadrature = quadrature
+        self._source = np.empty(quadrature.num_points)
         self.source = source
         self._cell_weights = _cell_weights(quadrature, cell_weights, on_faces)
-        self._conditions = conditions
-        self._stabilizations = stabilizations
 
         if step is not None and not step > 0.:
             raise ValueError('the time step must be positive')
 
         self._step = None if step is None else float(step)
 
+        # The form reads the data where it lies, so a source or values set
+        # later reach it without building it again
+        self._form = _cpp.Form2d()
+        cpp_element = element._cpp_element()
+        self._form.add_domain_integral(cpp_element, quadrature._cpp_object,
+                                       self._source, self._cell_weights)
+
+        # The time derivative is weighted by the cells like the other terms
+        if self._step is not None:
+            self._form.add_mass_integral(cpp_element, quadrature._cpp_object,
+                                         self._cell_weights)
+
+        for condition in conditions:
+            if isinstance(condition, SkeletonNitscheCondition):
+                condition._add_to(self._form, self._cell_weights)
+            else:
+                condition._add_to(self._form)
+
+        for stabilization in stabilizations:
+            stabilization._add_to(self._form)
+
         # Terms across faces couple the cells on either side
         couple_faces = on_faces or bool(stabilizations)
         self._assembler = _cpp.Assembler2d(space._cpp_object,
                                            patch._cpp_object, couple_faces)
-        self._cpp_element = element._cpp_element()
         self._stiffness = self._assembler.stiffness
         self._mass = self._assembler.mass
         self._load = self._assembler.load
@@ -205,7 +225,8 @@ class LinearProblem:
         if source.shape != (self._quadrature.num_points,):
             raise ValueError('the source must give one value per point')
 
-        self._source = source
+        # In place, where the form reads it
+        self._source[...] = source
 
     @property
     def previous(self) -> npt.NDArray[np.float64] | None:
@@ -245,7 +266,9 @@ class LinearProblem:
                 not affine.
             RuntimeError: If the linear solver does not converge.
         """
-        self._assemble()
+        # Anew from the current data, every integral in one call
+        self._assembler.clear()
+        self._form.assemble(self._assembler)
 
         # Backward Euler: (K + M / step) u = F + M u_p / step
         if self._step is not None:
@@ -261,33 +284,6 @@ class LinearProblem:
             raise RuntimeError('the linear solver did not converge')
 
         return self._x.getArray().copy()
-
-    def _assemble(self) -> None:
-        """Assemble the stiffness and load of the element, of the conditions
-        and of the stabilizations, and the mass of a transient problem,
-        anew from the current data."""
-        assembler = self._assembler
-        quadrature = self._quadrature._cpp_object
-        assembler.clear()
-
-        assembler.assemble_stiffness(self._cpp_element, quadrature,
-                                     self._cell_weights)
-        assembler.assemble_load(self._cpp_element, quadrature, self._source,
-                                self._cell_weights)
-
-        # The time derivative is weighted by the cells like the other terms
-        if self._step is not None:
-            assembler.assemble_mass(self._cpp_element, quadrature,
-                                    self._cell_weights)
-
-        for condition in self._conditions:
-            if isinstance(condition, SkeletonNitscheCondition):
-                condition._assemble(assembler, self._cell_weights)
-            else:
-                condition._assemble(assembler)
-
-        for stabilization in self._stabilizations:
-            stabilization._assemble(assembler)
 
 
 def _check_terms(
@@ -328,7 +324,8 @@ def _cell_weights(
     on_faces: bool,
 ) -> npt.NDArray[np.float64]:
     """Weights of the test functions on the cells of a quadrature, one
-    without them, checked to be one per cell."""
+    without them, checked to be one per cell. They are contiguous, as the
+    form of the problem reads them where they lie."""
     # Without weights, every skeleton condition would see no jump
     if cell_weights is None and on_faces:
         raise ValueError('skeleton Nitsche conditions need cell weights')
@@ -339,7 +336,7 @@ def _cell_weights(
     if cell_weights is None:
         return np.ones(num_cells)
 
-    cell_weights = np.asarray(cell_weights, dtype=np.float64)
+    cell_weights = np.ascontiguousarray(cell_weights, dtype=np.float64)
 
     if cell_weights.shape != (num_cells,):
         raise ValueError('the cell weights must give one value per cell')

@@ -32,11 +32,13 @@ using BoundaryProjection2d = BoundaryProjection<double>;
 using QuadratureBoundary2d = QuadratureBoundary<double, 2>;
 using QuadratureSkeleton2d = QuadratureSkeleton<double, 2>;
 using Assembler2d = Assembler<TensorBSpline<double, 2>, 2>;
+using Form2d = Form<TensorBSpline<double, 2>, 2>;
+using Data = Form2d::Data;
 
-/// @brief Assembly of a ghost penalty over faces, the one overload of
-///        assemble_stiffness that is not a template
-using AssembleFaces2d = void (Assembler2d::*)(
-    const SkeletonGhostPenalty2d&, const QuadratureSkeleton2d&);
+/// @brief Integral of a ghost penalty across faces, the one overload of
+///        add_skeleton_integral that is not a template
+using AddGhostPenalty2d = void (Form2d::*)(const SkeletonGhostPenalty2d&,
+                                           const QuadratureSkeleton2d&);
 
 } // namespace
 
@@ -83,150 +85,90 @@ void assembly(py::module_& module)
 
     // An assembler keeps references to its space and patch, which Python
     // keeps alive with it, and shares its PETSc system with Python through
-    // petsc4py. The problems of iguana.petsc drive it
+    // petsc4py
     py::class_<Assembler2d>(module, "Assembler2d")
         .def(py::init<const FunctionSpace<TensorBSpline<double, 2>>&,
                       const Patch<TensorBSpline<double, 2>, 2>&, bool>(),
              py::arg("space"), py::arg("patch"),
              py::arg("couple_faces") = false, py::keep_alive<1, 2>(),
              py::keep_alive<1, 3>())
-        .def("assemble_stiffness",
-             py::overload_cast<const PoissonElement2d&,
-                               const QuadratureDomain<double, 2>&>(
-                 &Assembler2d::assemble_stiffness<PoissonElement2d>),
-             py::arg("element"), py::arg("quadrature"))
-        .def("assemble_load",
-             py::overload_cast<const PoissonElement2d&,
-                               const QuadratureDomain<double, 2>&,
-                               const Eigen::VectorXd&>(
-                 &Assembler2d::assemble_load<PoissonElement2d>),
-             py::arg("element"), py::arg("quadrature"), py::arg("source"))
-        .def("assemble_stiffness",
-             py::overload_cast<const PoissonElement2d&,
-                               const QuadratureDomain<double, 2>&,
-                               const Eigen::VectorXd&>(
-                 &Assembler2d::assemble_stiffness<PoissonElement2d>),
-             py::arg("element"), py::arg("quadrature"),
-             py::arg("cell_weights"))
-        .def("assemble_load",
-             py::overload_cast<const PoissonElement2d&,
-                               const QuadratureDomain<double, 2>&,
-                               const Eigen::VectorXd&,
-                               const Eigen::VectorXd&>(
-                 &Assembler2d::assemble_load<PoissonElement2d>),
-             py::arg("element"), py::arg("quadrature"), py::arg("source"),
-             py::arg("cell_weights"))
-        .def("assemble_stiffness",
-             py::overload_cast<const PenaltyCondition2d&,
-                               const QuadratureBoundary2d&>(
-                 &Assembler2d::assemble_stiffness<PenaltyCondition2d>),
-             py::arg("condition"), py::arg("quadrature"))
-        .def("assemble_load",
-             py::overload_cast<const PenaltyCondition2d&,
-                               const QuadratureBoundary2d&,
-                               const Eigen::VectorXd&>(
-                 &Assembler2d::assemble_load<PenaltyCondition2d>),
-             py::arg("condition"), py::arg("quadrature"), py::arg("data"))
-        .def("assemble_load",
-             py::overload_cast<const NeumannCondition2d&,
-                               const QuadratureBoundary2d&,
-                               const Eigen::VectorXd&>(
-                 &Assembler2d::assemble_load<NeumannCondition2d>),
-             py::arg("condition"), py::arg("quadrature"), py::arg("data"))
-        .def("assemble_stiffness",
-             py::overload_cast<const NitscheCondition2d&,
-                               const QuadratureBoundary2d&>(
-                 &Assembler2d::assemble_stiffness<NitscheCondition2d>),
-             py::arg("condition"), py::arg("quadrature"))
-        .def("assemble_load",
-             py::overload_cast<const NitscheCondition2d&,
-                               const QuadratureBoundary2d&,
-                               const Eigen::VectorXd&>(
-                 &Assembler2d::assemble_load<NitscheCondition2d>),
-             py::arg("condition"), py::arg("quadrature"), py::arg("data"))
-        .def("assemble_stiffness",
-             py::overload_cast<const SkeletonNitscheCondition2d&,
-                               const QuadratureSkeleton2d&,
-                               const Eigen::VectorXd&>(
-                 &Assembler2d::assemble_stiffness<SkeletonNitscheCondition2d>),
-             py::arg("condition"), py::arg("quadrature"),
-             py::arg("cell_weights"))
-        .def("assemble_load",
-             py::overload_cast<const SkeletonNitscheCondition2d&,
-                               const QuadratureSkeleton2d&,
-                               const Eigen::VectorXd&,
-                               const Eigen::VectorXd&>(
-                 &Assembler2d::assemble_load<SkeletonNitscheCondition2d>),
-             py::arg("condition"), py::arg("quadrature"), py::arg("data"),
-             py::arg("cell_weights"))
-        .def("assemble_stiffness",
-             py::overload_cast<const PenaltyCondition2d&,
-                               const QuadratureBoundary2d&,
-                               const BoundaryProjection2d&, int>(
-                 &Assembler2d::assemble_stiffness<PenaltyCondition2d>),
-             py::arg("condition"), py::arg("quadrature"),
-             py::arg("projection"), py::arg("order"))
-        .def("assemble_load",
-             py::overload_cast<const PenaltyCondition2d&,
-                               const QuadratureBoundary2d&,
-                               const BoundaryProjection2d&, int,
-                               const Eigen::VectorXd&>(
-                 &Assembler2d::assemble_load<PenaltyCondition2d>),
-             py::arg("condition"), py::arg("quadrature"),
-             py::arg("projection"), py::arg("order"), py::arg("data"))
-        .def("assemble_stiffness",
-             py::overload_cast<const NitscheCondition2d&,
-                               const QuadratureBoundary2d&,
-                               const BoundaryProjection2d&, int>(
-                 &Assembler2d::assemble_stiffness<NitscheCondition2d>),
-             py::arg("condition"), py::arg("quadrature"),
-             py::arg("projection"), py::arg("order"))
-        .def("assemble_load",
-             py::overload_cast<const NitscheCondition2d&,
-                               const QuadratureBoundary2d&,
-                               const BoundaryProjection2d&, int,
-                               const Eigen::VectorXd&>(
-                 &Assembler2d::assemble_load<NitscheCondition2d>),
-             py::arg("condition"), py::arg("quadrature"),
-             py::arg("projection"), py::arg("order"), py::arg("data"))
-        .def("assemble_stiffness",
-             py::overload_cast<const SkeletonNitscheCondition2d&,
-                               const QuadratureSkeleton2d&,
-                               const BoundaryProjection2d&, int,
-                               const Eigen::VectorXd&>(
-                 &Assembler2d::assemble_stiffness<SkeletonNitscheCondition2d>),
-             py::arg("condition"), py::arg("quadrature"),
-             py::arg("projection"), py::arg("order"),
-             py::arg("cell_weights"))
-        .def("assemble_load",
-             py::overload_cast<const SkeletonNitscheCondition2d&,
-                               const QuadratureSkeleton2d&,
-                               const BoundaryProjection2d&, int,
-                               const Eigen::VectorXd&,
-                               const Eigen::VectorXd&>(
-                 &Assembler2d::assemble_load<SkeletonNitscheCondition2d>),
-             py::arg("condition"), py::arg("quadrature"),
-             py::arg("projection"), py::arg("order"), py::arg("data"),
-             py::arg("cell_weights"))
-        .def("assemble_stiffness",
-             static_cast<AssembleFaces2d>(&Assembler2d::assemble_stiffness),
-             py::arg("penalty"), py::arg("quadrature"))
-        .def("assemble_mass",
-             py::overload_cast<const PoissonElement2d&,
-                               const QuadratureDomain<double, 2>&>(
-                 &Assembler2d::assemble_mass<PoissonElement2d>),
-             py::arg("element"), py::arg("quadrature"))
-        .def("assemble_mass",
-             py::overload_cast<const PoissonElement2d&,
-                               const QuadratureDomain<double, 2>&,
-                               const Eigen::VectorXd&>(
-                 &Assembler2d::assemble_mass<PoissonElement2d>),
-             py::arg("element"), py::arg("quadrature"),
-             py::arg("cell_weights"))
         .def("clear", &Assembler2d::clear)
         .def_property_readonly("stiffness", &Assembler2d::stiffness)
         .def_property_readonly("mass", &Assembler2d::mass)
         .def_property_readonly("load", &Assembler2d::load);
+
+    // A form keeps references to what its integrals read, which Python keeps
+    // alive with it. Its data are the arrays themselves, never copies, so
+    // that the problems of iguana.petsc change them in place between
+    // assemblies
+    py::class_<Form2d>(module, "Form2d")
+        .def(py::init<>())
+        .def("add_domain_integral",
+             &Form2d::add_domain_integral<PoissonElement2d>,
+             py::arg("element"), py::arg("quadrature"),
+             py::arg("source").noconvert(),
+             py::arg("cell_weights").noconvert(), py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>(),
+             py::keep_alive<1, 5>())
+        .def("add_mass_integral",
+             &Form2d::add_mass_integral<PoissonElement2d>,
+             py::arg("element"), py::arg("quadrature"),
+             py::arg("cell_weights").noconvert(), py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>())
+        .def("add_boundary_integral",
+             py::overload_cast<const PenaltyCondition2d&,
+                               const QuadratureBoundary2d&, Data>(
+                 &Form2d::add_boundary_integral<PenaltyCondition2d>),
+             py::arg("condition"), py::arg("quadrature"),
+             py::arg("data").noconvert(), py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>())
+        .def("add_boundary_integral",
+             py::overload_cast<const NeumannCondition2d&,
+                               const QuadratureBoundary2d&, Data>(
+                 &Form2d::add_boundary_integral<NeumannCondition2d>),
+             py::arg("condition"), py::arg("quadrature"),
+             py::arg("data").noconvert(), py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>())
+        .def("add_boundary_integral",
+             py::overload_cast<const NitscheCondition2d&,
+                               const QuadratureBoundary2d&, Data>(
+                 &Form2d::add_boundary_integral<NitscheCondition2d>),
+             py::arg("condition"), py::arg("quadrature"),
+             py::arg("data").noconvert(), py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>())
+        .def("add_boundary_integral",
+             py::overload_cast<const PenaltyCondition2d&,
+                               const QuadratureBoundary2d&,
+                               const BoundaryProjection2d&, int, Data>(
+                 &Form2d::add_boundary_integral<PenaltyCondition2d>),
+             py::arg("condition"), py::arg("quadrature"),
+             py::arg("projection"), py::arg("order"),
+             py::arg("data").noconvert(), py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>(),
+             py::keep_alive<1, 6>())
+        .def("add_boundary_integral",
+             py::overload_cast<const NitscheCondition2d&,
+                               const QuadratureBoundary2d&,
+                               const BoundaryProjection2d&, int, Data>(
+                 &Form2d::add_boundary_integral<NitscheCondition2d>),
+             py::arg("condition"), py::arg("quadrature"),
+             py::arg("projection"), py::arg("order"),
+             py::arg("data").noconvert(), py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>(),
+             py::keep_alive<1, 6>())
+        .def("add_skeleton_integral",
+             &Form2d::add_skeleton_integral<SkeletonNitscheCondition2d>,
+             py::arg("condition"), py::arg("quadrature"),
+             py::arg("projection"), py::arg("order"),
+             py::arg("data").noconvert(),
+             py::arg("cell_weights").noconvert(), py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>(),
+             py::keep_alive<1, 6>(), py::keep_alive<1, 7>())
+        .def("add_skeleton_integral",
+             static_cast<AddGhostPenalty2d>(&Form2d::add_skeleton_integral),
+             py::arg("penalty"), py::arg("quadrature"),
+             py::keep_alive<1, 2>(), py::keep_alive<1, 3>())
+        .def("assemble", &Form2d::assemble, py::arg("assembler"));
 }
 
 } // namespace iguana::bindings

@@ -110,13 +110,12 @@ class GhostPenalty:
         """The penalty."""
         return self._penalty
 
-    def _assemble(self, assembler: _cpp.Assembler2d) -> None:
-        """Add the stiffness of the penalty into the compiled assembler of
-        a planar space, built with its faces coupled."""
+    def _add_to(self, form: _cpp.Form2d) -> None:
+        """Add the integral of the penalty to the compiled form of a planar
+        problem, assembled with its faces coupled."""
         penalty = _cpp.SkeletonGhostPenalty2d(self._trace._cpp_trace(),
                                               self._penalty)
-
-        assembler.assemble_stiffness(penalty, self._quadrature)
+        form.add_skeleton_integral(penalty, self._quadrature)
 
     def __repr__(self) -> str:
         return f'GhostPenalty({self._trace!r}, penalty={self._penalty})'
