@@ -275,9 +275,17 @@ def _assemble(
 
         stabilization._assemble(assembler)
 
-    mass = assembler.mass if with_mass else None
+    mass = _to_scipy(assembler.mass) if with_mass else None
 
-    return assembler.stiffness, assembler.load, mass
+    return (_to_scipy(assembler.stiffness), assembler.load.getArray().copy(),
+            mass)
+
+
+def _to_scipy(matrix) -> csr_matrix:
+    """A PETSc matrix of the assembler as a SciPy one, for the solve."""
+    indptr, indices, data = matrix.getValuesCSR()
+
+    return csr_matrix((data, indices, indptr), shape=matrix.getSize())
 
 
 def _fixed(

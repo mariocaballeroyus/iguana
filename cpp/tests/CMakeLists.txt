@@ -38,7 +38,9 @@ target_link_libraries(iguana_tests PRIVATE
     Catch2::Catch2WithMain)
 
 if(IGUANA_WITH_PETSC)
-    target_sources(iguana_tests PRIVATE assembly/test_assembler.cpp)
+    target_sources(iguana_tests PRIVATE
+        petsc_listener.cpp
+        assembly/test_assembler.cpp)
 endif()
 
 add_test(NAME iguana_tests COMMAND iguana_tests)

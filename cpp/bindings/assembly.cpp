@@ -8,6 +8,7 @@
 #include <pybind11/pybind11.h>
 
 #include "iguana/iguana.hpp"
+#include "petsc_caster.hpp"
 
 namespace py = pybind11;
 
@@ -43,10 +44,6 @@ using AssembleFaces2d = void (Assembler2d::*)(
 
 void assembly(py::module_& module)
 {
-    // The system is copied out, the stiffness as a sparse matrix, as each
-    // assembly adds into it
-    constexpr py::return_value_policy copy = py::return_value_policy::copy;
-
     // The bases of the traces and fluxes, so that a condition takes those
     // of any element
     py::class_<Trace2d>(module, "Trace2d");
@@ -90,7 +87,8 @@ void assembly(py::module_& module)
              py::arg("penalty"), py::keep_alive<1, 2>());
 
     // An assembler keeps references to its space and patch, which Python
-    // keeps alive with it. The wrapper of the solve drives it
+    // keeps alive with it, and shares its PETSc system with Python through
+    // petsc4py. The wrapper of the solve drives it
     py::class_<Assembler2d>(module, "Assembler2d")
         .def(py::init<const FunctionSpace<TensorBSpline<double, 2>>&,
                       const Patch<TensorBSpline<double, 2>, 2>&, bool>(),
@@ -230,9 +228,10 @@ void assembly(py::module_& module)
                  &Assembler2d::assemble_mass<PoissonElement2d>),
              py::arg("element"), py::arg("quadrature"),
              py::arg("cell_weights"))
-        .def_property_readonly("stiffness", &Assembler2d::stiffness, copy)
-        .def_property_readonly("mass", &Assembler2d::mass, copy)
-        .def_property_readonly("load", &Assembler2d::load, copy);
+        .def("clear", &Assembler2d::clear)
+        .def_property_readonly("stiffness", &Assembler2d::stiffness)
+        .def_property_readonly("mass", &Assembler2d::mass)
+        .def_property_readonly("load", &Assembler2d::load);
 
     py::class_<Assembler3d>(module, "Assembler3d")
         .def(py::init<const FunctionSpace<TensorBSpline<double, 3>>&,
@@ -277,9 +276,10 @@ void assembly(py::module_& module)
                  &Assembler3d::assemble_mass<PoissonElement3d>),
              py::arg("element"), py::arg("quadrature"),
              py::arg("cell_weights"))
-        .def_property_readonly("stiffness", &Assembler3d::stiffness, copy)
-        .def_property_readonly("mass", &Assembler3d::mass, copy)
-        .def_property_readonly("load", &Assembler3d::load, copy);
+        .def("clear", &Assembler3d::clear)
+        .def_property_readonly("stiffness", &Assembler3d::stiffness)
+        .def_property_readonly("mass", &Assembler3d::mass)
+        .def_property_readonly("load", &Assembler3d::load);
 }
 
 } // namespace iguana::bindings

@@ -12,7 +12,7 @@
 #include <vector>
 
 #include <Eigen/Core>
-#include <Eigen/SparseCore>
+#include <petscmat.h>
 
 #include "iguana/condition/condition.hpp"
 #include "iguana/condition/skeleton_condition.hpp"
@@ -32,10 +32,13 @@ namespace iguana
  * @brief Global stiffness, mass and load of a space, assembled from the
  *        local ones of elements over the points of quadratures
  *
- * The sparsity pattern of the stiffness is fixed by the space, an entry
- * for every pair of degrees of freedom sharing an element, so it is built
- * once and each assembly adds values into it. The mass shares it, so that
- * time integrators combine the two entry by entry. With the faces coupled, it
+ * The stiffness and mass are sequential PETSc matrices and the load a PETSc
+ * vector, ready for its solvers after every assembly, and a failing PETSc
+ * call throws std::runtime_error with its message. The sparsity pattern
+ * of the stiffness is fixed by the space, an entry for every pair of
+ * degrees of freedom sharing an element, so it is built once and each
+ * assembly adds values into it. The mass shares it, so that time
+ * integrators combine the two entry by entry. With the faces coupled, it
  * also has an entry for every pair on the two cells of an interior face of
  * the grid, as terms on faces need. Assemblies add up, so that
  * several terms, such as a domain and a boundary one, build one system.
@@ -57,6 +60,14 @@ namespace iguana
 template<typename Basis, std::size_t n>
 class Assembler
 {
+    static_assert(std::same_as<PetscScalar, typename Basis::Scalar>,
+                  "Assembler: "
+                  "PETSc must use the floating-point type of the basis");
+
+    static_assert(std::same_as<PetscInt, int>,
+                  "Assembler: "
+                  "PETSc must index with the int of the degrees of freedom");
+
 public:
     /// @brief Floating-point type of the basis
     using Scalar = typename Basis::Scalar;
@@ -74,11 +85,20 @@ public:
      *        coupled, so that the pattern holds whichever faces a term acts
      *        on, as they change with a moving boundary
      *
-     * @pre @p space and @p patch share one basis, and both outlive the
-     *      assembler, which keeps references to them
+     * @throws std::runtime_error If PETSc fails to create the system
+     *
+     * @pre PETSc is initialized, and @p space and @p patch share one basis
+     *      and both outlive the assembler, which keeps references to them
      */
     Assembler(const FunctionSpace<Basis>& space,
               const Patch<Basis, n>& patch, bool couple_faces = false);
+
+    /// @brief Drops the references of the assembler to the stiffness, mass
+    ///        and load, which PETSc destroys once nothing else holds them
+    ~Assembler();
+
+    Assembler(const Assembler&) = delete;
+    Assembler& operator=(const Assembler&) = delete;
 
     /**
      * @brief Adds the stiffness of an element over the points of a
@@ -476,19 +496,20 @@ public:
     /// @brief Zeroes the stiffness, mass and load, keeping the pattern
     void clear();
 
-    /// @brief Stiffness, of size (num_dofs, num_dofs)
-    constexpr const Eigen::SparseMatrix<Scalar, Eigen::RowMajor>&
-    stiffness() const noexcept
+    /// @brief Stiffness, of size (num_dofs, num_dofs), owned by the
+    ///        assembler unless a reference to it is taken
+    Mat stiffness() const noexcept
     { return stiffness_; }
 
     /// @brief Mass, of size (num_dofs, num_dofs), with the pattern of the
-    ///        stiffness
-    constexpr const Eigen::SparseMatrix<Scalar, Eigen::RowMajor>&
-    mass() const noexcept
+    ///        stiffness, owned by the assembler unless a reference to it is
+    ///        taken
+    Mat mass() const noexcept
     { return mass_; }
 
-    /// @brief Load, of size num_dofs
-    constexpr const Eigen::VectorX<Scalar>& load() const noexcept
+    /// @brief Load, of size num_dofs, owned by the assembler unless a
+    ///        reference to it is taken
+    Vec load() const noexcept
     { return load_; }
 
 private:
@@ -544,8 +565,7 @@ private:
      * @pre The rows of @p local follow @p dofs, and @p matrix is the
      *      stiffness or the mass
      */
-    void add_to_matrix(Eigen::SparseMatrix<Scalar, Eigen::RowMajor>& matrix,
-                       std::span<const int> dofs,
+    void add_to_matrix(Mat matrix, std::span<const int> dofs,
                        const Eigen::MatrixX<Scalar>& local);
 
     /**
@@ -557,6 +577,12 @@ private:
      */
     void add_to_load(std::span<const int> dofs,
                      const Eigen::VectorX<Scalar>& local);
+
+    /**
+     * @brief Finishes the writes into the stiffness, mass and load, so that
+     *        PETSc can use them, at the end of every public assembly
+     */
+    void finalize();
 
     /**
      * @brief Degrees of freedom of the two cells of a face, those of the
@@ -580,13 +606,13 @@ private:
 
     /// @brief Stiffness, with an entry for every pair of degrees of freedom
     ///        sharing an element, or the cells of a face when coupled
-    Eigen::SparseMatrix<Scalar, Eigen::RowMajor> stiffness_;
+    Mat stiffness_ = nullptr;
 
     /// @brief Mass, with the pattern of the stiffness
-    Eigen::SparseMatrix<Scalar, Eigen::RowMajor> mass_;
+    Mat mass_ = nullptr;
 
     /// @brief Load
-    Eigen::VectorX<Scalar> load_;
+    Vec load_ = nullptr;
 };
 
 } // namespace iguana
