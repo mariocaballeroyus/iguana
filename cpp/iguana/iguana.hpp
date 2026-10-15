@@ -35,7 +35,6 @@
 #include "quadrature/quadrature_domain.hpp"
 #include "quadrature/quadrature_skeleton.hpp"
 #include "quadrature/xiao_gimbutas/xiao_gimbutas.hpp"
-#include "assembly/assembler.hpp"
 #include "assembly/element_values.hpp"
 #include "element/element.hpp"
 #include "element/flux.hpp"
@@ -49,5 +48,9 @@
 #include "condition/neumann_condition.hpp"
 #include "condition/skeleton_nitsche_condition.hpp"
 #include "condition/skeleton_ghost_penalty.hpp"
+
+#ifdef IGUANA_WITH_PETSC
+#include "assembly/assembler.hpp"
+#endif
 
 #endif // IGUANA_IGUANA_HPP

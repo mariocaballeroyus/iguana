@@ -28,7 +28,6 @@ add_library(iguana
     quadrature/quadrature_skeleton.cpp
     quadrature/xiao_gimbutas/xiao_gimbutas.cpp
     quadrature/xiao_gimbutas/xiao_gimbutas_tables.cpp
-    assembly/assembler.cpp
     assembly/element_values.cpp
     element/poisson/poisson_element.cpp
     condition/penalty_condition.cpp
@@ -52,3 +51,13 @@ target_compile_options(iguana PRIVATE
 target_include_directories(iguana PUBLIC ${PROJECT_SOURCE_DIR}/cpp)
 
 target_link_libraries(iguana PUBLIC Eigen3::Eigen)
+
+# The assembler writes into PETSc matrices, and everything else stays free of
+# PETSc, so that a build without it still evaluates and integrates
+if(IGUANA_WITH_PETSC)
+    target_sources(iguana PRIVATE assembly/assembler.cpp)
+
+    target_compile_definitions(iguana PUBLIC IGUANA_WITH_PETSC)
+
+    target_link_libraries(iguana PUBLIC PkgConfig::PETSc MPI::MPI_CXX)
+endif()

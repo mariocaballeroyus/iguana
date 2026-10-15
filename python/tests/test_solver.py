@@ -10,6 +10,9 @@ import iguana
 from iguana import (CellType, FunctionSpace, HierarchicalGrid, PoissonElement,
                     QuadratureDomain, solve)
 
+# Every test solves
+pytestmark = pytest.mark.petsc
+
 
 def rectangle():
     """Rectangle of sides 2 and 3 with quadratic elements, three along x and

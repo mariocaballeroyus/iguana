@@ -15,9 +15,9 @@ authors = [
     {name = 'Mario Caballero', email = 'mariocaballeroyus@gmail.com'},
 ]
 
-# Rhino 8 embeds CPython 3.9
 requires-python = '>=3.9'
 
+# petsc4py comes with the PETSc that IGUANA links, not from pip
 dependencies = ['numpy>=1.21', 'scipy>=1.7']
 
 dynamic = ['version']
@@ -36,6 +36,12 @@ sdist.exclude = ['build', '.github', '.pytest_cache']
 [tool.scikit-build.cmake.define]
 IGUANA_BUILD_PYTHON = 'ON'
 BUILD_TESTING = 'OFF'
+
+# Solving needs PETSc, which Windows lacks: Windows wheel is visualization-only
+[[tool.scikit-build.overrides]]
+if.platform-system = 'win32'
+inherit.cmake.define = 'append'
+cmake.define.IGUANA_WITH_PETSC = 'OFF'
 
 [tool.scikit-build.metadata.version]
 provider = 'scikit_build_core.metadata.regex'

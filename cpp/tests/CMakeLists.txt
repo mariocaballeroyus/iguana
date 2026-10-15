@@ -25,7 +25,6 @@ add_executable(iguana_tests
     quadrature/test_quadrature_domain.cpp
     quadrature/test_quadrature_skeleton.cpp
     quadrature/xiao_gimbutas/test_xiao_gimbutas.cpp
-    assembly/test_assembler.cpp
     assembly/test_element_values.cpp
     element/poisson/test_poisson_element.cpp
     element/poisson/test_poisson_traces.cpp
@@ -37,5 +36,9 @@ target_compile_features(iguana_tests PRIVATE cxx_std_20)
 target_link_libraries(iguana_tests PRIVATE
     IGUANA::iguana
     Catch2::Catch2WithMain)
+
+if(IGUANA_WITH_PETSC)
+    target_sources(iguana_tests PRIVATE assembly/test_assembler.cpp)
+endif()
 
 add_test(NAME iguana_tests COMMAND iguana_tests)

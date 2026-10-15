@@ -158,6 +158,7 @@ def test_classify_cells():
     assert np.all(np.isin(fractions[~cut], [0., 1.]))
 
 
+@pytest.mark.petsc
 def test_classified_cells_solve_a_shifted_problem():
     """The inside cells of the classification carry the shifted boundary
     method, which imposes a linear field exactly from the circle."""
@@ -182,6 +183,7 @@ def test_classified_cells_solve_a_shifted_problem():
     assert np.abs(u - space.control_points @ gradient).max() < 1e-10
 
 
+@pytest.mark.petsc
 def test_binary_cell_weights_reduce_to_the_shifted_problem():
     """Weights of one on the inside cells and zero elsewhere, over a
     quadrature of every cell, give the shifted boundary method on the inside

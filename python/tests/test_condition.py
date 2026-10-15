@@ -99,6 +99,7 @@ def surrogate_problem():
     return patch, FunctionSpace(patch, cell_types), quadrature
 
 
+@pytest.mark.petsc
 def test_penalty_imposes_a_linear_field():
     patch, space, quadrature = square_problem()
     boundary = square_boundary(patch)
@@ -128,6 +129,7 @@ def test_penalty_imposes_a_linear_field():
     assert np.abs(u - exact).max() == pytest.approx(errors[1])
 
 
+@pytest.mark.petsc
 def test_neumann_condition_imposes_a_flux():
     patch, space, quadrature = square_problem()
     element = PoissonElement()
@@ -154,6 +156,7 @@ def test_neumann_condition_imposes_a_flux():
     assert errors[1] / errors[0] == pytest.approx(1e-2, rel=.05)
 
 
+@pytest.mark.petsc
 def test_nitsche_condition_imposes_a_linear_field():
     """On the surrogate domain of the square, Nitsche's method imposes the
     linear field from the sides exactly, whatever the penalty, where a
@@ -178,6 +181,7 @@ def test_nitsche_condition_imposes_a_linear_field():
     assert np.abs(u - exact).max() > 1e-2
 
 
+@pytest.mark.petsc
 def test_skeleton_nitsche_condition_imposes_a_linear_field():
     """With the volume fractions of the square weighting the cells, of a
     space that keeps every function and a quadrature over every cell,
@@ -207,6 +211,7 @@ def test_skeleton_nitsche_condition_imposes_a_linear_field():
     assert np.abs(u - space.control_points @ GRADIENT).max() < 1e-9
 
 
+@pytest.mark.petsc
 def test_skeleton_nitsche_condition_steps_a_field_linear_in_time():
     """With the volume fractions of the square weighting the mass like the
     other volume terms, steps of backward Euler of u = t (b . x) from zero,
@@ -251,6 +256,7 @@ def test_data_at_the_closest_points():
     assert not np.allclose(condition.values, shifted.positions @ GRADIENT)
 
 
+@pytest.mark.petsc
 def test_invalid_arguments():
     patch, space, quadrature = square_problem()
     boundary = square_boundary(patch)
@@ -318,6 +324,7 @@ def test_invalid_arguments():
               np.zeros(box_quadrature.num_points), conditions=[condition])
 
 
+@pytest.mark.petsc
 def test_invalid_skeleton_nitsche_conditions():
     patch = rectangle()
     cell_types, fractions = classify_cells(patch, square_sides())

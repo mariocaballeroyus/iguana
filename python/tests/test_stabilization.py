@@ -39,6 +39,7 @@ def circle():
         weights=[1., corner, 1., corner, 1., corner, 1., corner, 1.])])
 
 
+@pytest.mark.petsc
 def test_ghost_penalty_extends_a_shifted_problem():
     """With every function of the patch kept, the inside cells carry the
     shifted boundary method and the ghost penalty extends its solution over
@@ -68,6 +69,7 @@ def test_ghost_penalty_extends_a_shifted_problem():
     assert np.abs(u - space.control_points @ GRADIENT).max() < 1e-9
 
 
+@pytest.mark.petsc
 def test_invalid_ghost_penalties():
     patch = rectangle()
     cell_types = classify_cells(patch, circle()).cell_types
