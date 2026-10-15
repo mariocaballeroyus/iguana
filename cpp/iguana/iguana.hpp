@@ -51,6 +51,7 @@
 
 #ifdef IGUANA_WITH_PETSC
 #include "assembly/assembler.hpp"
+#include "assembly/form.hpp"
 #endif
 
 #endif // IGUANA_IGUANA_HPP
