@@ -11,7 +11,13 @@ from iguana import (Boundary, CellType, FunctionSpace, GhostPenalty,
                     HierarchicalGrid, NeumannCondition, NitscheCondition,
                     PenaltyCondition, PoissonElement, QuadratureBoundary,
                     QuadratureDomain, SkeletonNitscheCondition,
-                    SurrogateBoundary, classify_cells, cpp, solve)
+                    SurrogateBoundary, classify_cells, cpp)
+
+try:
+    from iguana.petsc import LinearProblem
+except ImportError:
+    # A build without PETSc skips the tests that solve
+    LinearProblem = None
 
 # Sides of the rectangle, and of the square inside it, whose edges halve
 # the cells they cut, so that no cut is a sliver
@@ -114,8 +120,9 @@ def test_penalty_imposes_a_linear_field():
     for penalty in (1e3, 1e5):
         condition = PenaltyCondition(element.u, boundary,
                                      lambda x: x @ GRADIENT, penalty)
-        u = solve(element, space, quadrature, source,
-                  conditions=[condition])
+        u = LinearProblem(element, space, quadrature, source,
+                          conditions=[condition],
+                          petsc_options_prefix='penalty_').solve()
         errors.append(np.abs(u - exact).max())
 
     assert errors[1] < 1e-3
@@ -124,7 +131,9 @@ def test_penalty_imposes_a_linear_field():
     # Values given at the points impose the same as their function
     at_points = PenaltyCondition(element.u, boundary,
                                  boundary.positions @ GRADIENT, 1e5)
-    u = solve(element, space, quadrature, source, conditions=[at_points])
+    u = LinearProblem(element, space, quadrature, source,
+                      conditions=[at_points],
+                      petsc_options_prefix='penalty_').solve()
 
     assert np.abs(u - exact).max() == pytest.approx(errors[1])
 
@@ -148,8 +157,9 @@ def test_neumann_condition_imposes_a_flux():
     for penalty in (1e3, 1e5):
         condition = PenaltyCondition(element.u, dirichlet,
                                      lambda x: x @ GRADIENT, penalty)
-        u = solve(element, space, quadrature, source,
-                  conditions=[condition, flux])
+        u = LinearProblem(element, space, quadrature, source,
+                          conditions=[condition, flux],
+                          petsc_options_prefix='neumann_').solve()
         errors.append(np.abs(u - exact).max())
 
     assert errors[1] < 1e-3
@@ -170,13 +180,17 @@ def test_nitsche_condition_imposes_a_linear_field():
     for penalty in (40., 4e3):
         condition = NitscheCondition(element.u, shifted,
                                      lambda x: x @ GRADIENT, penalty)
-        u = solve(element, space, quadrature, source, conditions=[condition])
+        u = LinearProblem(element, space, quadrature, source,
+                          conditions=[condition],
+                          petsc_options_prefix='nitsche_').solve()
 
         assert np.abs(u - exact).max() < 1e-10
 
     condition = PenaltyCondition(element.u, shifted, lambda x: x @ GRADIENT,
                                  4e3)
-    u = solve(element, space, quadrature, source, conditions=[condition])
+    u = LinearProblem(element, space, quadrature, source,
+                      conditions=[condition],
+                      petsc_options_prefix='nitsche_').solve()
 
     assert np.abs(u - exact).max() > 1e-2
 
@@ -199,12 +213,13 @@ def test_skeleton_nitsche_condition_imposes_a_linear_field():
 
     element = PoissonElement()
     condition = SkeletonNitscheCondition(element.u, patch, cell_types,
-                                     square_sides(), lambda x: x @ GRADIENT,
-                                     40.)
+                                         square_sides(),
+                                         lambda x: x @ GRADIENT, 40.)
     ghost = GhostPenalty(element.u, patch, cell_types, .1)
-    u = solve(element, space, quadrature, np.zeros(quadrature.num_points),
-              cell_weights=fractions, conditions=[condition],
-              stabilizations=[ghost])
+    u = LinearProblem(element, space, quadrature,
+                      np.zeros(quadrature.num_points), cell_weights=fractions,
+                      conditions=[condition], stabilizations=[ghost],
+                      petsc_options_prefix='skeleton_').solve()
 
     # Exact to round-off, which the conditioning of the cells the penalty
     # alone determines amplifies
@@ -227,18 +242,22 @@ def test_skeleton_nitsche_condition_steps_a_field_linear_in_time():
         quadrature.fill_gauss_legendre(cell_type, 3)
 
     element = PoissonElement()
+    condition = SkeletonNitscheCondition(element.u, patch, cell_types,
+                                         square_sides(),
+                                         lambda x: np.zeros(len(x)), 40.)
     ghost = GhostPenalty(element.u, patch, cell_types, .1)
+    problem = LinearProblem(element, space, quadrature,
+                            lambda x: x @ GRADIENT, cell_weights=fractions,
+                            conditions=[condition], stabilizations=[ghost],
+                            step=.2,
+                            petsc_options_prefix='skeleton_in_time_')
     field = space.control_points @ GRADIENT
-    u = np.zeros(space.num_dofs)
 
     # du/dt = b . x, and the Laplacian vanishes
     for time in np.arange(1, 6) / 5.:
-        condition = SkeletonNitscheCondition(
-            element.u, patch, cell_types, square_sides(),
-            lambda x, time=time: time * (x @ GRADIENT), 40.)
-        u = solve(element, space, quadrature, lambda x: x @ GRADIENT,
-                  cell_weights=fractions, conditions=[condition],
-                  stabilizations=[ghost], step=.2, previous=u)
+        condition.values = lambda x, time=time: time * (x @ GRADIENT)
+        u = problem.solve()
+        problem.previous = u
 
         assert np.abs(u - time * field).max() < 1e-9
 
@@ -304,24 +323,23 @@ def test_invalid_arguments():
         NeumannCondition(element.u, shifted, np.zeros(shifted.num_points))
 
     with pytest.raises(TypeError):
-        solve(element, space, quadrature, source, conditions=['condition'])
+        LinearProblem(element, space, quadrature, source,
+                      conditions=['condition'],
+                      petsc_options_prefix='invalid_')
 
     # The boundary must lie on the patch of the space
     other = PenaltyCondition(element.u, square_boundary(rectangle()), values,
                              1.)
 
     with pytest.raises(ValueError):
-        solve(element, space, quadrature, source, conditions=[other])
+        LinearProblem(element, space, quadrature, source, conditions=[other],
+                      petsc_options_prefix='invalid_')
 
-    # Boundaries lie in the plane, so a volume takes no conditions
-    box = iguana.create_box(lengths=(1., 1., 1.), elements=(1, 1, 1))
-    box_quadrature = QuadratureDomain(box)
-    box_quadrature.fill_gauss_legendre(CellType.inside, 3)
+    # Values set later are checked as at initialization
     condition = PenaltyCondition(element.u, boundary, values, 1.)
 
-    with pytest.raises(TypeError):
-        solve(element, FunctionSpace(box), box_quadrature,
-              np.zeros(box_quadrature.num_points), conditions=[condition])
+    with pytest.raises(ValueError):
+        condition.values = values[:-1]
 
 
 @pytest.mark.petsc
@@ -336,25 +354,25 @@ def test_invalid_skeleton_nitsche_conditions():
 
     with pytest.raises(TypeError):
         SkeletonNitscheCondition(element.u, patch.isocurves()[0], cell_types,
-                             sides, 0., 1.)
+                                 sides, 0., 1.)
 
     with pytest.raises(TypeError):
         SkeletonNitscheCondition(element.u, patch, cell_types, patch, 0., 1.)
 
     with pytest.raises(ValueError):
-        SkeletonNitscheCondition(element.u, patch, cell_types[:-1], sides, 0.,
-                             1.)
+        SkeletonNitscheCondition(element.u, patch, cell_types[:-1], sides,
+                                 0., 1.)
 
     with pytest.raises(ValueError):
         SkeletonNitscheCondition(element.u, patch, cell_types, sides, [0.], 1.)
 
     with pytest.raises(ValueError):
         SkeletonNitscheCondition(element.u, patch, cell_types, sides,
-                             lambda x: x[:, 0], 0.)
+                                 lambda x: x[:, 0], 0.)
 
     with pytest.raises(ValueError):
         SkeletonNitscheCondition(element.u, patch, cell_types, sides,
-                             lambda x: x[:, 0], 1., order=-1)
+                                 lambda x: x[:, 0], 1., order=-1)
 
     # The map of the patch must be affine
     bent = patch.control_points.copy()
@@ -364,22 +382,28 @@ def test_invalid_skeleton_nitsche_conditions():
 
     with pytest.raises(ValueError):
         SkeletonNitscheCondition(element.u, curved, cell_types, sides,
-                             lambda x: x[:, 0], 1.)
+                                 lambda x: x[:, 0], 1.)
 
-    # The solve gives the condition the weights of the cells, which it
+    # A problem gives the condition the weights of the cells, which it
     # needs, and its faces must lie on the patch of the space
     space = FunctionSpace(patch, [CellType.inside] * len(cell_types))
     quadrature = QuadratureDomain(patch)
     quadrature.fill_gauss_legendre(CellType.inside, 3)
     source = np.zeros(quadrature.num_points)
     condition = SkeletonNitscheCondition(element.u, patch, cell_types, sides,
-                                     lambda x: x[:, 0], 1.)
-    other = SkeletonNitscheCondition(element.u, rectangle(), cell_types, sides,
-                                 lambda x: x[:, 0], 1.)
+                                         lambda x: x[:, 0], 1.)
+    other = SkeletonNitscheCondition(element.u, rectangle(), cell_types,
+                                     sides, lambda x: x[:, 0], 1.)
 
     with pytest.raises(ValueError):
-        solve(element, space, quadrature, source, conditions=[condition])
+        LinearProblem(element, space, quadrature, source,
+                      conditions=[condition], petsc_options_prefix='invalid_')
 
     with pytest.raises(ValueError):
-        solve(element, space, quadrature, source, cell_weights=fractions,
-              conditions=[other])
+        LinearProblem(element, space, quadrature, source,
+                      cell_weights=fractions, conditions=[other],
+                      petsc_options_prefix='invalid_')
+
+    # Values set later are checked as at initialization
+    with pytest.raises(ValueError):
+        condition.values = [0.]

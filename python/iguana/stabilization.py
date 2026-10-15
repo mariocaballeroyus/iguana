@@ -7,7 +7,7 @@ A stabilization prescribes no data: it vanishes on the exact solution and
 controls the field where the problem alone leaves it loose. The ghost
 penalty extends the field smoothly across the faces of the cells beyond the
 physical domain, so that a space keeping every function of the background
-patch stays determined. The solve assembles it with the element.
+patch stays determined. A problem assembles it with the element.
 """
 
 from __future__ import annotations

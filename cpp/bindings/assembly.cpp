@@ -21,7 +21,6 @@ namespace
 using Trace2d = Trace<TensorBSpline<double, 2>, 2>;
 using Flux2d = Flux<TensorBSpline<double, 2>, 2>;
 using PoissonElement2d = PoissonElement<TensorBSpline<double, 2>, 2>;
-using PoissonElement3d = PoissonElement<TensorBSpline<double, 3>, 3>;
 using PenaltyCondition2d = PenaltyCondition<TensorBSpline<double, 2>, 2>;
 using NeumannCondition2d = NeumannCondition<TensorBSpline<double, 2>, 2>;
 using NitscheCondition2d = NitscheCondition<TensorBSpline<double, 2>, 2>;
@@ -33,7 +32,6 @@ using BoundaryProjection2d = BoundaryProjection<double>;
 using QuadratureBoundary2d = QuadratureBoundary<double, 2>;
 using QuadratureSkeleton2d = QuadratureSkeleton<double, 2>;
 using Assembler2d = Assembler<TensorBSpline<double, 2>, 2>;
-using Assembler3d = Assembler<TensorBSpline<double, 3>, 3>;
 
 /// @brief Assembly of a ghost penalty over faces, the one overload of
 ///        assemble_stiffness that is not a template
@@ -57,9 +55,6 @@ void assembly(py::module_& module)
         .def(py::init<>());
 
     py::class_<PoissonElement2d::Q, Flux2d>(poisson_element_2d, "Q")
-        .def(py::init<>());
-
-    py::class_<PoissonElement3d>(module, "PoissonElement3d")
         .def(py::init<>());
 
     // A condition keeps a reference to its trace, which Python keeps alive
@@ -88,7 +83,7 @@ void assembly(py::module_& module)
 
     // An assembler keeps references to its space and patch, which Python
     // keeps alive with it, and shares its PETSc system with Python through
-    // petsc4py. The wrapper of the solve drives it
+    // petsc4py. The problems of iguana.petsc drive it
     py::class_<Assembler2d>(module, "Assembler2d")
         .def(py::init<const FunctionSpace<TensorBSpline<double, 2>>&,
                       const Patch<TensorBSpline<double, 2>, 2>&, bool>(),
@@ -232,54 +227,6 @@ void assembly(py::module_& module)
         .def_property_readonly("stiffness", &Assembler2d::stiffness)
         .def_property_readonly("mass", &Assembler2d::mass)
         .def_property_readonly("load", &Assembler2d::load);
-
-    py::class_<Assembler3d>(module, "Assembler3d")
-        .def(py::init<const FunctionSpace<TensorBSpline<double, 3>>&,
-                      const Patch<TensorBSpline<double, 3>, 3>&>(),
-             py::arg("space"), py::arg("patch"), py::keep_alive<1, 2>(),
-             py::keep_alive<1, 3>())
-        .def("assemble_stiffness",
-             py::overload_cast<const PoissonElement3d&,
-                               const QuadratureDomain<double, 3>&>(
-                 &Assembler3d::assemble_stiffness<PoissonElement3d>),
-             py::arg("element"), py::arg("quadrature"))
-        .def("assemble_load",
-             py::overload_cast<const PoissonElement3d&,
-                               const QuadratureDomain<double, 3>&,
-                               const Eigen::VectorXd&>(
-                 &Assembler3d::assemble_load<PoissonElement3d>),
-             py::arg("element"), py::arg("quadrature"), py::arg("source"))
-        .def("assemble_stiffness",
-             py::overload_cast<const PoissonElement3d&,
-                               const QuadratureDomain<double, 3>&,
-                               const Eigen::VectorXd&>(
-                 &Assembler3d::assemble_stiffness<PoissonElement3d>),
-             py::arg("element"), py::arg("quadrature"),
-             py::arg("cell_weights"))
-        .def("assemble_load",
-             py::overload_cast<const PoissonElement3d&,
-                               const QuadratureDomain<double, 3>&,
-                               const Eigen::VectorXd&,
-                               const Eigen::VectorXd&>(
-                 &Assembler3d::assemble_load<PoissonElement3d>),
-             py::arg("element"), py::arg("quadrature"), py::arg("source"),
-             py::arg("cell_weights"))
-        .def("assemble_mass",
-             py::overload_cast<const PoissonElement3d&,
-                               const QuadratureDomain<double, 3>&>(
-                 &Assembler3d::assemble_mass<PoissonElement3d>),
-             py::arg("element"), py::arg("quadrature"))
-        .def("assemble_mass",
-             py::overload_cast<const PoissonElement3d&,
-                               const QuadratureDomain<double, 3>&,
-                               const Eigen::VectorXd&>(
-                 &Assembler3d::assemble_mass<PoissonElement3d>),
-             py::arg("element"), py::arg("quadrature"),
-             py::arg("cell_weights"))
-        .def("clear", &Assembler3d::clear)
-        .def_property_readonly("stiffness", &Assembler3d::stiffness)
-        .def_property_readonly("mass", &Assembler3d::mass)
-        .def_property_readonly("load", &Assembler3d::load);
 }
 
 } // namespace iguana::bindings

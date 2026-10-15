@@ -4,7 +4,8 @@
 """IGUANA: Immersogeometric framework for boundary-unfitted analysis
 
 The compiled classes live in iguana.cpp. This package wraps them in Python
-types that hold their C++ instance as _cpp_object
+types that hold their C++ instance as _cpp_object. The problems that solve
+with PETSc live in iguana.petsc, which needs a build with PETSc
 """
 
 from iguana import cpp
@@ -19,7 +20,6 @@ from iguana.patch import (CurvePatch, PlanarPatch, SurfacePatch, VolumePatch,
                           create_box, create_curve, create_rectangle,
                           create_surface)
 from iguana.quadrature import QuadratureBoundary, QuadratureDomain
-from iguana.solver import solve
 from iguana.stabilization import GhostPenalty
 
 __version__ = cpp.__version__
@@ -30,4 +30,4 @@ __all__ = ['Boundary', 'CellType', 'CurvePatch', 'FunctionSpace',
            'PoissonElement', 'QuadratureBoundary', 'QuadratureDomain',
            'SkeletonNitscheCondition', 'SurfacePatch', 'SurrogateBoundary',
            'VolumePatch', 'classify_cells', 'create_box', 'create_curve',
-           'create_rectangle', 'create_surface', 'solve']
+           'create_rectangle', 'create_surface']

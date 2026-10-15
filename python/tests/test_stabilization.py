@@ -9,8 +9,13 @@ import pytest
 import iguana
 from iguana import (Boundary, CellType, FunctionSpace, GhostPenalty,
                     NitscheCondition, PoissonElement, QuadratureBoundary,
-                    QuadratureDomain, SurrogateBoundary, classify_cells, cpp,
-                    solve)
+                    QuadratureDomain, SurrogateBoundary, classify_cells, cpp)
+
+try:
+    from iguana.petsc import LinearProblem
+except ImportError:
+    # A build without PETSc skips the tests that solve
+    LinearProblem = None
 
 # Centre and radius of a circle off the knot lines of the rectangle three by
 # two of fourteen elements along each direction
@@ -61,8 +66,10 @@ def test_ghost_penalty_extends_a_shifted_problem():
                                  lambda x: x @ GRADIENT, 40.)
     ghost = GhostPenalty(element.u, patch, cell_types, .1)
 
-    u = solve(element, space, quadrature, np.zeros(quadrature.num_points),
-              conditions=[condition], stabilizations=[ghost])
+    u = LinearProblem(element, space, quadrature,
+                      np.zeros(quadrature.num_points), conditions=[condition],
+                      stabilizations=[ghost],
+                      petsc_options_prefix='ghost_').solve()
 
     # Exact to round-off, which the conditioning of the cells the penalty
     # alone determines amplifies
@@ -92,17 +99,18 @@ def test_invalid_ghost_penalties():
     source = np.zeros(quadrature.num_points)
 
     with pytest.raises(TypeError):
-        solve(element, FunctionSpace(patch), quadrature, source,
-              stabilizations=['ghost'])
+        LinearProblem(element, FunctionSpace(patch), quadrature, source,
+                      stabilizations=['ghost'],
+                      petsc_options_prefix='invalid_')
 
     # The cells must lie on the patch of the space
     other = GhostPenalty(element.u, rectangle(), cell_types, 1.)
 
     with pytest.raises(ValueError):
-        solve(element, FunctionSpace(patch), quadrature, source,
-              stabilizations=[other])
+        LinearProblem(element, FunctionSpace(patch), quadrature, source,
+                      stabilizations=[other], petsc_options_prefix='invalid_')
 
-    # The map of the patch must be affine
+    # The map of the patch must be affine, which the assembly checks
     bent = patch.control_points.copy()
     bent[20, 1] += .1
     curved = iguana.PlanarPatch(cpp.PlanarPatch(
@@ -111,15 +119,10 @@ def test_invalid_ghost_penalties():
     curved_quadrature.fill_gauss_legendre(CellType.inside, 3)
     ghost = GhostPenalty(element.u, curved, cell_types, 1.)
 
+    problem = LinearProblem(element, FunctionSpace(curved), curved_quadrature,
+                            np.zeros(curved_quadrature.num_points),
+                            stabilizations=[ghost],
+                            petsc_options_prefix='invalid_')
+
     with pytest.raises(ValueError):
-        solve(element, FunctionSpace(curved), curved_quadrature,
-              np.zeros(curved_quadrature.num_points), stabilizations=[ghost])
-
-    # Faces between cells lie in the plane, so a volume takes none
-    box = iguana.create_box(lengths=(1., 1., 1.), elements=(1, 1, 1))
-    box_quadrature = QuadratureDomain(box)
-    box_quadrature.fill_gauss_legendre(CellType.inside, 3)
-
-    with pytest.raises(TypeError):
-        solve(element, FunctionSpace(box), box_quadrature,
-              np.zeros(box_quadrature.num_points), stabilizations=[ghost])
+        problem.solve()

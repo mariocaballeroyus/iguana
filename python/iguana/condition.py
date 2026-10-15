@@ -9,8 +9,8 @@ consistently through the flux conjugate to the trace, and a Neumann
 condition loads the trace of the test functions with natural data, such as
 a flux. Nitsche's method on faces imposes them across the faces of the cells
 where their weights jump, as the generalized shifted boundary method does.
-It holds its data and where it applies, and the solve assembles it with the
-element.
+It holds its data and where it applies, and a problem assembles it with the
+element. Its values can change between solves, as in a time loop.
 """
 
 from __future__ import annotations
@@ -77,7 +77,7 @@ class PenaltyCondition:
         if not isinstance(quadrature, QuadratureBoundary):
             raise TypeError('the quadrature must be a boundary quadrature')
 
-        values = _values(quadrature, values)
+        values = _values(quadrature.projections, values)
 
         if not penalty > 0.:
             raise ValueError('the penalty must be positive')
@@ -100,8 +100,17 @@ class PenaltyCondition:
     @property
     def values(self) -> npt.NDArray[np.float64]:
         """Value imposed at each point of the quadrature, of shape
-        `(num_points,)`."""
+        `(num_points,)`. It is set as at initialization, by its values or
+        by a function of the points where they apply."""
         return self._values.copy()
+
+    @values.setter
+    def values(
+        self,
+        values: (npt.ArrayLike
+                 | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
+    ) -> None:
+        self._values = _values(self._quadrature.projections, values)
 
     @property
     def penalty(self) -> float:
@@ -170,7 +179,7 @@ class NitscheCondition:
         if not isinstance(quadrature, QuadratureBoundary):
             raise TypeError('the quadrature must be a boundary quadrature')
 
-        values = _values(quadrature, values)
+        values = _values(quadrature.projections, values)
 
         if not penalty > 0.:
             raise ValueError('the penalty must be positive')
@@ -193,8 +202,17 @@ class NitscheCondition:
     @property
     def values(self) -> npt.NDArray[np.float64]:
         """Value imposed at each point of the quadrature, of shape
-        `(num_points,)`."""
+        `(num_points,)`. It is set as at initialization, by its values or
+        by a function of the points where they apply."""
         return self._values.copy()
+
+    @values.setter
+    def values(
+        self,
+        values: (npt.ArrayLike
+                 | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
+    ) -> None:
+        self._values = _values(self._quadrature.projections, values)
 
     @property
     def penalty(self) -> float:
@@ -259,7 +277,7 @@ class NeumannCondition:
 
         self._trace = trace
         self._quadrature = quadrature
-        self._values = _values(quadrature, values)
+        self._values = _values(quadrature.positions, values)
 
     @property
     def trace(self) -> PoissonElement.U:
@@ -273,9 +291,18 @@ class NeumannCondition:
 
     @property
     def values(self) -> npt.NDArray[np.float64]:
-        """Data at each point of the quadrature, of shape
-        `(num_points,)`."""
+        """Data at each point of the quadrature, of shape `(num_points,)`.
+        It is set as at initialization, by its values or by a function of
+        the positions of the points."""
         return self._values.copy()
+
+    @values.setter
+    def values(
+        self,
+        values: (npt.ArrayLike
+                 | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
+    ) -> None:
+        self._values = _values(self._quadrature.positions, values)
 
     def _assemble(self, assembler: _cpp.Assembler2d) -> None:
         """Add the load of the condition into the compiled assembler of a
@@ -307,7 +334,7 @@ class SkeletonNitscheCondition:
         """Initialize the condition imposing values on a trace.
 
         The condition acts on the faces between cells whose weights, the
-        volume fractions the solve takes as `cell_weights`, may differ:
+        volume fractions a problem takes as `cell_weights`, may differ:
         those between cells of different types or between two cut cells.
         On each, the jump of the weights scales Nitsche's terms, over the
         means of the two cells weighted by them, and each cell expands its
@@ -382,13 +409,7 @@ class SkeletonNitscheCondition:
             patch=patch._cpp_object, boundary=boundary._cpp_object,
             points=quadrature.points)
 
-        if callable(values):
-            values = values(np.array(projection.positions))
-
-        values = np.asarray(values, dtype=np.float64)
-
-        if values.shape != (quadrature.num_points,):
-            raise ValueError('the values must be one per point')
+        values = _values(np.array(projection.positions), values)
 
         self._trace = trace
         self._patch = patch
@@ -416,8 +437,17 @@ class SkeletonNitscheCondition:
     @property
     def values(self) -> npt.NDArray[np.float64]:
         """Value imposed at the closest point of each face point, of shape
-        `(num_points,)`."""
+        `(num_points,)`. It is set as at initialization, by its values or
+        by a function of the closest points."""
         return self._values.copy()
+
+    @values.setter
+    def values(
+        self,
+        values: (npt.ArrayLike
+                 | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
+    ) -> None:
+        self._values = _values(np.array(self._projection.positions), values)
 
     @property
     def penalty(self) -> float:
@@ -467,19 +497,19 @@ def _assemble_along(
 
 
 def _values(
-    quadrature: QuadratureBoundary,
+    points: npt.NDArray[np.float64],
     values: (npt.ArrayLike
              | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
 ) -> npt.NDArray[np.float64]:
-    """Values of a condition at the points of a boundary quadrature, given
-    at them or as a function of the points where they apply, their closest
-    points on a shifted quadrature, checked to be one per point."""
+    """Values of a condition at the points where they apply, such as the
+    closest points of a shifted quadrature, given at them or as a function
+    of them, checked to be one per point."""
     if callable(values):
-        values = values(quadrature.projections)
+        values = values(points)
 
     values = np.asarray(values, dtype=np.float64)
 
-    if values.shape != (quadrature.num_points,):
+    if values.shape != (len(points),):
         raise ValueError('the values must be one per point')
 
     return values
