@@ -8,6 +8,7 @@
 
 #include <array>
 #include <cstddef>
+#include <utility>
 
 namespace iguana
 {
@@ -85,6 +86,39 @@ std::array<int, d> unflatten(int flat,
     }
 
     return index;
+}
+
+/**
+ * @brief Index of the second derivative along two directions, the pure ones
+ *        first, then the mixed ones in lexicographic order of their
+ *        directions: xx, yy, zz, xy, xz, yz
+ *
+ * @details The order of the Hessians of the bases, of the map and in
+ *          physical space. A pair and its reverse share one index
+ *
+ * @tparam d Number of directions
+ * @param a First direction
+ * @param b Second direction
+ * @return Index below d (d + 1) / 2
+ *
+ * @pre @p a and @p b lie in [0, d)
+ */
+template<std::size_t d>
+constexpr std::size_t pair_index(std::size_t a, std::size_t b) noexcept
+{
+    if (a == b)
+        return a;
+
+    if (a > b)
+        std::swap(a, b);
+
+    // The mixed pairs of each first direction before a, then those of a
+    std::size_t index = d;
+
+    for (std::size_t first = 0; first < a; ++first)
+        index += d - 1 - first;
+
+    return index + b - a - 1;
 }
 
 } // namespace iguana

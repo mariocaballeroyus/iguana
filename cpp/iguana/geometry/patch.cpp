@@ -233,6 +233,21 @@ void Patch<Basis, n>::tangent_on_element(
 }
 
 template<typename Basis, std::size_t n>
+void Patch<Basis, n>::second_tangent_on_element(
+    const Eigen::VectorXi& actives,
+    const std::array<Eigen::MatrixX<Scalar>, dim * (dim + 1) / 2>& hessians,
+    std::array<PointMatrix<Scalar, n>, dim * (dim + 1) / 2>& second_tangents)
+    const
+{
+    for (std::size_t pair = 0; pair < hessians.size(); ++pair) {
+        // Weight the control points of the active functions by the second
+        // derivatives of their functions along the pair
+        second_tangents[pair].noalias() =
+            hessians[pair].transpose() * coefficients_(actives, all);
+    }
+}
+
+template<typename Basis, std::size_t n>
 void Patch<Basis, n>::measure_on_element(
     const std::array<PointMatrix<Scalar, n>, dim>& tangents,
     Eigen::VectorX<Scalar>& measures)
@@ -320,6 +335,57 @@ void Patch<Basis, n>::physical_grad_on_element(
                 physical_gradients[component].col(point) +=
                     inverse(direction, component) *
                     gradients[direction].col(point);
+        }
+    }
+}
+
+template<typename Basis, std::size_t n>
+void Patch<Basis, n>::physical_hess_on_element(
+    const std::array<PointMatrix<Scalar, n>, dim>& tangents,
+    const std::array<PointMatrix<Scalar, n>, dim * (dim + 1) / 2>&
+        second_tangents,
+    const std::array<Eigen::MatrixX<Scalar>, n>& physical_gradients,
+    const std::array<Eigen::MatrixX<Scalar>, dim * (dim + 1) / 2>& hessians,
+    std::array<Eigen::MatrixX<Scalar>, n * (n + 1) / 2>& physical_hessians)
+    requires (dim == n)
+{
+    const Eigen::Index num_active = hessians[0].rows();
+    const Eigen::Index num_points = hessians[0].cols();
+
+    for (Eigen::MatrixX<Scalar>& physical : physical_hessians)
+        physical.resize(num_active, num_points);
+
+    // Second derivatives of the functions along each pair of directions,
+    // less the curvature of the map, at one point
+    std::array<Eigen::VectorX<Scalar>, dim * (dim + 1) / 2> corrected;
+
+    for (Eigen::Index point = 0; point < num_points; ++point) {
+        const Eigen::Matrix<Scalar, n, n> inverse =
+            jacobian_at<Scalar, n, dim>(tangents, point).inverse();
+
+        // ∂²N/∂ξ_a∂ξ_b − Σ_k ∂N/∂x_k ∂²x_k/∂ξ_a∂ξ_b
+        for (std::size_t pair = 0; pair < corrected.size(); ++pair) {
+            corrected[pair] = hessians[pair].col(point);
+
+            for (std::size_t coordinate = 0; coordinate < n; ++coordinate)
+                corrected[pair] -= second_tangents[pair](point, coordinate)
+                                   * physical_gradients[coordinate].col(point);
+        }
+
+        // Σ_ab (J⁻¹)_ai (J⁻¹)_bj over both orders of each mixed pair
+        for (std::size_t i = 0; i < n; ++i) {
+            for (std::size_t j = i; j < n; ++j) {
+                Eigen::MatrixX<Scalar>& physical =
+                    physical_hessians[pair_index<n>(i, j)];
+                physical.col(point).setZero();
+
+                for (std::size_t a = 0; a < dim; ++a) {
+                    for (std::size_t b = 0; b < dim; ++b)
+                        physical.col(point) +=
+                            inverse(a, i) * inverse(b, j)
+                            * corrected[pair_index<dim>(a, b)];
+                }
+            }
         }
     }
 }
