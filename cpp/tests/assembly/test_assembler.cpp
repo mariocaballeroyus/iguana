@@ -382,6 +382,42 @@ TEST_CASE("A cleared assembler assembles the same system again",
     REQUIRE((load_of(assembler) - load).cwiseAbs().maxCoeff() < 1e-12);
 }
 
+TEST_CASE("A form adds its integrals in one assembly, with its data as it "
+          "is then", "[assembler][form]")
+{
+    const Basis basis = uneven();
+    const iguana::Patch<Basis, 2> patch = rectangle(basis);
+    const CellClassification<double, 2> classification =
+        with_last_column(CellType::inside);
+    const iguana::FunctionSpace<Basis> space(basis, classification);
+    const iguana::QuadratureDomain<double, 2> quadrature =
+        inside_quadrature(basis, classification);
+    const iguana::PoissonElement<Basis, 2> element;
+
+    Eigen::VectorXd source = Eigen::VectorXd::Ones(quadrature.num_points());
+    const Eigen::VectorXd weights = Eigen::VectorXd::Constant(6, .5);
+
+    iguana::Form<Basis, 2> form;
+    form.add_domain_integral(element, quadrature, source, weights);
+    form.add_mass_integral(element, quadrature, weights);
+
+    // The form reads the source where it lies, so values set after it was
+    // built reach the assembly
+    source.setLinSpaced(0., 1.);
+
+    iguana::Assembler<Basis, 2> by_form(space, patch);
+    form.assemble(by_form);
+
+    iguana::Assembler<Basis, 2> by_terms(space, patch);
+    by_terms.assemble_stiffness(element, quadrature, weights);
+    by_terms.assemble_load(element, quadrature, source, weights);
+    by_terms.assemble_mass(element, quadrature, weights);
+
+    REQUIRE((stiffness_of(by_form) - stiffness_of(by_terms)).norm() == 0.);
+    REQUIRE((mass_of(by_form) - mass_of(by_terms)).norm() == 0.);
+    REQUIRE((load_of(by_form) - load_of(by_terms)).norm() == 0.);
+}
+
 TEST_CASE("An assembler needs one source value per point", "[assembler]")
 {
     const Basis basis = uneven();
