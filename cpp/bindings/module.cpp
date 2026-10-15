@@ -37,6 +37,10 @@ PYBIND11_MODULE(cpp, module)
     iguana::bindings::quadrature(module);
 
 #ifdef IGUANA_WITH_PETSC
+    // Importing petsc4py initializes PETSc, which the assemblers build their
+    // systems with
+    py::module_::import("petsc4py.PETSc");
+
     iguana::bindings::assembly(module);
 #endif
 }

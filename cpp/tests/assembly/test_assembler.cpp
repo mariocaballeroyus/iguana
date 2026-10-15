@@ -15,6 +15,7 @@
 #include <Eigen/SparseCore>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <petscmat.h>
 
 namespace
 {
@@ -25,6 +26,77 @@ using iguana::CellClassification;
 using iguana::KnotVector;
 using iguana::TensorGrid;
 using Basis = iguana::TensorBSpline<double, 2>;
+
+/// @brief Throws when a PETSc call fails, which fails the test
+void check(PetscErrorCode code)
+{
+    if (code != PETSC_SUCCESS)
+        throw std::runtime_error("a PETSc call failed");
+}
+
+/// @brief Entries of a PETSc matrix, the explicit zeros of its pattern
+///        included
+Eigen::SparseMatrix<double, Eigen::RowMajor> to_eigen(Mat matrix)
+{
+    PetscInt rows = 0;
+    PetscInt cols = 0;
+    check(MatGetSize(matrix, &rows, &cols));
+
+    std::vector<Eigen::Triplet<double>> entries;
+
+    for (PetscInt row = 0; row < rows; ++row) {
+        PetscInt count = 0;
+        const PetscInt* columns = nullptr;
+        const PetscScalar* values = nullptr;
+        check(MatGetRow(matrix, row, &count, &columns, &values));
+
+        for (PetscInt entry = 0; entry < count; ++entry)
+            entries.emplace_back(row, columns[entry], values[entry]);
+
+        check(MatRestoreRow(matrix, row, &count, &columns, &values));
+    }
+
+    Eigen::SparseMatrix<double, Eigen::RowMajor> result(rows, cols);
+    result.setFromTriplets(entries.begin(), entries.end());
+
+    return result;
+}
+
+/// @brief Entries of a PETSc vector
+Eigen::VectorXd to_eigen(Vec vector)
+{
+    PetscInt size = 0;
+    check(VecGetSize(vector, &size));
+
+    const PetscScalar* values = nullptr;
+    check(VecGetArrayRead(vector, &values));
+    const Eigen::VectorXd result = Eigen::Map<const Eigen::VectorXd>(values,
+                                                                     size);
+    check(VecRestoreArrayRead(vector, &values));
+
+    return result;
+}
+
+/// @brief Stiffness of an assembler, read back from PETSc
+template<typename A>
+Eigen::SparseMatrix<double, Eigen::RowMajor> stiffness_of(const A& assembler)
+{
+    return to_eigen(assembler.stiffness());
+}
+
+/// @brief Mass of an assembler, read back from PETSc
+template<typename A>
+Eigen::SparseMatrix<double, Eigen::RowMajor> mass_of(const A& assembler)
+{
+    return to_eigen(assembler.mass());
+}
+
+/// @brief Load of an assembler, read back from PETSc
+template<typename A>
+Eigen::VectorXd load_of(const A& assembler)
+{
+    return to_eigen(assembler.load());
+}
 
 /// @brief Sides of the rectangle, so that the measure of the map is not one
 constexpr double width = 2.;
@@ -228,8 +300,8 @@ TEST_CASE("The Poisson system of a rectangle integrates exactly",
     assembler.assemble_stiffness(element, quadrature);
     assembler.assemble_load(element, quadrature, source);
 
-    const Eigen::SparseMatrix<double, Eigen::RowMajor>& stiffness =
-        assembler.stiffness();
+    const Eigen::SparseMatrix<double, Eigen::RowMajor> stiffness =
+        stiffness_of(assembler);
 
     // With every cell inside, each function keeps its own index, and the
     // coefficients of b . x are b . x_i at the control points
@@ -246,7 +318,7 @@ TEST_CASE("The Poisson system of a rectangle integrates exactly",
         Eigen::VectorXd::Ones(space.dof_map().num_dofs());
 
     REQUIRE((stiffness * constant).cwiseAbs().maxCoeff() < 1e-12);
-    REQUIRE_THAT(assembler.load().sum(),
+    REQUIRE_THAT(load_of(assembler).sum(),
                  WithinRel(width * height * height / 2., 1e-12));
 }
 
@@ -273,8 +345,8 @@ TEST_CASE("The Poisson system leaves out the functions of outside cells",
     const Eigen::VectorXd constant =
         Eigen::VectorXd::Ones(space.dof_map().num_dofs());
 
-    REQUIRE((assembler.stiffness() * constant).cwiseAbs().maxCoeff() < 1e-12);
-    REQUIRE_THAT(assembler.load().sum(),
+    REQUIRE((stiffness_of(assembler) * constant).cwiseAbs().maxCoeff() < 1e-12);
+    REQUIRE_THAT(load_of(assembler).sum(),
                  WithinRel(.6 * width * height, 1e-12));
 }
 
@@ -296,18 +368,54 @@ TEST_CASE("A cleared assembler assembles the same system again",
     assembler.assemble_stiffness(element, quadrature);
     assembler.assemble_load(element, quadrature, ones);
 
-    const Eigen::MatrixXd stiffness(assembler.stiffness());
-    const Eigen::VectorXd load = assembler.load();
+    const Eigen::MatrixXd stiffness(stiffness_of(assembler));
+    const Eigen::VectorXd load = load_of(assembler);
 
     // Assembling again after clearing gives the same system, not twice it
     assembler.clear();
     assembler.assemble_stiffness(element, quadrature);
     assembler.assemble_load(element, quadrature, ones);
 
-    const Eigen::MatrixXd again(assembler.stiffness());
+    const Eigen::MatrixXd again(stiffness_of(assembler));
 
     REQUIRE((again - stiffness).cwiseAbs().maxCoeff() < 1e-12);
-    REQUIRE((assembler.load() - load).cwiseAbs().maxCoeff() < 1e-12);
+    REQUIRE((load_of(assembler) - load).cwiseAbs().maxCoeff() < 1e-12);
+}
+
+TEST_CASE("A form adds its integrals in one assembly, with its data as it "
+          "is then", "[assembler][form]")
+{
+    const Basis basis = uneven();
+    const iguana::Patch<Basis, 2> patch = rectangle(basis);
+    const CellClassification<double, 2> classification =
+        with_last_column(CellType::inside);
+    const iguana::FunctionSpace<Basis> space(basis, classification);
+    const iguana::QuadratureDomain<double, 2> quadrature =
+        inside_quadrature(basis, classification);
+    const iguana::PoissonElement<Basis, 2> element;
+
+    Eigen::VectorXd source = Eigen::VectorXd::Ones(quadrature.num_points());
+    const Eigen::VectorXd weights = Eigen::VectorXd::Constant(6, .5);
+
+    iguana::Form<Basis, 2> form;
+    form.add_domain_integral(element, quadrature, source, weights);
+    form.add_mass_integral(element, quadrature, weights);
+
+    // The form reads the source where it lies, so values set after it was
+    // built reach the assembly
+    source.setLinSpaced(0., 1.);
+
+    iguana::Assembler<Basis, 2> by_form(space, patch);
+    form.assemble(by_form);
+
+    iguana::Assembler<Basis, 2> by_terms(space, patch);
+    by_terms.assemble_stiffness(element, quadrature, weights);
+    by_terms.assemble_load(element, quadrature, source, weights);
+    by_terms.assemble_mass(element, quadrature, weights);
+
+    REQUIRE((stiffness_of(by_form) - stiffness_of(by_terms)).norm() == 0.);
+    REQUIRE((mass_of(by_form) - mass_of(by_terms)).norm() == 0.);
+    REQUIRE((load_of(by_form) - load_of(by_terms)).norm() == 0.);
 }
 
 TEST_CASE("An assembler needs one source value per point", "[assembler]")
@@ -378,8 +486,8 @@ TEST_CASE("Cell weights weight the test functions of each cell",
     // area, and so is the energy of x, whose gradient has unit length
     const Eigen::VectorXd x = patch.coefficients().col(0);
 
-    REQUIRE_THAT(assembler.load().sum(), WithinRel(weighted_area, 1e-12));
-    REQUIRE_THAT(x.dot(assembler.stiffness() * x),
+    REQUIRE_THAT(load_of(assembler).sum(), WithinRel(weighted_area, 1e-12));
+    REQUIRE_THAT(x.dot(stiffness_of(assembler) * x),
                  WithinRel(weighted_area, 1e-12));
 
     // One weight short of the cells
@@ -414,9 +522,10 @@ TEST_CASE("The mass of an element shares the pattern of the stiffness",
 
     // x^T M x is the integral of x^2 over the rectangle, into a matrix with
     // the pattern of the stiffness, faces coupled included
-    REQUIRE_THAT(x.dot(assembler.mass() * x),
+    REQUIRE_THAT(x.dot(mass_of(assembler) * x),
                  WithinRel(height * std::pow(width, 3) / 3., 1e-12));
-    REQUIRE(assembler.mass().nonZeros() == assembler.stiffness().nonZeros());
+    REQUIRE(mass_of(assembler).nonZeros()
+            == stiffness_of(assembler).nonZeros());
 
     // Weighted, each cell counts its integral of x^2 by its weight, its
     // columns spanning .2, .4 and .4 along x and its rows .7 and .3 along y
@@ -436,12 +545,13 @@ TEST_CASE("The mass of an element shares the pattern of the stiffness",
 
     assembler.clear();
 
-    REQUIRE(assembler.mass().nonZeros() == assembler.stiffness().nonZeros());
-    REQUIRE(assembler.mass().norm() == 0.);
+    REQUIRE(mass_of(assembler).nonZeros()
+            == stiffness_of(assembler).nonZeros());
+    REQUIRE(mass_of(assembler).norm() == 0.);
 
     assembler.assemble_mass(element, quadrature, cell_weights);
 
-    REQUIRE_THAT(x.dot(assembler.mass() * x), WithinRel(expected, 1e-12));
+    REQUIRE_THAT(x.dot(mass_of(assembler) * x), WithinRel(expected, 1e-12));
 
     // One weight short of the cells
     const Eigen::VectorXd short_weights = cell_weights.head(5);
@@ -487,14 +597,14 @@ TEST_CASE("A penalty on an embedded boundary imposes a field of the space",
     const Eigen::VectorXd constant =
         Eigen::VectorXd::Ones(space.dof_map().num_dofs());
 
-    REQUIRE_THAT(constant.dot(assembler.stiffness() * constant),
+    REQUIRE_THAT(constant.dot(stiffness_of(assembler) * constant),
                  WithinRel(penalty * perimeter, 1e-12));
 
     // With every cell inside, each function keeps its own index, and the
     // space holds b . x, which the penalty imposes consistently
     const Eigen::VectorXd u = patch.coefficients() * b;
 
-    REQUIRE((assembler.stiffness() * u - assembler.load()).cwiseAbs()
+    REQUIRE((stiffness_of(assembler) * u - load_of(assembler)).cwiseAbs()
                 .maxCoeff() < 1e-12);
 
     REQUIRE_THROWS_AS(assembler.assemble_load(condition, quadrature,
@@ -529,7 +639,7 @@ TEST_CASE("A Neumann condition loads a trace with data along a boundary",
     assembler.assemble_load(condition, quadrature, data);
 
     // The data is known, so the stiffness stays zero
-    REQUIRE(assembler.stiffness().norm() == 0.);
+    REQUIRE(stiffness_of(assembler).norm() == 0.);
 
     // The functions sum to one, so the load sums to the integral of b . x
     // along the boundary, linear on each side: its length times the value
@@ -543,7 +653,7 @@ TEST_CASE("A Neumann condition loads a trace with data along a boundary",
         integral += (to - from).norm() * (from + to).dot(b) / 2.;
     }
 
-    REQUIRE_THAT(assembler.load().sum(), WithinRel(integral, 1e-12));
+    REQUIRE_THAT(load_of(assembler).sum(), WithinRel(integral, 1e-12));
 }
 
 TEST_CASE("A shifted penalty imposes a field of the space from its closest "
@@ -597,7 +707,7 @@ TEST_CASE("A shifted penalty imposes a field of the space from its closest "
     assembler.assemble_stiffness(condition, quadrature, projection, 2);
     assembler.assemble_load(condition, quadrature, projection, 2, data);
 
-    REQUIRE((assembler.stiffness() * u - assembler.load()).cwiseAbs()
+    REQUIRE((stiffness_of(assembler) * u - load_of(assembler)).cwiseAbs()
                 .maxCoeff() < 1e-12);
 
     // Without the shift, the data is imposed a distance away from where it
@@ -606,7 +716,7 @@ TEST_CASE("A shifted penalty imposes a field of the space from its closest "
     assembler.assemble_stiffness(condition, quadrature);
     assembler.assemble_load(condition, quadrature, data);
 
-    REQUIRE((assembler.stiffness() * u - assembler.load()).cwiseAbs()
+    REQUIRE((stiffness_of(assembler) * u - load_of(assembler)).cwiseAbs()
                 .maxCoeff() > 1e-2);
 }
 
@@ -675,9 +785,9 @@ TEST_CASE("A shifted Nitsche condition imposes a field of the space "
         assembler.assemble_stiffness(condition, quadrature, projection, 2);
         assembler.assemble_load(condition, quadrature, projection, 2, data);
 
-        REQUIRE((assembler.stiffness() * u - assembler.load()).cwiseAbs()
+        REQUIRE((stiffness_of(assembler) * u - load_of(assembler)).cwiseAbs()
                     .maxCoeff() < 1e-12 * penalty);
-        REQUIRE_THAT(constant.dot(assembler.stiffness() * constant),
+        REQUIRE_THAT(constant.dot(stiffness_of(assembler) * constant),
                      WithinRel(penalty * 2. * (.8 + 2.1) / std::sqrt(.8 * 2.1),
                                1e-12));
     }
@@ -690,7 +800,7 @@ TEST_CASE("A shifted Nitsche condition imposes a field of the space "
     assembler.assemble_stiffness(penalty, quadrature, projection, 2);
     assembler.assemble_load(penalty, quadrature, projection, 2, data);
 
-    REQUIRE((assembler.stiffness() * u - assembler.load()).cwiseAbs()
+    REQUIRE((stiffness_of(assembler) * u - load_of(assembler)).cwiseAbs()
                 .maxCoeff() > 1e-2);
 
     REQUIRE_THROWS_AS((iguana::NitscheCondition<Basis, 2>(trace, flux, 0.)),
@@ -722,14 +832,14 @@ TEST_CASE("A ghost penalty penalizes the jumps of the highest derivatives "
     const iguana::SkeletonGhostPenalty<Basis, 2> ghost(trace, penalty);
 
     iguana::Assembler<Basis, 2> assembler(space, patch, true);
-    const Eigen::Index entries = assembler.stiffness().nonZeros();
+    const Eigen::Index entries = stiffness_of(assembler).nonZeros();
     assembler.assemble_stiffness(ghost, quadrature);
 
     // The faces were coupled beforehand, so the pattern holds
-    REQUIRE(assembler.stiffness().nonZeros() == entries);
+    REQUIRE(stiffness_of(assembler).nonZeros() == entries);
 
-    const Eigen::SparseMatrix<double, Eigen::RowMajor>& stiffness =
-        assembler.stiffness();
+    const Eigen::SparseMatrix<double, Eigen::RowMajor> stiffness =
+        stiffness_of(assembler);
 
     // xi^3 eta^2 is one polynomial across every face, so it has no jumps
     const Eigen::VectorXd xs = truncated_power(along_x, 0.);
@@ -886,14 +996,14 @@ TEST_CASE("Skeleton Nitsche conditions with binary weights are Nitsche "
 
     // The jump selects the inside cell of every face of the surrogate
     // boundary, whichever side it lies on, and with it its normal
-    const Eigen::MatrixXd stiffness = on_surrogate.stiffness().toDense();
+    const Eigen::MatrixXd stiffness = stiffness_of(on_surrogate).toDense();
     const Eigen::MatrixXd difference =
-        (on_surrogate.stiffness() - on_faces.stiffness()).toDense();
+        (stiffness_of(on_surrogate) - stiffness_of(on_faces)).toDense();
 
     REQUIRE(difference.cwiseAbs().maxCoeff()
             < 1e-12 * stiffness.cwiseAbs().maxCoeff());
-    REQUIRE((on_surrogate.load() - on_faces.load()).cwiseAbs().maxCoeff()
-            < 1e-12 * on_surrogate.load().cwiseAbs().maxCoeff());
+    REQUIRE((load_of(on_surrogate) - load_of(on_faces)).cwiseAbs().maxCoeff()
+            < 1e-12 * load_of(on_surrogate).cwiseAbs().maxCoeff());
 }
 
 TEST_CASE("A linear field solves the weighted problem with Nitsche "
@@ -955,9 +1065,9 @@ TEST_CASE("A linear field solves the weighted problem with Nitsche "
     // each function keeps its own index
     const Eigen::VectorXd u = patch.coefficients() * b;
 
-    REQUIRE((assembler.stiffness() * u - assembler.load()).cwiseAbs()
+    REQUIRE((stiffness_of(assembler) * u - load_of(assembler)).cwiseAbs()
                 .maxCoeff()
-            < 1e-12 * assembler.load().cwiseAbs().maxCoeff());
+            < 1e-12 * load_of(assembler).cwiseAbs().maxCoeff());
 }
 
 TEST_CASE("Skeleton conditions need coupled faces, one weight per cell and a "

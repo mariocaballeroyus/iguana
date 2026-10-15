@@ -4,7 +4,7 @@
 """Elements, the physics of a problem on the elements of a patch
 
 An element states the problem to solve. It holds the physics alone, so that
-one element serves any space, and the solve builds the compiled element that
+one element serves any space, and a problem builds the compiled element that
 matches the patch of the space.
 """
 
@@ -14,8 +14,8 @@ from iguana import cpp as _cpp
 
 
 class PoissonElement:
-    """Element of the Poisson problem, -Δu = f, on a planar or volume
-    patch. Its only trace is the field u, the flux being natural."""
+    """Element of the Poisson problem, −Δu = f, on a planar patch. Its only
+    trace is the field u, the flux being natural."""
 
     class U:
         """Trace of the field u of the Poisson problem, on which a condition
@@ -39,13 +39,10 @@ class PoissonElement:
         """Trace of the field u, on which a condition imposes values."""
         return PoissonElement.U()
 
-    def _cpp_element(self, dimension: int) -> (_cpp.PoissonElement2d
-                                               | _cpp.PoissonElement3d):
-        """The compiled element for a patch of two or three directions."""
-        if dimension == 2:
-            return _cpp.PoissonElement2d()
-
-        return _cpp.PoissonElement3d()
+    def _cpp_element(self) -> _cpp.PoissonElement2d:
+        """The compiled element, on a planar patch, the only one problems
+        lie on so far."""
+        return _cpp.PoissonElement2d()
 
     def __repr__(self) -> str:
         return 'PoissonElement()'

@@ -8,9 +8,13 @@
 #include <array>
 #include <concepts>
 #include <cstddef>
+#include <initializer_list>
 #include <span>
 #include <stdexcept>
+#include <string>
 #include <vector>
+
+#include <Eigen/SparseCore>
 
 #include "iguana/assembly/element_values.hpp"
 #include "iguana/basis/tensor_bspline.hpp"
@@ -27,6 +31,23 @@ namespace iguana
 
 namespace
 {
+
+/**
+ * @brief Checks the error code of a PETSc call, as this build of PETSc has
+ *        no C++ error handler of its own
+ *
+ * @throws std::runtime_error With the message of PETSc if the call failed
+ */
+void check_petsc(PetscErrorCode code)
+{
+    if (code == PETSC_SUCCESS)
+        return;
+
+    const char* message = nullptr;
+    static_cast<void>(PetscErrorMessage(code, &message, nullptr));
+
+    throw std::runtime_error(std::string("Assembler: ") + message);
+}
 
 /**
  * @brief Expands the values at the points of one element or face towards
@@ -155,10 +176,40 @@ Assembler<Basis, n>::Assembler(const FunctionSpace<Basis>& space,
         }
     }
 
-    stiffness_.resize(num_dofs, num_dofs);
-    stiffness_.setFromTriplets(entries.begin(), entries.end());
-    mass_ = stiffness_;
-    load_.setZero(num_dofs);
+    Eigen::SparseMatrix<Scalar, Eigen::RowMajor> pattern(num_dofs, num_dofs);
+    pattern.setFromTriplets(entries.begin(), entries.end());
+
+    // The compressed rows of the pattern preallocate the stiffness, its
+    // explicit zeros the only entries a write may reach
+    check_petsc(MatCreate(PETSC_COMM_SELF, &stiffness_));
+    check_petsc(MatSetSizes(stiffness_, num_dofs, num_dofs, num_dofs,
+                            num_dofs));
+    check_petsc(MatSetType(stiffness_, MATSEQAIJ));
+    check_petsc(MatSeqAIJSetPreallocationCSR(
+        stiffness_, pattern.outerIndexPtr(), pattern.innerIndexPtr(),
+        nullptr));
+
+    // The mass shares the pattern, and both read local matrices by columns,
+    // as Eigen stores them, and refuse entries outside the pattern
+    check_petsc(MatDuplicate(stiffness_, MAT_SHARE_NONZERO_PATTERN, &mass_));
+
+    for (Mat matrix : {stiffness_, mass_}) {
+        check_petsc(MatSetOption(matrix, MAT_ROW_ORIENTED, PETSC_FALSE));
+        check_petsc(MatSetOption(matrix, MAT_NEW_NONZERO_ALLOCATION_ERR,
+                                 PETSC_TRUE));
+    }
+
+    check_petsc(VecCreateSeq(PETSC_COMM_SELF, num_dofs, &load_));
+    check_petsc(VecZeroEntries(load_));
+}
+
+template<typename Basis, std::size_t n>
+Assembler<Basis, n>::~Assembler()
+{
+    // A destructor must not throw, so a failure is left to PETSc to report
+    static_cast<void>(MatDestroy(&mass_));
+    static_cast<void>(MatDestroy(&stiffness_));
+    static_cast<void>(VecDestroy(&load_));
 }
 
 template<typename Basis, std::size_t n>
@@ -212,6 +263,8 @@ void Assembler<Basis, n>::assemble_stiffness(
         add_to_matrix(stiffness_, space_.dof_map().dofs_on_element(cell),
                       local);
     }
+
+    finalize();
 }
 
 template<typename Basis, std::size_t n>
@@ -272,6 +325,8 @@ void Assembler<Basis, n>::assemble_load(
         element.local_load(values, weights, sources, local);
         add_to_load(space_.dof_map().dofs_on_element(cell), local);
     }
+
+    finalize();
 }
 
 template<typename Basis, std::size_t n>
@@ -324,6 +379,8 @@ void Assembler<Basis, n>::assemble_mass(
         element.local_mass(values, weights, local);
         add_to_matrix(mass_, space_.dof_map().dofs_on_element(cell), local);
     }
+
+    finalize();
 }
 
 template<typename Basis, std::size_t n>
@@ -401,6 +458,8 @@ void Assembler<Basis, n>::add_condition_stiffness(
         add_to_matrix(stiffness_, space_.dof_map().dofs_on_element(cell),
                       local);
     }
+
+    finalize();
 }
 
 template<typename Basis, std::size_t n>
@@ -485,6 +544,8 @@ void Assembler<Basis, n>::add_condition_load(
                              imposed, local);
         add_to_load(space_.dof_map().dofs_on_element(cell), local);
     }
+
+    finalize();
 }
 
 template<typename Basis, std::size_t n>
@@ -542,6 +603,8 @@ void Assembler<Basis, n>::assemble_stiffness(
         face_dofs(cell_before, cell_after, dofs);
         add_to_matrix(stiffness_, dofs, local);
     }
+
+    finalize();
 }
 
 template<typename Basis, std::size_t n>
@@ -650,6 +713,8 @@ void Assembler<Basis, n>::add_skeleton_condition_stiffness(
         face_dofs(cell_before, cell_after, dofs);
         add_to_matrix(stiffness_, dofs, local);
     }
+
+    finalize();
 }
 
 template<typename Basis, std::size_t n>
@@ -766,18 +831,20 @@ void Assembler<Basis, n>::add_skeleton_condition_load(
         face_dofs(cell_before, cell_after, dofs);
         add_to_load(dofs, local);
     }
+
+    finalize();
 }
 
 template<typename Basis, std::size_t n>
-void Assembler<Basis, n>::add_to_matrix(
-    Eigen::SparseMatrix<Scalar, Eigen::RowMajor>& matrix,
-    std::span<const int> dofs, const Eigen::MatrixX<Scalar>& local)
+void Assembler<Basis, n>::add_to_matrix(Mat matrix,
+                                        std::span<const int> dofs,
+                                        const Eigen::MatrixX<Scalar>& local)
 {
-    // The k-th degree of freedom pairs with row k
-    for (std::size_t row = 0; row < dofs.size(); ++row) {
-        for (std::size_t col = 0; col < dofs.size(); ++col)
-            matrix.coeffRef(dofs[row], dofs[col]) += local(row, col);
-    }
+    // The k-th degree of freedom pairs with row and column k
+    const PetscInt count = static_cast<PetscInt>(dofs.size());
+
+    check_petsc(MatSetValues(matrix, count, dofs.data(), count, dofs.data(),
+                             local.data(), ADD_VALUES));
 }
 
 template<typename Basis, std::size_t n>
@@ -785,8 +852,22 @@ void Assembler<Basis, n>::add_to_load(std::span<const int> dofs,
                                       const Eigen::VectorX<Scalar>& local)
 {
     // The k-th degree of freedom pairs with row k
-    for (std::size_t row = 0; row < dofs.size(); ++row)
-        load_(dofs[row]) += local(row);
+    const PetscInt count = static_cast<PetscInt>(dofs.size());
+
+    check_petsc(VecSetValues(load_, count, dofs.data(), local.data(),
+                             ADD_VALUES));
+}
+
+template<typename Basis, std::size_t n>
+void Assembler<Basis, n>::finalize()
+{
+    for (Mat matrix : {stiffness_, mass_}) {
+        check_petsc(MatAssemblyBegin(matrix, MAT_FINAL_ASSEMBLY));
+        check_petsc(MatAssemblyEnd(matrix, MAT_FINAL_ASSEMBLY));
+    }
+
+    check_petsc(VecAssemblyBegin(load_));
+    check_petsc(VecAssemblyEnd(load_));
 }
 
 template<typename Basis, std::size_t n>
@@ -806,9 +887,9 @@ template<typename Basis, std::size_t n>
 void Assembler<Basis, n>::clear()
 {
     // Only the stored values, so that the pattern stays
-    stiffness_.coeffs().setZero();
-    mass_.coeffs().setZero();
-    load_.setZero();
+    check_petsc(MatZeroEntries(stiffness_));
+    check_petsc(MatZeroEntries(mass_));
+    check_petsc(VecZeroEntries(load_));
 }
 
 template class Assembler<TensorBSpline<double, 2>, 2>;

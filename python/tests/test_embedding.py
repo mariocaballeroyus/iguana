@@ -10,8 +10,13 @@ import pytest
 import iguana
 from iguana import (Boundary, CellType, FunctionSpace, GhostPenalty,
                     NitscheCondition, PoissonElement, QuadratureBoundary,
-                    QuadratureDomain, SurrogateBoundary, classify_cells, cpp,
-                    solve)
+                    QuadratureDomain, SurrogateBoundary, classify_cells, cpp)
+
+try:
+    from iguana.petsc import LinearProblem
+except ImportError:
+    # A build without PETSc skips the tests that solve
+    LinearProblem = None
 
 # Centre and radius of a circle off the knot lines of the rectangle three by
 # two of fourteen elements along each direction
@@ -177,8 +182,9 @@ def test_classified_cells_solve_a_shifted_problem():
     gradient = np.array([1., -2.])
     condition = NitscheCondition(element.u, boundary, lambda x: x @ gradient,
                                  40.)
-    u = solve(element, space, quadrature, np.zeros(quadrature.num_points),
-              conditions=[condition])
+    u = LinearProblem(element, space, quadrature,
+                      np.zeros(quadrature.num_points), conditions=[condition],
+                      petsc_options_prefix='classified_').solve()
 
     assert np.abs(u - space.control_points @ gradient).max() < 1e-10
 
@@ -206,16 +212,19 @@ def test_binary_cell_weights_reduce_to_the_shifted_problem():
 
     inside = QuadratureDomain(patch, cell_types)
     inside.fill_gauss_legendre(CellType.inside, 3)
-    shifted = solve(element, space, inside, np.ones(inside.num_points),
-                    conditions=conditions, stabilizations=stabilizations)
+    shifted = LinearProblem(element, space, inside,
+                            np.ones(inside.num_points), conditions=conditions,
+                            stabilizations=stabilizations,
+                            petsc_options_prefix='shifted_').solve()
 
     every = QuadratureDomain(patch, cell_types)
     every.fill_gauss_legendre(CellType.inside, 3)
     every.fill_gauss_legendre(CellType.outside, 3)
     weights = [1. if cell == CellType.inside else 0. for cell in cell_types]
-    weighted = solve(element, space, every, np.ones(every.num_points),
-                     cell_weights=weights, conditions=conditions,
-                     stabilizations=stabilizations)
+    weighted = LinearProblem(element, space, every, np.ones(every.num_points),
+                             cell_weights=weights, conditions=conditions,
+                             stabilizations=stabilizations,
+                             petsc_options_prefix='weighted_').solve()
 
     assert np.abs(weighted - shifted).max() < 1e-12
 

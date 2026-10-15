@@ -9,8 +9,8 @@ consistently through the flux conjugate to the trace, and a Neumann
 condition loads the trace of the test functions with natural data, such as
 a flux. Nitsche's method on faces imposes them across the faces of the cells
 where their weights jump, as the generalized shifted boundary method does.
-It holds its data and where it applies, and the solve assembles it with the
-element.
+It holds its data and where it applies, and a problem assembles it with the
+element. Its values can change between solves, as in a time loop.
 """
 
 from __future__ import annotations
@@ -77,7 +77,7 @@ class PenaltyCondition:
         if not isinstance(quadrature, QuadratureBoundary):
             raise TypeError('the quadrature must be a boundary quadrature')
 
-        values = _values(quadrature, values)
+        values = _values(quadrature.projections, values)
 
         if not penalty > 0.:
             raise ValueError('the penalty must be positive')
@@ -100,20 +100,29 @@ class PenaltyCondition:
     @property
     def values(self) -> npt.NDArray[np.float64]:
         """Value imposed at each point of the quadrature, of shape
-        `(num_points,)`."""
+        `(num_points,)`. It is set as at initialization, by its values or
+        by a function of the points where they apply."""
         return self._values.copy()
+
+    @values.setter
+    def values(
+        self,
+        values: (npt.ArrayLike
+                 | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
+    ) -> None:
+        self._values[...] = _values(self._quadrature.projections, values)
 
     @property
     def penalty(self) -> float:
         """The penalty."""
         return self._penalty
 
-    def _assemble(self, assembler: _cpp.Assembler2d) -> None:
-        """Add the stiffness and load of the condition into the compiled
-        assembler of a planar space."""
+    def _add_to(self, form: _cpp.Form2d) -> None:
+        """Add the integral of the condition to the compiled form of a
+        planar problem, which reads its values where they lie."""
         condition = _cpp.PenaltyCondition2d(self._trace._cpp_trace(),
                                             self._penalty)
-        _assemble_along(assembler, condition, self._quadrature, self._values)
+        _add_along(form, condition, self._quadrature, self._values)
 
     def __repr__(self) -> str:
         return f'PenaltyCondition({self._trace!r}, penalty={self._penalty})'
@@ -170,7 +179,7 @@ class NitscheCondition:
         if not isinstance(quadrature, QuadratureBoundary):
             raise TypeError('the quadrature must be a boundary quadrature')
 
-        values = _values(quadrature, values)
+        values = _values(quadrature.projections, values)
 
         if not penalty > 0.:
             raise ValueError('the penalty must be positive')
@@ -193,21 +202,30 @@ class NitscheCondition:
     @property
     def values(self) -> npt.NDArray[np.float64]:
         """Value imposed at each point of the quadrature, of shape
-        `(num_points,)`."""
+        `(num_points,)`. It is set as at initialization, by its values or
+        by a function of the points where they apply."""
         return self._values.copy()
+
+    @values.setter
+    def values(
+        self,
+        values: (npt.ArrayLike
+                 | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
+    ) -> None:
+        self._values[...] = _values(self._quadrature.projections, values)
 
     @property
     def penalty(self) -> float:
         """The penalty."""
         return self._penalty
 
-    def _assemble(self, assembler: _cpp.Assembler2d) -> None:
-        """Add the stiffness and load of the condition into the compiled
-        assembler of a planar space."""
+    def _add_to(self, form: _cpp.Form2d) -> None:
+        """Add the integral of the condition to the compiled form of a
+        planar problem, which reads its values where they lie."""
         condition = _cpp.NitscheCondition2d(self._trace._cpp_trace(),
                                             self._trace._cpp_flux(),
                                             self._penalty)
-        _assemble_along(assembler, condition, self._quadrature, self._values)
+        _add_along(form, condition, self._quadrature, self._values)
 
     def __repr__(self) -> str:
         return f'NitscheCondition({self._trace!r}, penalty={self._penalty})'
@@ -259,7 +277,7 @@ class NeumannCondition:
 
         self._trace = trace
         self._quadrature = quadrature
-        self._values = _values(quadrature, values)
+        self._values = _values(quadrature.positions, values)
 
     @property
     def trace(self) -> PoissonElement.U:
@@ -273,16 +291,25 @@ class NeumannCondition:
 
     @property
     def values(self) -> npt.NDArray[np.float64]:
-        """Data at each point of the quadrature, of shape
-        `(num_points,)`."""
+        """Data at each point of the quadrature, of shape `(num_points,)`.
+        It is set as at initialization, by its values or by a function of
+        the positions of the points."""
         return self._values.copy()
 
-    def _assemble(self, assembler: _cpp.Assembler2d) -> None:
-        """Add the load of the condition into the compiled assembler of a
-        planar space, its stiffness being zero."""
+    @values.setter
+    def values(
+        self,
+        values: (npt.ArrayLike
+                 | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
+    ) -> None:
+        self._values[...] = _values(self._quadrature.positions, values)
+
+    def _add_to(self, form: _cpp.Form2d) -> None:
+        """Add the integral of the condition, a load, to the compiled form of
+        a planar problem, which reads its values where they lie."""
         condition = _cpp.NeumannCondition2d(self._trace._cpp_trace())
-        assembler.assemble_load(condition, self._quadrature._cpp_object,
-                                self._values)
+        form.add_boundary_integral(condition, self._quadrature._cpp_object,
+                                   self._values)
 
     def __repr__(self) -> str:
         return f'NeumannCondition({self._trace!r})'
@@ -307,7 +334,7 @@ class SkeletonNitscheCondition:
         """Initialize the condition imposing values on a trace.
 
         The condition acts on the faces between cells whose weights, the
-        volume fractions the solve takes as `cell_weights`, may differ:
+        volume fractions a problem takes as `cell_weights`, may differ:
         those between cells of different types or between two cut cells.
         On each, the jump of the weights scales Nitsche's terms, over the
         means of the two cells weighted by them, and each cell expands its
@@ -382,13 +409,7 @@ class SkeletonNitscheCondition:
             patch=patch._cpp_object, boundary=boundary._cpp_object,
             points=quadrature.points)
 
-        if callable(values):
-            values = values(np.array(projection.positions))
-
-        values = np.asarray(values, dtype=np.float64)
-
-        if values.shape != (quadrature.num_points,):
-            raise ValueError('the values must be one per point')
+        values = _values(np.array(projection.positions), values)
 
         self._trace = trace
         self._patch = patch
@@ -416,70 +437,73 @@ class SkeletonNitscheCondition:
     @property
     def values(self) -> npt.NDArray[np.float64]:
         """Value imposed at the closest point of each face point, of shape
-        `(num_points,)`."""
+        `(num_points,)`. It is set as at initialization, by its values or
+        by a function of the closest points."""
         return self._values.copy()
+
+    @values.setter
+    def values(
+        self,
+        values: (npt.ArrayLike
+                 | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
+    ) -> None:
+        positions = np.array(self._projection.positions)
+        self._values[...] = _values(positions, values)
 
     @property
     def penalty(self) -> float:
         """The penalty."""
         return self._penalty
 
-    def _assemble(self, assembler: _cpp.Assembler2d,
-                  cell_weights: npt.NDArray[np.float64]) -> None:
-        """Add the stiffness and load of the condition into the compiled
-        assembler of a planar space, built with its faces coupled, with the
-        weights of the cells."""
+    def _add_to(self, form: _cpp.Form2d,
+                cell_weights: npt.NDArray[np.float64]) -> None:
+        """Add the integral of the condition to the compiled form of a planar
+        problem, assembled with its faces coupled, with the weights of the
+        cells. The form reads the values and weights where they lie."""
         condition = _cpp.SkeletonNitscheCondition2d(self._trace._cpp_trace(),
                                                     self._trace._cpp_flux(),
                                                     self._penalty)
-
-        assembler.assemble_stiffness(condition, self._quadrature,
-                                     self._projection, self._order,
-                                     cell_weights)
-        assembler.assemble_load(condition, self._quadrature,
-                                self._projection, self._order, self._values,
-                                cell_weights)
+        form.add_skeleton_integral(condition, self._quadrature,
+                                   self._projection, self._order,
+                                   self._values, cell_weights)
 
     def __repr__(self) -> str:
         return (f'SkeletonNitscheCondition({self._trace!r}, '
                 f'penalty={self._penalty})')
 
 
-def _assemble_along(
-    assembler: _cpp.Assembler2d,
+def _add_along(
+    form: _cpp.Form2d,
     condition: _cpp.PenaltyCondition2d | _cpp.NitscheCondition2d,
     quadrature: QuadratureBoundary,
     values: npt.NDArray[np.float64],
 ) -> None:
-    """Add the stiffness and load of a compiled condition along a boundary
-    quadrature into a compiled assembler, shifted along the projection of
-    a shifted quadrature."""
+    """Add the integral of a compiled condition along a boundary quadrature
+    to a compiled form, shifted along the projection of a shifted
+    quadrature."""
     if quadrature._projection is None:
-        assembler.assemble_stiffness(condition, quadrature._cpp_object)
-        assembler.assemble_load(condition, quadrature._cpp_object, values)
+        form.add_boundary_integral(condition, quadrature._cpp_object, values)
     else:
-        assembler.assemble_stiffness(condition, quadrature._cpp_object,
-                                     quadrature._projection,
-                                     quadrature.order)
-        assembler.assemble_load(condition, quadrature._cpp_object,
-                                quadrature._projection, quadrature.order,
-                                values)
+        form.add_boundary_integral(condition, quadrature._cpp_object,
+                                   quadrature._projection, quadrature.order,
+                                   values)
 
 
 def _values(
-    quadrature: QuadratureBoundary,
+    points: npt.NDArray[np.float64],
     values: (npt.ArrayLike
              | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
 ) -> npt.NDArray[np.float64]:
-    """Values of a condition at the points of a boundary quadrature, given
-    at them or as a function of the points where they apply, their closest
-    points on a shifted quadrature, checked to be one per point."""
+    """Values of a condition at the points where they apply, such as the
+    closest points of a shifted quadrature, given at them or as a function
+    of them, checked to be one per point. They are contiguous, as a compiled
+    form reads them where they lie."""
     if callable(values):
-        values = values(quadrature.projections)
+        values = values(points)
 
-    values = np.asarray(values, dtype=np.float64)
+    values = np.ascontiguousarray(values, dtype=np.float64)
 
-    if values.shape != (quadrature.num_points,):
+    if values.shape != (len(points),):
         raise ValueError('the values must be one per point')
 
     return values
