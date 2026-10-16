@@ -160,19 +160,20 @@ public:
      *
      * @param element Element whose local load is added
      * @param quadrature Quadrature over elements of the grid of the basis
-     * @param source Value of the source at each point of the quadrature, in
-     *        its order
+     * @param source Value of the source at each point of the quadrature, a
+     *        row per point in its order and a column per component
      *
-     * @throws std::invalid_argument If @p source does not have one value per
+     * @throws std::invalid_argument If @p source does not have one row per
      *         point of @p quadrature, or if the local loads of @p element do
      *         not match the degrees of freedom of the space
      *
-     * @pre @p quadrature is built as for assemble_stiffness()
+     * @pre @p quadrature is built as for assemble_stiffness(), and
+     *      @p source has the components @p element reads
      */
     template<std::derived_from<Element<Basis, n>> E>
     void assemble_load(const E& element,
                        const QuadratureDomain<Scalar, dim>& quadrature,
-                       const Eigen::VectorX<Scalar>& source);
+                       const Eigen::MatrixX<Scalar>& source);
 
     /**
      * @brief Adds the load of an element over the points of a quadrature,
@@ -183,22 +184,23 @@ public:
      *
      * @param element Element whose local load is added
      * @param quadrature Quadrature over elements of the grid of the basis
-     * @param source Value of the source at each point of the quadrature, in
-     *        its order
+     * @param source Value of the source at each point of the quadrature, a
+     *        row per point in its order and a column per component
      * @param cell_weights Weight of the test functions on each element of
      *        the grid, in its numbering
      *
-     * @throws std::invalid_argument If @p source does not have one value per
+     * @throws std::invalid_argument If @p source does not have one row per
      *         point of @p quadrature, if @p cell_weights does not have one
      *         value per element of the grid, or if the local loads of
      *         @p element do not match the degrees of freedom of the space
      *
-     * @pre @p quadrature is built as for the weighted assemble_stiffness()
+     * @pre @p quadrature is built as for the weighted assemble_stiffness(),
+     *      and @p source has the components @p element reads
      */
     template<std::derived_from<Element<Basis, n>> E>
     void assemble_load(const E& element,
                        const QuadratureDomain<Scalar, dim>& quadrature,
-                       const Eigen::VectorX<Scalar>& source,
+                       const Eigen::MatrixX<Scalar>& source,
                        const Eigen::VectorX<Scalar>& cell_weights);
 
     /**
