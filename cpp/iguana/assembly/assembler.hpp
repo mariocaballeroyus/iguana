@@ -53,6 +53,14 @@ namespace iguana
  * The basis of the space spans the functions and that of the patch maps the
  * points, so both must be one basis, as in isoparametric analysis
  *
+ * The space has a block size, the number of components of its field, and
+ * on a cell its degrees of freedom run component after component, the
+ * layout of the local matrices of the elements and conditions. The PETSc
+ * matrices and vectors carry the block size, so that its solvers can tell
+ * the components apart. A local matrix that does not match the degrees of
+ * freedom of its cell, as one of another block size, throws
+ * std::invalid_argument, since PETSc would read past its end
+ *
  * @tparam Basis Basis of the space and the patch, TensorBSpline or
  *         TensorNURBS
  * @tparam n Dimension of the physical space of the patch
@@ -109,6 +117,9 @@ public:
      * @param element Element whose local stiffness is added
      * @param quadrature Quadrature over elements of the grid of the basis
      *
+     * @throws std::invalid_argument If the local matrices of @p element do
+     *         not match the degrees of freedom of the space
+     *
      * @pre @p quadrature is built on the grid of the basis and the domain of
      *      the space, so that every element it holds has its degrees of
      *      freedom
@@ -129,7 +140,8 @@ public:
      *        the grid, in its numbering
      *
      * @throws std::invalid_argument If @p cell_weights does not have one
-     *         value per element of the grid
+     *         value per element of the grid, or if the local matrices of
+     *         @p element do not match the degrees of freedom of the space
      *
      * @pre @p quadrature is built on the grid of the basis, and every
      *      element it holds with a non-zero weight has its degrees of
@@ -152,7 +164,8 @@ public:
      *        its order
      *
      * @throws std::invalid_argument If @p source does not have one value per
-     *         point of @p quadrature
+     *         point of @p quadrature, or if the local loads of @p element do
+     *         not match the degrees of freedom of the space
      *
      * @pre @p quadrature is built as for assemble_stiffness()
      */
@@ -176,8 +189,9 @@ public:
      *        the grid, in its numbering
      *
      * @throws std::invalid_argument If @p source does not have one value per
-     *         point of @p quadrature, or if @p cell_weights does not have one
-     *         value per element of the grid
+     *         point of @p quadrature, if @p cell_weights does not have one
+     *         value per element of the grid, or if the local loads of
+     *         @p element do not match the degrees of freedom of the space
      *
      * @pre @p quadrature is built as for the weighted assemble_stiffness()
      */
@@ -194,6 +208,9 @@ public:
      *
      * @param element Element whose local mass is added
      * @param quadrature Quadrature over elements of the grid of the basis
+     *
+     * @throws std::invalid_argument If the local matrices of @p element do
+     *         not match the degrees of freedom of the space
      *
      * @pre @p quadrature is built as for assemble_stiffness()
      */
@@ -213,7 +230,8 @@ public:
      *        the grid, in its numbering
      *
      * @throws std::invalid_argument If @p cell_weights does not have one
-     *         value per element of the grid
+     *         value per element of the grid, or if the local matrices of
+     *         @p element do not match the degrees of freedom of the space
      *
      * @pre @p quadrature is built as for the weighted assemble_stiffness()
      */
@@ -236,6 +254,9 @@ public:
      * @param quadrature Quadrature of a boundary embedded in the grid of the
      *        basis
      *
+     * @throws std::invalid_argument If the local matrices of @p condition do
+     *         not match the degrees of freedom of the space
+     *
      * @pre @p quadrature is built on the grid of the basis, and every element
      *      it holds has its degrees of freedom in the space
      */
@@ -256,7 +277,8 @@ public:
      *        quadrature, in its order
      *
      * @throws std::invalid_argument If @p data does not have one value per
-     *         point of @p quadrature
+     *         point of @p quadrature, or if the local loads of @p condition
+     *         do not match the degrees of freedom of the space
      *
      * @pre @p quadrature is built as for the stiffness of a condition
      */
@@ -287,7 +309,9 @@ public:
      *
      * @throws std::invalid_argument If @p order is negative, if
      *         @p projection does not have one distance vector per point of
-     *         @p quadrature, or if the patch is not a B-spline one
+     *         @p quadrature, if the patch is not a B-spline one, or if the
+     *         local matrices of @p condition do not match the degrees of
+     *         freedom of the space
      *
      * @pre @p quadrature is built as for the stiffness of a condition, and
      *      @p projection was computed from its points through the patch
@@ -343,8 +367,9 @@ public:
      *        basis
      *
      * @throws std::invalid_argument If the faces are not coupled, if the map
-     *         of the patch is not affine, or if the patch is not a B-spline
-     *         one
+     *         of the patch is not affine, if the patch is not a B-spline one,
+     *         or if the local matrices of @p penalty do not match the
+     *         degrees of freedom of the space
      *
      * @pre @p quadrature is built on the grid of the basis, and every cell
      *      it holds has its degrees of freedom in the space
@@ -376,9 +401,10 @@ public:
      * @param cell_weights Weight of the test functions on each element of
      *        the grid, in its numbering
      *
-     * @throws std::invalid_argument If the faces are not coupled, or if
+     * @throws std::invalid_argument If the faces are not coupled, if
      *         @p cell_weights does not have one value per element of the
-     *         grid
+     *         grid, or if the local matrices of @p condition do not match
+     *         the degrees of freedom of the space
      *
      * @pre @p quadrature is built on the grid of the basis, and every cell
      *      of a face across which the weights jump has its degrees of
@@ -562,6 +588,9 @@ private:
      *        of the two cells of a face, into the stiffness or the mass, the
      *        only place where they are written
      *
+     * @throws std::invalid_argument If @p local does not have a row and a
+     *         column per entry of @p dofs
+     *
      * @pre The rows of @p local follow @p dofs, and @p matrix is the
      *      stiffness or the mass
      */
@@ -572,6 +601,9 @@ private:
      * @brief Adds a local load at degrees of freedom, those of a cell or of
      *        the two cells of a face, the only place where the load is
      *        written
+     *
+     * @throws std::invalid_argument If @p local does not have an entry per
+     *         entry of @p dofs
      *
      * @pre The rows of @p local follow @p dofs
      */

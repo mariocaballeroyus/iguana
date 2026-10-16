@@ -41,17 +41,17 @@ public:
     virtual ValueFlags flags() const noexcept = 0;
 
     /**
-     * @brief Flux of each active function at the boundary points in the
-     *        element, the matrix F
+     * @brief Flux of each degree of freedom of the element at the boundary
+     *        points in it, the matrix F
      *
      *     F(u)(x_q) = Σ_i F_iq u_i
      *
      * @param values Values at the boundary points in the element
      * @param normals Unit normals of the boundary in physical space,
      *        pointing out of the domain, of size (num_points, n)
-     * @param flux Output of size (num_active, num_points), the layout of
-     *        ElementValues::values(), overwritten. It is resized when
-     *        necessary
+     * @param flux Output with a row per degree of freedom of the element,
+     *        ordered as the rows of Element, and a column per point,
+     *        overwritten. It is resized when necessary
      *
      * @pre @p values were filled with flags(), at the points of @p normals
      */
