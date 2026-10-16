@@ -5,6 +5,8 @@
 
 #include <iguana/iguana.hpp>
 
+#include <cstddef>
+#include <span>
 #include <stdexcept>
 #include <vector>
 
@@ -136,9 +138,45 @@ TEST_CASE("Functions supported on outside cells alone get no degree of "
     REQUIRE_THAT(computed.sum(), WithinRel(8., 1e-12));
 }
 
-TEST_CASE("A space needs one cell type per element", "[fspace]")
+TEST_CASE("A block size gives each function adjacent degrees of freedom, "
+          "listed component after component on an element", "[fspace]")
+{
+    const CellClassification<double, 2> classification =
+        with_last_column(CellType::outside);
+    const Space scalar(uneven(), classification);
+    const Space vector(uneven(), classification, 3);
+
+    REQUIRE(vector.block_size() == 3);
+    REQUIRE(vector.num_dofs() == 3 * scalar.num_dofs());
+
+    std::vector<int> dofs;
+
+    // Component c of the k-th degree of freedom of the map is 3 k + c, and
+    // outside cells list none
+    for (int element = 0; element < scalar.dof_map().num_elements();
+         ++element) {
+        const std::span<const int> scalar_dofs =
+            scalar.dof_map().dofs_on_element(element);
+        const std::size_t count = scalar_dofs.size();
+        vector.dofs_on_element(element, dofs);
+
+        REQUIRE(dofs.size() == 3 * count);
+
+        for (std::size_t component = 0; component < 3; ++component) {
+            for (std::size_t function = 0; function < count; ++function)
+                REQUIRE(dofs[component * count + function]
+                        == 3 * scalar_dofs[function]
+                               + static_cast<int>(component));
+        }
+    }
+}
+
+TEST_CASE("A space needs one cell type per element and a positive block "
+          "size", "[fspace]")
 {
     REQUIRE_THROWS_AS(
         Space(uneven(), CellClassification<double, 2>({CellType::inside})),
         std::invalid_argument);
+    REQUIRE_THROWS_AS(Space(uneven(), with_last_column(CellType::inside), 0),
+                      std::invalid_argument);
 }

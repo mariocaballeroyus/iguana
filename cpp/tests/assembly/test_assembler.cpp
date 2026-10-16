@@ -278,6 +278,43 @@ iguana::QuadratureBoundary<double, 2> boundary_quadrature(
     return {embedded, iguana::GaussLegendre<double, 1>(5)};
 }
 
+/// @brief Trace of one component of a field of two, the values of the
+///        functions in the rows of that component and zeros in the others
+class Component final : public iguana::Trace<Basis, 2>
+{
+public:
+    explicit Component(Eigen::Index component) : component_(component)
+    {
+    }
+
+    iguana::ValueFlags flags() const noexcept override
+    { return {}; }
+
+    void local_trace(const iguana::ElementValues<Basis, 2>& values,
+                     Eigen::MatrixXd& trace) const override
+    {
+        const Eigen::Index rows = values.values().rows();
+        trace.setZero(2 * rows, values.values().cols());
+        trace.middleRows(component_ * rows, rows) = values.values();
+    }
+
+private:
+    Eigen::Index component_;
+};
+
+/// @brief Coefficients of the field A x in a space of block size two on a
+///        rectangle with every cell inside, its values at the control points
+///        through the affine map, component c of function k at 2 k + c, the
+///        column-major order of a matrix of a column per function
+Eigen::VectorXd linear_vector_field(const iguana::Patch<Basis, 2>& patch,
+                                    const Eigen::Matrix2d& a)
+{
+    const Eigen::MatrixXd components =
+        (patch.coefficients() * a.transpose()).transpose();
+
+    return components.reshaped();
+}
+
 } // namespace
 
 TEST_CASE("The Poisson system of a rectangle integrates exactly",
@@ -609,6 +646,103 @@ TEST_CASE("A penalty on an embedded boundary imposes a field of the space",
 
     REQUIRE_THROWS_AS(assembler.assemble_load(condition, quadrature,
                                               data.head(data.size() - 1)),
+                      std::invalid_argument);
+}
+
+TEST_CASE("A penalty on one component of a field of two imposes it and "
+          "leaves the other free", "[assembler]")
+{
+    const Basis basis = uneven();
+    const iguana::Patch<Basis, 2> patch = rectangle(basis);
+    const iguana::FunctionSpace<Basis> space(basis,
+                                             all_cells(CellType::inside), 2);
+
+    const std::array<Eigen::RowVector2d, 4> corners = quadrilateral();
+    const iguana::QuadratureBoundary<double, 2> quadrature =
+        boundary_quadrature(patch, corners);
+    double perimeter = 0.;
+
+    for (std::size_t side = 0; side < 4; ++side)
+        perimeter += (corners[(side + 1) % 4] - corners[side]).norm();
+
+    const Component second(1);
+    const double penalty = 10.;
+    const iguana::PenaltyCondition<Basis, 2> condition(second, penalty);
+
+    // The data of b . x for the second component, the points lying in
+    // parameter space, where the map scales each axis by its side
+    const Eigen::Vector2d b(1., -2.);
+    const Eigen::VectorXd data =
+        width * b(0) * quadrature.points().col(0)
+        + height * b(1) * quadrature.points().col(1);
+
+    iguana::Assembler<Basis, 2> assembler(space, patch);
+    assembler.assemble_stiffness(condition, quadrature);
+    assembler.assemble_load(condition, quadrature, data);
+
+    const Eigen::SparseMatrix<double, Eigen::RowMajor> stiffness =
+        stiffness_of(assembler);
+
+    // The functions sum to one, so a constant second component costs beta
+    // times the perimeter, while the first is not penalized at all
+    const int num_functions = basis.num_functions();
+    Eigen::VectorXd first_constant = Eigen::VectorXd::Zero(2 * num_functions);
+    Eigen::VectorXd second_constant = first_constant;
+    first_constant(Eigen::seqN(0, num_functions, 2)).setOnes();
+    second_constant(Eigen::seqN(1, num_functions, 2)).setOnes();
+
+    REQUIRE((stiffness * first_constant).norm() == 0.);
+    REQUIRE_THAT(second_constant.dot(stiffness * second_constant),
+                 WithinRel(penalty * perimeter, 1e-12));
+
+    // Any first component with b . x as the second satisfies the system,
+    // which imposes it consistently
+    Eigen::Matrix2d a;
+    a << 3., .5, b(0), b(1);
+    const Eigen::VectorXd u = linear_vector_field(patch, a);
+
+    REQUIRE((stiffness * u - load_of(assembler)).cwiseAbs().maxCoeff()
+            < 1e-12);
+
+    // The system tells PETSc which degrees of freedom are the components of
+    // one function
+    PetscInt block_size = 0;
+    PetscInt load_size = 0;
+    check(MatGetBlockSize(assembler.stiffness(), &block_size));
+    check(VecGetBlockSize(assembler.load(), &load_size));
+
+    REQUIRE(block_size == 2);
+    REQUIRE(load_size == 2);
+}
+
+TEST_CASE("Local matrices must match the block size of the space",
+          "[assembler]")
+{
+    const Basis basis = uneven();
+    const iguana::Patch<Basis, 2> patch = rectangle(basis);
+    const CellClassification<double, 2> classification =
+        all_cells(CellType::inside);
+    const iguana::FunctionSpace<Basis> space(basis, classification, 2);
+    const iguana::QuadratureDomain<double, 2> domain =
+        inside_quadrature(basis, classification);
+    const iguana::QuadratureBoundary<double, 2> boundary =
+        boundary_quadrature(patch, quadrilateral());
+    const Eigen::VectorXd ones = Eigen::VectorXd::Ones(domain.num_points());
+
+    // The Poisson element and its trace have one component, so their local
+    // matrices hold half the degrees of freedom of each cell, and PETSc
+    // would read past their end
+    const iguana::PoissonElement<Basis, 2> element;
+    const iguana::PoissonElement<Basis, 2>::U trace;
+    const iguana::PenaltyCondition<Basis, 2> condition(trace, 10.);
+
+    iguana::Assembler<Basis, 2> assembler(space, patch);
+
+    REQUIRE_THROWS_AS(assembler.assemble_stiffness(element, domain),
+                      std::invalid_argument);
+    REQUIRE_THROWS_AS(assembler.assemble_load(element, domain, ones),
+                      std::invalid_argument);
+    REQUIRE_THROWS_AS(assembler.assemble_stiffness(condition, boundary),
                       std::invalid_argument);
 }
 
