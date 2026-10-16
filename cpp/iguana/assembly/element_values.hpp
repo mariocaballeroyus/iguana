@@ -27,9 +27,13 @@ namespace iguana
  */
 struct ValueFlags
 {
-    /// @brief Whether to compute the gradients in physical space, J^-T times
-    ///        the parametric ones, which only a domain patch has
+    /// @brief Gradients in physical space, J^-T times the parametric ones,
+    ///        which only a domain patch has
     bool physical_gradients = false;
+
+    /// @brief Second derivatives in physical space, which only a domain patch
+    ///        has, along with the physical gradients they need
+    bool physical_hessians = false;
 };
 
 /**
@@ -64,8 +68,9 @@ public:
      *        points
      * @param flags Optional values to compute
      *
-     * @throws std::invalid_argument If physical gradients are flagged on a
-     *         patch with fewer directions than its space, such as a shell
+     * @throws std::invalid_argument If physical gradients or Hessians are
+     *         flagged on a patch with fewer directions than its space, such
+     *         as a shell
      *
      * @pre @p patch outlives the values, which keep a reference to it
      */
@@ -81,7 +86,8 @@ public:
      * @param points Points in parameter space, with size (num_points, dim)
      *
      * @pre @p element lies in the grid and every point lies inside it. With
-     *      physical gradients flagged, J is also invertible at the points
+     *      physical gradients or Hessians flagged, J is also invertible at
+     *      the points
      */
     void reinit(int element, const Eigen::MatrixX<Scalar>& points);
 
@@ -91,8 +97,8 @@ public:
      *
      * This is how the shifted boundary method expands the functions of a
      * surrogate point towards the true boundary. The gradients, tangents,
-     * measures and physical gradients stay at the points, where the
-     * surrogate boundary is measured
+     * measures and physical gradients and Hessians stay at the points, where
+     * the surrogate boundary is measured
      *
      * @param shifts Shift of each point in parameter space, with size
      *        (num_points, dim)
@@ -116,7 +122,8 @@ public:
      * its jump across the knot line is then that of the physical normal
      * derivative of order p, and with orthogonal parametric directions, as
      * on a rectangle, it is that derivative itself. The gradients, tangents,
-     * measures and physical gradients stay those of the last reinit()
+     * measures and physical gradients and Hessians stay those of the last
+     * reinit()
      *
      * @param direction Direction across the knot lines
      *
@@ -168,11 +175,25 @@ public:
      * @brief Gradients of the active functions in physical space, one
      *        matrix per coordinate of the size of values()
      *
-     * @pre Physical gradients are flagged. It is not checked
+     * @pre Physical gradients or Hessians are flagged. It is not checked
      */
     constexpr const std::array<Eigen::MatrixX<Scalar>, n>&
     physical_gradients() const noexcept requires (dim == n)
     { return physical_gradients_; }
+
+    /**
+     * @brief Second derivatives of the active functions in physical space,
+     *        one matrix per pair of coordinates of the size of values()
+     *
+     * @details The pure pairs come first, then the mixed ones in
+     *          lexicographic order of their coordinates: xx, yy, xy in the
+     *          plane, so that the Laplacian sums the first n
+     *
+     * @pre Physical Hessians are flagged. It is not checked
+     */
+    constexpr const std::array<Eigen::MatrixX<Scalar>, n * (n + 1) / 2>&
+    physical_hessians() const noexcept requires (dim == n)
+    { return physical_hessians_; }
 
 private:
     /// @brief Patch whose functions are evaluated
@@ -196,8 +217,16 @@ private:
     /// @brief Derivatives of the active functions along each direction
     std::array<Eigen::MatrixX<Scalar>, dim> gradients_;
 
+    /// @brief Second derivatives of the active functions along each pair of
+    ///        directions, empty unless physical Hessians are flagged
+    std::array<Eigen::MatrixX<Scalar>, dim * (dim + 1) / 2> hessians_;
+
     /// @brief Derivatives of the map along each direction
     std::array<PointMatrix<Scalar, n>, dim> tangents_;
+
+    /// @brief Second derivatives of the map along each pair of directions,
+    ///        empty unless physical Hessians are flagged
+    std::array<PointMatrix<Scalar, n>, dim * (dim + 1) / 2> second_tangents_;
 
     /// @brief Measure of the patch at each point
     Eigen::VectorX<Scalar> measures_;
@@ -208,6 +237,10 @@ private:
     /// @brief Gradients of the active functions in physical space, empty
     ///        unless flagged
     std::array<Eigen::MatrixX<Scalar>, n> physical_gradients_;
+
+    /// @brief Second derivatives of the active functions in physical space,
+    ///        empty unless flagged
+    std::array<Eigen::MatrixX<Scalar>, n * (n + 1) / 2> physical_hessians_;
 };
 
 } // namespace iguana

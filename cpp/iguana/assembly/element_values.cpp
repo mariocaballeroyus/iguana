@@ -19,9 +19,9 @@ ElementValues<Basis, n>::ElementValues(const Patch<Basis, n>& patch,
 {
     // J of a curve or surface is not square, so it has no inverse
     if constexpr (dim < n) {
-        if (flags.physical_gradients) {
+        if (flags.physical_gradients || flags.physical_hessians) {
             throw std::invalid_argument("ElementValues: "
-                                        "physical gradients need a domain "
+                                        "physical derivatives need a domain "
                                         "patch");
         }
     }
@@ -55,17 +55,33 @@ void ElementValues<Basis, n>::reinit(int element,
     points_ = points;
 
     basis.active_on_element(element, actives_);
-    basis.grad_on_element(first_active_, points, values_, gradients_);
+
+    // One evaluation gives the second derivatives with the first
+    if (flags_.physical_hessians)
+        basis.hess_on_element(first_active_, points, values_, gradients_,
+                              hessians_);
+    else
+        basis.grad_on_element(first_active_, points, values_, gradients_);
 
     // The basis that gives the functions also gives the Jacobian of the map
     patch_.tangent_on_element(actives_, gradients_, tangents_);
     Map::measure_on_element(tangents_, measures_);
     sizes_ = (volume * measures_).array().pow(1 / static_cast<Scalar>(dim));
 
+    // The physical Hessians need the physical gradients, through the
+    // curvature of the map
     if constexpr (dim == n) {
-        if (flags_.physical_gradients) {
+        if (flags_.physical_gradients || flags_.physical_hessians) {
             Map::physical_grad_on_element(tangents_, gradients_,
                                           physical_gradients_);
+        }
+
+        if (flags_.physical_hessians) {
+            patch_.second_tangent_on_element(actives_, hessians_,
+                                             second_tangents_);
+            Map::physical_hess_on_element(tangents_, second_tangents_,
+                                          physical_gradients_, hessians_,
+                                          physical_hessians_);
         }
     }
 }

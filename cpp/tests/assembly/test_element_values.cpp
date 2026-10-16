@@ -49,9 +49,12 @@ constexpr std::array<double, 3> sides{2., 3., .5};
  * @brief Patch of a box whose interior control points are moved off the
  *        scaled identity, so that the map is curved but the boundary, which
  *        depends on the boundary control points alone, stays that of the box
+ *
+ * @param bend Amplitude of the moves relative to the sides, zero for the
+ *        scaled identity itself
  */
 template<std::size_t d>
-iguana::Patch<TensorBSpline<double, d>, d> bent_box()
+iguana::Patch<TensorBSpline<double, d>, d> bent_box(double bend = .03)
 {
     const std::array<KnotVector<double>, d> knots = first_knot_vectors<d>();
     std::array<int, d> counts{};
@@ -81,7 +84,7 @@ iguana::Patch<TensorBSpline<double, d>, d> bent_box()
         if (interior)
             for (std::size_t direction = 0; direction < d; ++direction)
                 points(function, direction) +=
-                    .03 * sides[direction]
+                    bend * sides[direction]
                     * std::sin(1. + function * (direction + 1.));
     }
 
@@ -212,6 +215,144 @@ void check_sizes()
     }
 }
 
+/**
+ * @brief Coefficients of the quadratic field sum of x_k^2 plus sum of
+ *        (a + b) x_a x_b over a < b on the box of the scaled identity,
+ *        whose Hessian is 2 on the diagonal and a + b off it
+ *
+ * In a quadratic direction of the box, the polar forms give 1,
+ * (t_{i+1} + t_{i+2}) / 2 and t_{i+1} t_{i+2} as the coefficients of 1, xi
+ * and xi^2, and x_k is the side times xi_k
+ */
+template<std::size_t d>
+Eigen::VectorXd quadratic_field(const TensorBSpline<double, d>& basis)
+{
+    std::array<int, d> counts{};
+
+    for (std::size_t direction = 0; direction < d; ++direction)
+        counts[direction] = basis.axis(direction).num_functions();
+
+    Eigen::VectorXd u(basis.num_functions());
+
+    for (int function = 0; function < basis.num_functions(); ++function) {
+        const std::array<int, d> index = iguana::unflatten(function, counts);
+        std::array<double, d> linear{};
+        std::array<double, d> square{};
+
+        for (std::size_t direction = 0; direction < d; ++direction) {
+            const std::vector<double>& t =
+                basis.grid().knots(direction).values();
+            const std::size_t i = static_cast<std::size_t>(index[direction]);
+
+            linear[direction] = sides[direction] * (t[i + 1] + t[i + 2]) / 2.;
+            square[direction] =
+                sides[direction] * sides[direction] * t[i + 1] * t[i + 2];
+        }
+
+        u(function) = 0.;
+
+        for (std::size_t a = 0; a < d; ++a) {
+            u(function) += square[a];
+
+            for (std::size_t b = a + 1; b < d; ++b)
+                u(function) += static_cast<double>(a + b) * linear[a]
+                               * linear[b];
+        }
+    }
+
+    return u;
+}
+
+/**
+ * @brief Checks the physical second derivatives of a quadratic field on the
+ *        box of the scaled identity, which the quadratic space holds, in the
+ *        order of the pairs: the pure ones, then the mixed ones in
+ *        lexicographic order
+ */
+template<std::size_t d>
+void check_quadratic_field()
+{
+    using Basis = TensorBSpline<double, d>;
+
+    const iguana::Patch<Basis, d> patch = bent_box<d>(0.);
+    const Eigen::VectorXd field = quadratic_field<d>(patch.basis());
+    const iguana::GaussLegendre<double, d> rule(2);
+    iguana::ElementValues<Basis, d> element_values(
+        patch, {.physical_hessians = true});
+
+    std::array<double, d * (d + 1) / 2> expected{};
+    std::size_t pair = d;
+
+    for (std::size_t a = 0; a < d; ++a) {
+        expected[a] = 2.;
+
+        for (std::size_t b = a + 1; b < d; ++b)
+            expected[pair++] = static_cast<double>(a + b);
+    }
+
+    Eigen::MatrixXd points;
+    Eigen::VectorXd weights;
+    Eigen::VectorXi actives;
+
+    for (const auto& element : patch.basis().grid()) {
+        INFO("element " << element.index());
+
+        rule.fill_to_reference_space(element.start(), element.end(), points,
+                                     weights);
+        iguana::BoxRule<double, d>::map_to_parameter_space(
+            element.start(), element.end(), points, weights);
+        element_values.reinit(element.index(), points);
+        patch.basis().active_on_element(element.index(), actives);
+
+        const Eigen::VectorXd u = field(actives);
+
+        for (std::size_t pair_of = 0; pair_of < expected.size(); ++pair_of) {
+            INFO("pair " << pair_of);
+            const Eigen::RowVectorXd hessian =
+                u.transpose() * element_values.physical_hessians()[pair_of];
+
+            REQUIRE((hessian.array() - expected[pair_of]).abs().maxCoeff()
+                    < 1e-11);
+        }
+    }
+}
+
+/**
+ * @brief Checks that the coordinates x_k, which an isoparametric space
+ *        holds whatever the map, have no physical second derivatives on a
+ *        curved one, which only the curvature term of the map cancels
+ */
+template<typename Basis, std::size_t d>
+void check_coordinate_fields(const iguana::Patch<Basis, d>& patch)
+{
+    const iguana::GaussLegendre<double, d> rule(3);
+    iguana::ElementValues<Basis, d> element_values(
+        patch, {.physical_hessians = true});
+
+    Eigen::MatrixXd points;
+    Eigen::VectorXd weights;
+    Eigen::VectorXi actives;
+
+    for (const auto& element : patch.basis().grid()) {
+        INFO("element " << element.index());
+
+        rule.fill_to_reference_space(element.start(), element.end(), points,
+                                     weights);
+        iguana::BoxRule<double, d>::map_to_parameter_space(
+            element.start(), element.end(), points, weights);
+        element_values.reinit(element.index(), points);
+        patch.basis().active_on_element(element.index(), actives);
+
+        const Eigen::MatrixXd coordinates =
+            patch.coefficients()(actives, Eigen::placeholders::all);
+
+        for (const Eigen::MatrixXd& hessians :
+             element_values.physical_hessians())
+            REQUIRE((coordinates.transpose() * hessians).cwiseAbs().maxCoeff()
+                    < 1e-10);
+    }
+}
+
 } // namespace
 
 TEST_CASE("Element values integrate the energy of a linear field exactly",
@@ -226,6 +367,30 @@ TEST_CASE("Element sizes average to the measure of each element",
 {
     check_sizes<2>();
     check_sizes<3>();
+}
+
+TEST_CASE("Element values give the second derivatives of a quadratic "
+          "field in physical space", "[element_values]")
+{
+    check_quadratic_field<2>();
+    check_quadratic_field<3>();
+}
+
+TEST_CASE("Element values cancel the curvature of the map in the second "
+          "derivatives", "[element_values]")
+{
+    check_coordinate_fields(bent_box<2>());
+    check_coordinate_fields(bent_box<3>());
+
+    // Uneven weights make the functions and the map rational
+    const iguana::Patch<TensorBSpline<double, 2>, 2> box = bent_box<2>();
+    const Eigen::VectorXd weights =
+        Eigen::VectorXd::LinSpaced(box.basis().num_functions(), .6, 1.4);
+    const iguana::TensorNURBS<double, 2> rational(box.basis(), weights);
+
+    check_coordinate_fields(
+        iguana::Patch<iguana::TensorNURBS<double, 2>, 2>(rational,
+                                                         box.coefficients()));
 }
 
 TEST_CASE("Element values on a shell measure its area",
@@ -261,13 +426,15 @@ TEST_CASE("Element values on a shell measure its area",
     REQUIRE_THAT(area, WithinAbs(sides[0] * sides[1], 1e-12));
 }
 
-TEST_CASE("Element values reject physical gradients on a shell",
+TEST_CASE("Element values reject physical derivatives on a shell",
           "[element_values]")
 {
     using ShellValues = iguana::ElementValues<TensorBSpline<double, 2>, 3>;
 
     const iguana::Patch<TensorBSpline<double, 2>, 3> shell = bent_shell();
-    const iguana::ValueFlags flags{.physical_gradients = true};
 
-    REQUIRE_THROWS_AS(ShellValues(shell, flags), std::invalid_argument);
+    REQUIRE_THROWS_AS(ShellValues(shell, {.physical_gradients = true}),
+                      std::invalid_argument);
+    REQUIRE_THROWS_AS(ShellValues(shell, {.physical_hessians = true}),
+                      std::invalid_argument);
 }

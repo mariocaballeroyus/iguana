@@ -126,6 +126,32 @@ public:
         std::array<PointMatrix<Scalar, n>, dim>& tangents) const;
 
     /**
+     * @brief Second derivatives of the map at points of an element, along
+     *        each pair of parametric directions
+     *
+     * @details They are the curvature of the map, zero on an affine one, and
+     *          follow the order of hess_on_element(): the pure pairs first,
+     *          then the mixed ones in lexicographic order of their directions
+     *
+     * @param actives Functions that are non-zero on the element, as given by
+     *        active_on_element()
+     * @param hessians Their second derivatives along each pair of directions
+     *        at the points, each of size (num_active,num_points), as given by
+     *        hess_on_element()
+     * @param second_tangents Output with one buffer per pair, each of size
+     *        (num_points,n), resized if its shape changes
+     *
+     * @pre @p actives and @p hessians come from the same element. It is not
+     *      checked
+     */
+    void second_tangent_on_element(
+        const Eigen::VectorXi& actives,
+        const std::array<Eigen::MatrixX<Scalar>, dim * (dim + 1) / 2>&
+            hessians,
+        std::array<PointMatrix<Scalar, n>, dim * (dim + 1) / 2>&
+            second_tangents) const;
+
+    /**
      * @brief Measure of the patch at points of an element, the factor that
      *        turns a parametric measure into a physical one
      *
@@ -218,6 +244,42 @@ public:
         const std::array<Eigen::MatrixX<Scalar>, dim>& gradients,
         std::array<Eigen::MatrixX<Scalar>, n>& physical_gradients)
         requires (dim == n);
+
+    /**
+     * @brief Second derivatives in physical space of the active functions at
+     *        points of an element, from their parametric ones
+     *
+     *     ∂²N/∂x_i∂x_j = Σ_ab (J⁻¹)_ai (J⁻¹)_bj (∂²N/∂ξ_a∂ξ_b
+     *                    − Σ_k ∂N/∂x_k ∂²x_k/∂ξ_a∂ξ_b)
+     *
+     * @details The second term, the curvature of the map seen through the
+     *          physical gradients, vanishes on an affine map. The pairs of
+     *          coordinates follow the order of hess_on_element()
+     *
+     * @param tangents Tangents at the points, one buffer of size
+     *        (num_points,n) per direction, as given by tangent_on_element()
+     * @param second_tangents Second derivatives of the map at the points,
+     *        as given by second_tangent_on_element()
+     * @param physical_gradients Gradients in physical space of the active
+     *        functions, as given by physical_grad_on_element()
+     * @param hessians Second derivatives of the active functions along each
+     *        pair of directions, each of size (num_active,num_points), as
+     *        given by hess_on_element()
+     * @param physical_hessians Output with one matrix per pair of
+     *        coordinates, each of the size of the Hessians, resized when
+     *        necessary
+     *
+     * @pre J is invertible at every point
+     */
+    static void physical_hess_on_element(
+        const std::array<PointMatrix<Scalar, n>, dim>& tangents,
+        const std::array<PointMatrix<Scalar, n>, dim * (dim + 1) / 2>&
+            second_tangents,
+        const std::array<Eigen::MatrixX<Scalar>, n>& physical_gradients,
+        const std::array<Eigen::MatrixX<Scalar>, dim * (dim + 1) / 2>&
+            hessians,
+        std::array<Eigen::MatrixX<Scalar>, n * (n + 1) / 2>&
+            physical_hessians) requires (dim == n);
 
     /**
      * @brief Whether the map is affine, x = a + A xi, decided on
