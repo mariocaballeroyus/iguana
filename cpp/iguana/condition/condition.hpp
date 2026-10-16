@@ -22,7 +22,8 @@ namespace iguana
  * @details It reads the values its flags() request, at the points and
  *          where the data is given, the same without a projection, and
  *          integrates with the boundary weights the assembler maps. Its rows
- *          and columns follow the functions active on the element
+ *          and columns follow the num_dofs degrees of freedom of the element,
+ *          ordered as for Element
  *
  * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
  * @tparam n Dimension of the physical space of the patch
@@ -50,7 +51,7 @@ public:
      * @param weights Boundary weights, one per point
      * @param normals Unit normals of the boundary in physical space,
      *        pointing out of the domain, of size (num_points, n)
-     * @param stiffness Output of size (num_active, num_active),
+     * @param stiffness Output of size (num_dofs, num_dofs),
      *        overwritten. It is resized when necessary
      *
      * @pre @p values and @p shifted were filled with flags(), at the points
@@ -75,7 +76,7 @@ public:
      *        pointing out of the domain, of size (num_points, n)
      * @param data Data of the condition at each point, such as the value
      *        it imposes or a flux
-     * @param load Output of size num_active, overwritten. It is resized
+     * @param load Output of size num_dofs, overwritten. It is resized
      *        when necessary
      *
      * @pre @p values and @p shifted were filled with flags(), at the points

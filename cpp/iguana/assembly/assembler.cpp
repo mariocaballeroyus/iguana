@@ -125,16 +125,17 @@ Assembler<Basis, n>::Assembler(const FunctionSpace<Basis>& space,
                                bool couple_faces)
     : space_(space), patch_(patch), couple_faces_(couple_faces)
 {
-    const DofMap& dof_map = space.dof_map();
-    const int num_dofs = dof_map.num_dofs();
+    const int num_elements = space.dof_map().num_elements();
+    const int num_dofs = space.num_dofs();
 
     // Sparsity pattern: K_ij can only be non-zero when functions i and j
-    // share an element, so each such pair gets an explicit zero, duplicates
-    // merging into one entry
+    // share an element, so each pair of their components gets an explicit
+    // zero, duplicates merging into one entry
     std::vector<Eigen::Triplet<Scalar>> entries;
+    std::vector<int> dofs;
 
-    for (int cell = 0; cell < dof_map.num_elements(); ++cell) {
-        const std::span<const int> dofs = dof_map.dofs_on_element(cell);
+    for (int cell = 0; cell < num_elements; ++cell) {
+        space.dofs_on_element(cell, dofs);
 
         for (const int row : dofs) {
             for (const int col : dofs)
@@ -152,9 +153,11 @@ Assembler<Basis, n>::Assembler(const FunctionSpace<Basis>& space,
             counts[direction] =
                 space.basis().grid().knots(direction).num_elements();
 
-        for (int cell = 0; cell < dof_map.num_elements(); ++cell) {
+        std::vector<int> after;
+
+        for (int cell = 0; cell < num_elements; ++cell) {
             const std::array<int, dim> index = unflatten(cell, counts);
-            const std::span<const int> before = dof_map.dofs_on_element(cell);
+            space.dofs_on_element(cell, dofs);
 
             for (std::size_t direction = 0; direction < dim; ++direction) {
                 std::array<int, dim> next = index;
@@ -163,10 +166,9 @@ Assembler<Basis, n>::Assembler(const FunctionSpace<Basis>& space,
                 if (next[direction] == counts[direction])
                     continue;
 
-                const std::span<const int> after =
-                    dof_map.dofs_on_element(flatten(next, counts));
+                space.dofs_on_element(flatten(next, counts), after);
 
-                for (const int row : before) {
+                for (const int row : dofs) {
                     for (const int col : after) {
                         entries.emplace_back(row, col, Scalar{0});
                         entries.emplace_back(col, row, Scalar{0});
@@ -180,10 +182,13 @@ Assembler<Basis, n>::Assembler(const FunctionSpace<Basis>& space,
     pattern.setFromTriplets(entries.begin(), entries.end());
 
     // The compressed rows of the pattern preallocate the stiffness, its
-    // explicit zeros the only entries a write may reach
+    // explicit zeros the only entries a write may reach. The block size
+    // tells the solvers which degrees of freedom are components of one
+    // function
     check_petsc(MatCreate(PETSC_COMM_SELF, &stiffness_));
     check_petsc(MatSetSizes(stiffness_, num_dofs, num_dofs, num_dofs,
                             num_dofs));
+    check_petsc(MatSetBlockSize(stiffness_, space.block_size()));
     check_petsc(MatSetType(stiffness_, MATSEQAIJ));
     check_petsc(MatSeqAIJSetPreallocationCSR(
         stiffness_, pattern.outerIndexPtr(), pattern.innerIndexPtr(),
@@ -199,7 +204,8 @@ Assembler<Basis, n>::Assembler(const FunctionSpace<Basis>& space,
                                  PETSC_TRUE));
     }
 
-    check_petsc(VecCreateSeq(PETSC_COMM_SELF, num_dofs, &load_));
+    // The load follows the rows, with their block size
+    check_petsc(MatCreateVecs(stiffness_, nullptr, &load_));
     check_petsc(VecZeroEntries(load_));
 }
 
@@ -239,6 +245,7 @@ void Assembler<Basis, n>::assemble_stiffness(
     Eigen::MatrixX<Scalar> points;
     Eigen::VectorX<Scalar> weights;
     Eigen::MatrixX<Scalar> local;
+    std::vector<int> dofs;
 
     for (int held = 0; held < quadrature.num_elements(); ++held) {
         const int cell = quadrature.elements()(held);
@@ -260,8 +267,8 @@ void Assembler<Basis, n>::assemble_stiffness(
         weights = cell_weight * weights.cwiseProduct(values.measures());
 
         element.local_stiffness(values, weights, local);
-        add_to_matrix(stiffness_, space_.dof_map().dofs_on_element(cell),
-                      local);
+        space_.dofs_on_element(cell, dofs);
+        add_to_matrix(stiffness_, dofs, local);
     }
 
     finalize();
@@ -301,6 +308,7 @@ void Assembler<Basis, n>::assemble_load(
     Eigen::VectorX<Scalar> weights;
     Eigen::VectorX<Scalar> sources;
     Eigen::VectorX<Scalar> local;
+    std::vector<int> dofs;
 
     for (int held = 0; held < quadrature.num_elements(); ++held) {
         const int cell = quadrature.elements()(held);
@@ -323,7 +331,8 @@ void Assembler<Basis, n>::assemble_load(
 
         sources = source.segment(first, count);
         element.local_load(values, weights, sources, local);
-        add_to_load(space_.dof_map().dofs_on_element(cell), local);
+        space_.dofs_on_element(cell, dofs);
+        add_to_load(dofs, local);
     }
 
     finalize();
@@ -356,6 +365,7 @@ void Assembler<Basis, n>::assemble_mass(
     Eigen::MatrixX<Scalar> points;
     Eigen::VectorX<Scalar> weights;
     Eigen::MatrixX<Scalar> local;
+    std::vector<int> dofs;
 
     for (int held = 0; held < quadrature.num_elements(); ++held) {
         const int cell = quadrature.elements()(held);
@@ -377,7 +387,8 @@ void Assembler<Basis, n>::assemble_mass(
         weights = cell_weight * weights.cwiseProduct(values.measures());
 
         element.local_mass(values, weights, local);
-        add_to_matrix(mass_, space_.dof_map().dofs_on_element(cell), local);
+        space_.dofs_on_element(cell, dofs);
+        add_to_matrix(mass_, dofs, local);
     }
 
     finalize();
@@ -418,6 +429,7 @@ void Assembler<Basis, n>::add_condition_stiffness(
     Eigen::VectorX<Scalar> weights;
     PointMatrix<Scalar, n> physical_normals;
     Eigen::MatrixX<Scalar> local;
+    std::vector<int> dofs;
 
     for (int held = 0; held < quadrature.num_elements(); ++held) {
         const int cell = quadrature.elements()(held);
@@ -455,8 +467,8 @@ void Assembler<Basis, n>::add_condition_stiffness(
 
         condition.local_stiffness(values, shifted, weights, physical_normals,
                                   local);
-        add_to_matrix(stiffness_, space_.dof_map().dofs_on_element(cell),
-                      local);
+        space_.dofs_on_element(cell, dofs);
+        add_to_matrix(stiffness_, dofs, local);
     }
 
     finalize();
@@ -504,6 +516,7 @@ void Assembler<Basis, n>::add_condition_load(
     PointMatrix<Scalar, n> physical_normals;
     Eigen::VectorX<Scalar> imposed;
     Eigen::VectorX<Scalar> local;
+    std::vector<int> dofs;
 
     for (int held = 0; held < quadrature.num_elements(); ++held) {
         const int cell = quadrature.elements()(held);
@@ -542,7 +555,8 @@ void Assembler<Basis, n>::add_condition_load(
         imposed = data.segment(first, count);
         condition.local_load(values, shifted, weights, physical_normals,
                              imposed, local);
-        add_to_load(space_.dof_map().dofs_on_element(cell), local);
+        space_.dofs_on_element(cell, dofs);
+        add_to_load(dofs, local);
     }
 
     finalize();
@@ -843,6 +857,13 @@ void Assembler<Basis, n>::add_to_matrix(Mat matrix,
     // The k-th degree of freedom pairs with row and column k
     const PetscInt count = static_cast<PetscInt>(dofs.size());
 
+    // PETSc reads an entry for every pair, past the end of a local matrix
+    // of another block size
+    if (local.rows() != count || local.cols() != count)
+        throw std::invalid_argument("Assembler: "
+                                    "the local matrix must match the degrees "
+                                    "of freedom of the space");
+
     check_petsc(MatSetValues(matrix, count, dofs.data(), count, dofs.data(),
                              local.data(), ADD_VALUES));
 }
@@ -853,6 +874,13 @@ void Assembler<Basis, n>::add_to_load(std::span<const int> dofs,
 {
     // The k-th degree of freedom pairs with row k
     const PetscInt count = static_cast<PetscInt>(dofs.size());
+
+    // PETSc reads an entry for every degree of freedom, past the end of a
+    // local load of another block size
+    if (local.size() != count)
+        throw std::invalid_argument("Assembler: "
+                                    "the local load must match the degrees "
+                                    "of freedom of the space");
 
     check_petsc(VecSetValues(load_, count, dofs.data(), local.data(),
                              ADD_VALUES));
@@ -874,12 +902,10 @@ template<typename Basis, std::size_t n>
 void Assembler<Basis, n>::face_dofs(int before, int after,
                                     std::vector<int>& dofs) const
 {
-    const std::span<const int> before_dofs =
-        space_.dof_map().dofs_on_element(before);
-    const std::span<const int> after_dofs =
-        space_.dof_map().dofs_on_element(after);
+    std::vector<int> after_dofs;
+    space_.dofs_on_element(before, dofs);
+    space_.dofs_on_element(after, after_dofs);
 
-    dofs.assign(before_dofs.begin(), before_dofs.end());
     dofs.insert(dofs.end(), after_dofs.begin(), after_dofs.end());
 }
 

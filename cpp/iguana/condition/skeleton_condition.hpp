@@ -23,8 +23,9 @@ namespace iguana
  * @details The two-sided sibling of Condition: each cell gives its one-sided
  *          values at the face and a weight for its test functions, such as
  *          its volume fraction in the Generalized Shifted Boundary Method.
- *          Rows and columns follow the functions active on the cell before
- *          the face, then those of the cell after
+ *          Rows and columns follow the degrees of freedom of the cell before
+ *          the face, then those of the cell after, each ordered as for
+ *          Element
  *
  * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
  * @tparam n Dimension of the physical space of the patch
@@ -57,7 +58,7 @@ public:
      * @param normals Unit normals of the face in physical space, pointing
      *        from the cell before it to the cell after it, of size
      *        (num_points, n)
-     * @param stiffness Output of size (num_active, num_active) of both cells
+     * @param stiffness Output of size (num_dofs, num_dofs) of both cells
      *        together, overwritten. It is resized when necessary
      *
      * @pre The values were filled with flags(), at the points of @p weights
@@ -91,7 +92,7 @@ public:
      *        (num_points, n)
      * @param data Data of the condition at each point, such as the value it
      *        imposes, given at its closest point with a projection
-     * @param load Output of size num_active of both cells together,
+     * @param load Output of size num_dofs of both cells together,
      *        overwritten. It is resized when necessary
      *
      * @pre The values were filled with flags(), at the points of @p weights,

@@ -21,8 +21,11 @@ namespace iguana
  *
  * @details It reads the values its flags() request, at the points of the
  *          element, and integrates with the physical weights the assembler
- *          maps. Its rows and columns follow the functions active on the
- *          element
+ *          maps. Its rows and columns follow the num_dofs degrees of
+ *          freedom of the element, as FunctionSpace::dofs_on_element()
+ *          orders them: one component of the field after another, each
+ *          over the active functions. The number of components is the
+ *          block size of the space
  *
  * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
  * @tparam n Dimension of the physical space of the patch
@@ -47,7 +50,7 @@ public:
      * @param weights Physical weights, one per point, scaled by the
      *        weight of the test functions on the cell when the
      *        assembly gives one
-     * @param stiffness Output of size (num_active, num_active),
+     * @param stiffness Output of size (num_dofs, num_dofs),
      *        overwritten. It is resized when necessary
      *
      * @pre @p values were filled with flags(), at the points of @p weights
@@ -65,7 +68,7 @@ public:
      *        weight of the test functions on the cell when the
      *        assembly gives one
      * @param source Value of the source at each point
-     * @param load Output of size num_active, overwritten. It is resized
+     * @param load Output of size num_dofs, overwritten. It is resized
      *        when necessary
      *
      * @pre @p values were filled with flags(), at the points of @p weights
@@ -84,7 +87,7 @@ public:
      * @param weights Physical weights, one per point, scaled by the
      *        weight of the test functions on the cell when the
      *        assembly gives one
-     * @param mass Output of size (num_active, num_active), overwritten. It
+     * @param mass Output of size (num_dofs, num_dofs), overwritten. It
      *        is resized when necessary
      *
      * @pre @p values were filled with flags(), at the points of @p weights

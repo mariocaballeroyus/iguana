@@ -20,10 +20,10 @@ namespace iguana
  *        condition imposes values on or loads with natural data
  *
  * @details An essential quantity of the weak form, such as the field or a
- *          rotation, one per component of a vector quantity. Each element
- *          declares its traces as nested classes, such as PoissonElement::U.
- *          Projections onto the normal of a boundary belong to the
- *          conditions
+ *          rotation, one per component of a vector quantity, whose rows of
+ *          the other components are zero. Each element declares its traces
+ *          as nested classes, such as PoissonElement::U. Projections onto
+ *          the normal of a boundary belong to the conditions
  *
  * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
  * @tparam n Dimension of the physical space of the patch
@@ -41,15 +41,15 @@ public:
     virtual ValueFlags flags() const noexcept = 0;
 
     /**
-     * @brief Trace of each active function at the boundary points in the
-     *        element, the matrix B
+     * @brief Trace of each degree of freedom of the element at the boundary
+     *        points in it, the matrix B
      *
      *     T(u)(x_q) = Σ_i B_iq u_i
      *
      * @param values Values at the boundary points in the element
-     * @param trace Output of size (num_active, num_points), the layout of
-     *        ElementValues::values(), overwritten. It is resized when
-     *        necessary
+     * @param trace Output with a row per degree of freedom of the element,
+     *        ordered as the rows of Element, and a column per point,
+     *        overwritten. It is resized when necessary
      *
      * @pre @p values were filled with flags()
      */

@@ -5,6 +5,7 @@
 
 #include "function_space.hpp"
 
+#include <span>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -66,10 +67,29 @@ DofMap standard_dof_map(
 
 template<typename Basis>
 FunctionSpace<Basis>::FunctionSpace(
-    Basis basis, const CellClassification<Scalar, dimension>& classification)
+    Basis basis, const CellClassification<Scalar, dimension>& classification,
+    int block_size)
     : basis_(std::move(basis)),
-      dof_map_(standard_dof_map(basis_, classification))
+      dof_map_(standard_dof_map(basis_, classification)),
+      block_size_(block_size)
 {
+    if (block_size < 1)
+        throw std::invalid_argument("FunctionSpace: "
+                                    "the block size must be positive");
+}
+
+template<typename Basis>
+void FunctionSpace<Basis>::dofs_on_element(int element,
+                                           std::vector<int>& dofs) const
+{
+    const std::span<const int> scalar_dofs = dof_map_.dofs_on_element(element);
+
+    dofs.clear();
+
+    for (int component = 0; component < block_size_; ++component) {
+        for (const int dof : scalar_dofs)
+            dofs.push_back(block_size_ * dof + component);
+    }
 }
 
 template class FunctionSpace<TensorBSpline<double, 1>>;

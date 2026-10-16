@@ -24,8 +24,8 @@ namespace iguana
  *          across a face, the only ones that jump for splines of maximal
  *          continuity. They vanish on a field that is one polynomial across
  *          the faces, so the penalty is consistent. Rows and columns follow
- *          the functions active on the cell before the face, then those of
- *          the cell after
+ *          the degrees of freedom of the cell before the face, then those of
+ *          the cell after, each ordered as for Element
  *
  * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
  * @tparam n Dimension of the physical space of the patch
@@ -68,7 +68,7 @@ public:
      *        it at the same points
      * @param weights Face weights, one per point
      * @param order Order p of the derivatives the values hold
-     * @param stiffness Output of size (num_active, num_active) of both
+     * @param stiffness Output of size (num_dofs, num_dofs) of both
      *        cells together, overwritten. It is resized when necessary
      *
      * @pre @p before and @p after were filled with flags() at the points of
