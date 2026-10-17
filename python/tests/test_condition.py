@@ -11,7 +11,7 @@ from iguana import (Boundary, CellType, FunctionSpace, GhostPenalty,
                     HierarchicalGrid, NeumannCondition, NitscheCondition,
                     PenaltyCondition, PoissonElement, QuadratureBoundary,
                     QuadratureDomain, SkeletonNitscheCondition,
-                    SurrogateBoundary, classify_cells, cpp)
+                    StokesElement, SurrogateBoundary, classify_cells, cpp)
 
 try:
     from iguana.petsc import LinearProblem
@@ -340,6 +340,17 @@ def test_invalid_arguments():
 
     with pytest.raises(ValueError):
         condition.values = values[:-1]
+
+    # The velocity of a fluid takes two values per point, given back as they
+    # were given
+    fluid = StokesElement(1., 3.)
+    velocity = np.column_stack([values, values + 1.])
+
+    with pytest.raises(ValueError):
+        NitscheCondition(fluid.u, boundary, values, 1.)
+
+    assert np.array_equal(
+        NitscheCondition(fluid.u, boundary, velocity, 1.).values, velocity)
 
 
 @pytest.mark.petsc

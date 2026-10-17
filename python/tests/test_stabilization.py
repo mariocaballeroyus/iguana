@@ -9,7 +9,8 @@ import pytest
 import iguana
 from iguana import (Boundary, CellType, FunctionSpace, GhostPenalty,
                     NitscheCondition, PoissonElement, QuadratureBoundary,
-                    QuadratureDomain, SurrogateBoundary, classify_cells, cpp)
+                    QuadratureDomain, SkeletonNitscheCondition,
+                    StokesElement, SurrogateBoundary, classify_cells, cpp)
 
 try:
     from iguana.petsc import LinearProblem
@@ -77,6 +78,62 @@ def test_ghost_penalty_extends_a_shifted_problem():
 
 
 @pytest.mark.petsc
+def test_ghost_penalties_of_a_fluid_take_the_signs_of_its_blocks():
+    """For one positive penalty, the ghost penalty of the velocity adds to
+    its positive block and that of the pressure to the negative pressure
+    block of the symmetric form, so doubling the penalty adds a positive
+    block on the velocity and a negative one on the pressure."""
+    patch = rectangle()
+    cell_types, fractions = classify_cells(patch, circle())
+    element = StokesElement(1.5, 3.)
+
+    quadrature = QuadratureDomain(patch, cell_types)
+
+    for cell_type in (CellType.inside, CellType.cut, CellType.outside):
+        quadrature.fill_gauss_legendre(cell_type, 3)
+
+    condition = SkeletonNitscheCondition(element.u, patch, cell_types,
+                                         circle(),
+                                         lambda x: np.zeros((len(x), 2)),
+                                         40. * element.viscosity)
+
+    def operator(penalty):
+        ghosts = [GhostPenalty(trace, patch, cell_types, penalty)
+                  for trace in (element.u, element.p)]
+        problem = LinearProblem(element, FunctionSpace(patch, block_size=3),
+                                quadrature,
+                                np.zeros((quadrature.num_points, 2)),
+                                cell_weights=fractions, conditions=[condition],
+                                stabilizations=ghosts,
+                                pressure_reference=CENTRE,
+                                petsc_options_prefix='signs_')
+        problem.solve()
+
+        return problem.A
+
+    # Everything but the penalties cancels, the pinned pressure included
+    difference = operator(.2)
+    difference.axpy(-1., operator(.1))
+
+    rng = np.random.default_rng(0)
+    num_dofs = difference.getSize()[0] // 3
+
+    def energy(component):
+        coefficients = np.zeros((num_dofs, 3))
+        coefficients[:, component] = rng.standard_normal(num_dofs)
+        field = difference.createVecRight()
+        field.setArray(coefficients.ravel())
+        product = difference.createVecLeft()
+        difference.mult(field, product)
+
+        return field.dot(product)
+
+    assert energy(0) > 0.
+    assert energy(1) > 0.
+    assert energy(2) < 0.
+
+
+@pytest.mark.petsc
 def test_invalid_ghost_penalties():
     patch = rectangle()
     cell_types = classify_cells(patch, circle()).cell_types
@@ -101,6 +158,14 @@ def test_invalid_ghost_penalties():
     with pytest.raises(TypeError):
         LinearProblem(element, FunctionSpace(patch), quadrature, source,
                       stabilizations=['ghost'],
+                      petsc_options_prefix='invalid_')
+
+    # The pressure of a fluid, foreign to the Poisson element
+    pressure = GhostPenalty(StokesElement(1., 3.).p, patch, cell_types, 1.)
+
+    with pytest.raises(ValueError):
+        LinearProblem(element, FunctionSpace(patch), quadrature, source,
+                      stabilizations=[pressure],
                       petsc_options_prefix='invalid_')
 
     # The cells must lie on the patch of the space

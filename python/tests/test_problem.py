@@ -7,9 +7,11 @@ import numpy as np
 import pytest
 
 import iguana
-from iguana import (CellType, FunctionSpace, HierarchicalGrid,
-                    NitscheCondition, PoissonElement, QuadratureBoundary,
-                    QuadratureDomain, SurrogateBoundary)
+from iguana import (Boundary, CellType, FunctionSpace, GhostPenalty,
+                    HierarchicalGrid, NitscheCondition, PoissonElement,
+                    QuadratureBoundary, QuadratureDomain,
+                    SkeletonNitscheCondition, StokesElement,
+                    SurrogateBoundary, classify_cells)
 
 try:
     from iguana.petsc import LinearProblem
@@ -52,6 +54,38 @@ def coefficients(knots):
     return (first + second) / 2. - first * second
 
 
+def quadratic_flow(patch):
+    """Coefficients of the flow u = (x^2, −2 x y), which has no divergence,
+    and of the pressure p = x + y on a rectangle of quadratic elements from
+    the origin, of shape `(num_dofs, 3)`. In parameters, x is the width
+    times t, whose coefficients are the means of the inner knots of each
+    function, and those of t^2 their products; those of x + y are its values
+    at the control points. With every cell inside, each function keeps its
+    own index, the first direction running fastest."""
+    width, height = patch.control_points.max(axis=0)
+    t, s = ((knots[1:-2] + knots[2:-1]) / 2. for knots in patch.knots)
+    t_squared = patch.knots[0][1:-2] * patch.knots[0][2:-1]
+
+    return np.column_stack([np.kron(np.ones(len(s)), width ** 2 * t_squared),
+                            -2. * np.kron(height * s, width * t),
+                            patch.control_points.sum(axis=1)])
+
+
+def stokes():
+    """Element of a fluid, its velocity the quadratic flow, and the body
+    force that drives it, f = −div(2μ ε(u)) + ∇p = (1 − 2μ, 1)."""
+    element = StokesElement(1.5, 3.)
+
+    def velocity(points):
+        x, y = points.T
+        return np.column_stack([x * x, -2. * x * y])
+
+    def body_force(points):
+        return np.tile([1. - 2. * element.viscosity, 1.], (len(points), 1))
+
+    return element, velocity, body_force
+
+
 def test_quadratic_solution_is_exact():
     # More elements along x than along y, so that the order of the degrees
     # of freedom matters, and sides that set positions apart from parameters
@@ -81,6 +115,73 @@ def test_quadratic_solution_is_exact():
     along_y = height ** 2 * coefficients(patch.knots[1])
 
     assert np.allclose(u, np.kron(along_y, along_x), rtol=0., atol=1e-12)
+
+
+def test_stokes_flow_is_exact():
+    """The quadratic splines hold the flow and the pressure, so with the
+    velocity imposed all around by Nitsche's method the Stokes element
+    finds them exactly, the pressure up to the constant its reference
+    fixes, zero at the function nearest the reference."""
+    patch = rectangle()
+    space = FunctionSpace(patch, block_size=3)
+    element, velocity, body_force = stokes()
+
+    condition = NitscheCondition(element.u, edges(patch), velocity,
+                                 40. * element.viscosity)
+    problem = LinearProblem(element, space, gauss_quadrature(patch),
+                            body_force, conditions=[condition],
+                            pressure_reference=(1., 1.6),
+                            petsc_options_prefix='stokes_')
+    u = problem.solve()
+    exact = quadratic_flow(patch)
+    nearest = np.argmin(np.linalg.norm(space.control_points - [1., 1.6],
+                                       axis=1))
+
+    assert u.shape == (space.num_dofs, 3)
+    assert np.allclose(u[:, :2], exact[:, :2], rtol=0., atol=1e-12)
+    assert np.allclose(u[:, 2] - u[nearest, 2], exact[:, 2]
+                       - exact[nearest, 2], rtol=0., atol=1e-12)
+    assert u[nearest, 2] == 0.
+
+
+def test_stokes_flow_by_the_generalized_shifted_boundary_method():
+    """Inside a square, with the volume fractions weighting the cells of a
+    space that keeps every function, Nitsche's condition on the faces where
+    they jump and ghost penalties on the velocity and the pressure find the
+    flow and the pressure at every degree of freedom, those beyond the
+    square included."""
+    patch = iguana.create_rectangle(lengths=(2., 3.), elements=(6, 6))
+    lower, upper = np.array([.5, 1.25]), np.array([1.5, 2.25])
+    corners = np.array([lower, [upper[0], lower[1]], upper,
+                        [lower[0], upper[1]]])
+    square = Boundary([iguana.create_curve(
+        degree=1, knots=[0., 0., 1., 1.],
+        control_points=[corners[side], corners[(side + 1) % 4]])
+        for side in range(4)])
+    cell_types, fractions = classify_cells(patch, square)
+    element, velocity, body_force = stokes()
+
+    quadrature = QuadratureDomain(patch, cell_types)
+
+    for cell_type in (CellType.inside, CellType.cut, CellType.outside):
+        quadrature.fill_gauss_legendre(cell_type, 3)
+
+    condition = SkeletonNitscheCondition(element.u, patch, cell_types, square,
+                                         velocity, 40. * element.viscosity)
+    ghosts = [GhostPenalty(trace, patch, cell_types, .1)
+              for trace in (element.u, element.p)]
+    u = LinearProblem(element, FunctionSpace(patch, block_size=3),
+                      quadrature, body_force, cell_weights=fractions,
+                      conditions=[condition], stabilizations=ghosts,
+                      pressure_reference=(1., 1.75),
+                      petsc_options_prefix='stokes_gsbm_').solve()
+    exact = quadratic_flow(patch)
+
+    # Exact to round-off, which the conditioning of the cells the penalties
+    # alone determine amplifies
+    assert np.abs(u[:, :2] - exact[:, :2]).max() < 1e-9
+    assert np.abs((u[:, 2] - u[:, 2].mean())
+                  - (exact[:, 2] - exact[:, 2].mean())).max() < 1e-9
 
 
 def test_backward_euler_steps_a_field_linear_in_time():
@@ -257,3 +358,52 @@ def test_invalid_arguments():
 
     with pytest.raises(ValueError):
         transient.previous = np.zeros(space.num_dofs - 1)
+
+    # The space of a fluid holds the velocity and the pressure, its source
+    # is the body force, its conditions act on its velocity, and its
+    # pressure reference is a point
+    fluid, velocity, body_force = stokes()
+    vector = FunctionSpace(patch, block_size=3)
+    force = body_force(quadrature.positions)
+
+    with pytest.raises(ValueError):
+        LinearProblem(element, vector, quadrature, ones,
+                      petsc_options_prefix=prefix)
+
+    with pytest.raises(ValueError):
+        LinearProblem(fluid, space, quadrature, force,
+                      petsc_options_prefix=prefix)
+
+    with pytest.raises(ValueError):
+        LinearProblem(fluid, vector, quadrature, ones,
+                      petsc_options_prefix=prefix)
+
+    field = NitscheCondition(element.u, edges(patch),
+                             lambda x: np.zeros(len(x)), 40.)
+
+    with pytest.raises(ValueError):
+        LinearProblem(fluid, vector, quadrature, force, conditions=[field],
+                      petsc_options_prefix=prefix)
+
+    with pytest.raises(ValueError):
+        LinearProblem(element, space, quadrature, ones,
+                      pressure_reference=(1., 1.),
+                      petsc_options_prefix=prefix)
+
+    with pytest.raises(ValueError):
+        LinearProblem(fluid, vector, quadrature, force,
+                      pressure_reference=(1., 1., 1.),
+                      petsc_options_prefix=prefix)
+
+    for viscosity, stabilization in ((0., 3.), (1., 0.)):
+        with pytest.raises(ValueError):
+            StokesElement(viscosity, stabilization)
+
+    # A field of several components has a coefficient per component
+    stepped = LinearProblem(fluid, vector, quadrature, force, step=.1,
+                            petsc_options_prefix=prefix)
+
+    assert stepped.previous.shape == (vector.num_dofs, 3)
+
+    with pytest.raises(ValueError):
+        stepped.previous = np.zeros(3 * vector.num_dofs)
