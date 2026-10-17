@@ -278,6 +278,28 @@ iguana::QuadratureBoundary<double, 2> boundary_quadrature(
     return {embedded, iguana::GaussLegendre<double, 1>(5)};
 }
 
+/// @brief Greville abscissae of every function of a univariate basis
+Eigen::VectorXd grevilles(const KnotVector<double>& knot_vector)
+{
+    const int count = static_cast<int>(knot_vector.values().size())
+                      - knot_vector.degree() - 1;
+    Eigen::VectorXd result(count);
+
+    for (int function = 0; function < count; ++function)
+        result(function) = greville(knot_vector, function);
+
+    return result;
+}
+
+/// @brief Coefficients of a product of a polynomial along x and one along
+///        y in a basis on the elements of rectangle(), given by their
+///        coefficients along each direction, the first running fastest
+Eigen::VectorXd product(const Eigen::VectorXd& along_x,
+                        const Eigen::VectorXd& along_y)
+{
+    return (along_x * along_y.transpose()).reshaped();
+}
+
 /// @brief Trace of one component of a field of two, the values of the
 ///        functions in the rows of that component and zeros in the others
 class Component final : public iguana::Trace<Basis, 2>
@@ -939,6 +961,90 @@ TEST_CASE("A shifted Nitsche condition imposes a field of the space "
 
     REQUIRE_THROWS_AS((iguana::NitscheCondition<Basis, 2>(trace, flux, 0.)),
                       std::invalid_argument);
+}
+
+TEST_CASE("A Stokes system with Nitsche conditions holds a divergence-free "
+          "quadratic flow exactly, up to a constant pressure", "[assembler]")
+{
+    using Element = iguana::StokesElement<Basis, 2>;
+
+    const Basis basis = uneven();
+    const iguana::Patch<Basis, 2> patch = rectangle(basis);
+    const CellClassification<double, 2> classification =
+        all_cells(CellType::inside);
+    const iguana::FunctionSpace<Basis> space(basis, classification, 3);
+    const iguana::QuadratureDomain<double, 2> cells =
+        inside_quadrature(basis, classification);
+
+    // The edges of the rectangle, the surrogate boundary of its cells
+    const iguana::QuadratureBoundary<double, 2> edges(
+        iguana::SurrogateBoundary<double, 2>(basis.grid(), classification),
+        iguana::GaussLegendre<double, 1>(3));
+
+    const double viscosity = 1.5;
+    const Element element(viscosity, 3.);
+    const std::array<Element::U, 2> traces{Element::U(0), Element::U(1)};
+    const std::array<Element::T, 2> fluxes{Element::T(viscosity, 0),
+                                           Element::T(viscosity, 1)};
+
+    // u = (x^2, −2 x y) has no divergence, and with p = x + y the body force
+    // f = −div(2μ ε(u)) + ∇p = (1 − 2μ, 1)
+    Eigen::MatrixXd source(cells.num_points(), 2);
+    source.col(0).setConstant(1. - 2. * viscosity);
+    source.col(1).setConstant(1.);
+
+    // The values of u along the edges, the points lying in parameter space,
+    // where the map scales each axis by its side
+    const Eigen::VectorXd x = width * edges.points().col(0);
+    const Eigen::VectorXd y = height * edges.points().col(1);
+    const std::array<Eigen::VectorXd, 2> data{x.cwiseProduct(x),
+                                              -2. * x.cwiseProduct(y)};
+
+    iguana::Assembler<Basis, 2> assembler(space, patch);
+    assembler.assemble_stiffness(element, cells);
+    assembler.assemble_load(element, cells, source);
+
+    for (std::size_t component = 0; component < 2; ++component) {
+        const iguana::NitscheCondition<Basis, 2> condition(
+            traces[component], fluxes[component], 40. * viscosity);
+
+        assembler.assemble_stiffness(condition, edges);
+        assembler.assemble_load(condition, edges, data[component]);
+    }
+
+    // The coefficients of x^2 and x y from the blossoms of each direction,
+    // those of x + y at the control points, component c of function k at
+    // 3 k + c
+    const KnotVector<double>& along_x = basis.grid().knots(0);
+    const KnotVector<double>& along_y = basis.grid().knots(1);
+    const Eigen::VectorXd ones_y =
+        Eigen::VectorXd::Ones(basis.axis(1).num_functions());
+
+    Eigen::MatrixXd components(3, basis.num_functions());
+    components.row(0) =
+        product(width * width * truncated_power(along_x, 0.), ones_y)
+            .transpose();
+    components.row(1) = product(-2. * width * grevilles(along_x),
+                                height * grevilles(along_y))
+                            .transpose();
+    components.row(2) =
+        (patch.coefficients() * Eigen::Vector2d(1., 1.)).transpose();
+
+    const Eigen::VectorXd exact = components.reshaped();
+    const Eigen::SparseMatrix<double, Eigen::RowMajor> stiffness =
+        stiffness_of(assembler);
+
+    // The method and Nitsche's conditions are consistent, the residual of
+    // the momentum equation vanishing
+    REQUIRE((stiffness * exact - load_of(assembler)).cwiseAbs().maxCoeff()
+            < 1e-11);
+
+    // With the velocity imposed all around, a constant pressure balances
+    // its own flux through the boundary, so it solves the system with zero
+    Eigen::VectorXd pressure = Eigen::VectorXd::Zero(exact.size());
+    pressure(Eigen::seqN(2, basis.num_functions(), 3)).setOnes();
+
+    REQUIRE((stiffness * pressure).cwiseAbs().maxCoeff() < 1e-12);
 }
 
 TEST_CASE("A ghost penalty penalizes the jumps of the highest derivatives "
