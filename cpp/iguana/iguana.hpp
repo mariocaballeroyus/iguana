@@ -40,6 +40,8 @@
 #include "element/flux.hpp"
 #include "element/poisson/poisson_element.hpp"
 #include "element/poisson/poisson_traces.hpp"
+#include "element/stokes/stokes_element.hpp"
+#include "element/stokes/stokes_traces.hpp"
 #include "element/trace.hpp"
 #include "condition/condition.hpp"
 #include "condition/skeleton_condition.hpp"

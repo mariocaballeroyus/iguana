@@ -21,8 +21,9 @@ namespace iguana
  *        equation du/dt − div(grad u) = f with its mass
  *
  * @details It holds no state, and its patch must be a domain, the only one
- *          with physical gradients. Its trace is the field, U, and its flux
- *          the normal derivative of the field, Q
+ *          with physical gradients. Its source has one component, its trace
+ *          is the field, U, and its flux the normal derivative of the
+ *          field, Q
  *
  * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
  * @tparam n Dimension of the physical space, the number of parametric
@@ -48,7 +49,7 @@ public:
 
     void local_load(const ElementValues<Basis, n>& values,
                     const Eigen::VectorX<Scalar>& weights,
-                    const Eigen::VectorX<Scalar>& source,
+                    const Eigen::MatrixX<Scalar>& source,
                     Eigen::VectorX<Scalar>& load) const override;
 
     void local_mass(const ElementValues<Basis, n>& values,

@@ -67,16 +67,17 @@ public:
      * @param weights Physical weights, one per point, scaled by the
      *        weight of the test functions on the cell when the
      *        assembly gives one
-     * @param source Value of the source at each point
+     * @param source Value of the source at each point, a row per point
+     *        and a column per component of the source
      * @param load Output of size num_dofs, overwritten. It is resized
      *        when necessary
      *
      * @pre @p values were filled with flags(), at the points of @p weights
-     *      and @p source
+     *      and @p source, which has the components the element reads
      */
     virtual void local_load(const ElementValues<Basis, n>& values,
                             const Eigen::VectorX<Scalar>& weights,
-                            const Eigen::VectorX<Scalar>& source,
+                            const Eigen::MatrixX<Scalar>& source,
                             Eigen::VectorX<Scalar>& load) const = 0;
 
     /**

@@ -5,6 +5,7 @@
 
 #include "assembler.hpp"
 
+#include <algorithm>
 #include <array>
 #include <concepts>
 #include <cstddef>
@@ -24,6 +25,8 @@
 #include "iguana/condition/penalty_condition.hpp"
 #include "iguana/condition/skeleton_nitsche_condition.hpp"
 #include "iguana/element/poisson/poisson_element.hpp"
+#include "iguana/element/stokes/stokes_element.hpp"
+#include "iguana/grid/knot_vector.hpp"
 #include "iguana/utils/multi_index.hpp"
 
 namespace iguana
@@ -115,6 +118,26 @@ void differentiate_values(ElementValues<Basis, n>& values,
         throw std::invalid_argument("Assembler: "
                                     "a ghost penalty needs a B-spline patch");
     }
+}
+
+/**
+ * @brief Whether every interior knot of a knot vector is simple, so that
+ *        its splines have maximal continuity and only their derivatives of
+ *        the order of the degree jump between its elements
+ */
+template<std::floating_point T>
+bool simple_interior_knots(const KnotVector<T>& knot_vector)
+{
+    const std::vector<T>& knots = knot_vector.values();
+
+    for (int element = 1; element < knot_vector.num_elements(); ++element) {
+        const T knot = knot_vector.element_start(element);
+
+        if (std::count(knots.begin(), knots.end(), knot) > 1)
+            return false;
+    }
+
+    return true;
 }
 
 } // namespace
@@ -278,7 +301,7 @@ template<typename Basis, std::size_t n>
 template<std::derived_from<Element<Basis, n>> E>
 void Assembler<Basis, n>::assemble_load(
     const E& element, const QuadratureDomain<Scalar, dim>& quadrature,
-    const Eigen::VectorX<Scalar>& source)
+    const Eigen::MatrixX<Scalar>& source)
 {
     // Every cell weighted by one
     const Eigen::VectorX<Scalar> ones =
@@ -291,12 +314,12 @@ template<typename Basis, std::size_t n>
 template<std::derived_from<Element<Basis, n>> E>
 void Assembler<Basis, n>::assemble_load(
     const E& element, const QuadratureDomain<Scalar, dim>& quadrature,
-    const Eigen::VectorX<Scalar>& source,
+    const Eigen::MatrixX<Scalar>& source,
     const Eigen::VectorX<Scalar>& cell_weights)
 {
-    if (source.size() != quadrature.num_points())
+    if (source.rows() != quadrature.num_points())
         throw std::invalid_argument("Assembler: "
-                                    "the source must have one value per point");
+                                    "the source must have one row per point");
 
     if (cell_weights.size() != space_.dof_map().num_elements())
         throw std::invalid_argument("Assembler: "
@@ -306,7 +329,7 @@ void Assembler<Basis, n>::assemble_load(
     ElementValues<Basis, n> values(patch_, element.flags());
     Eigen::MatrixX<Scalar> points;
     Eigen::VectorX<Scalar> weights;
-    Eigen::VectorX<Scalar> sources;
+    Eigen::MatrixX<Scalar> sources;
     Eigen::VectorX<Scalar> local;
     std::vector<int> dofs;
 
@@ -329,7 +352,7 @@ void Assembler<Basis, n>::assemble_load(
         weights = quadrature.weights().segment(first, count);
         weights = cell_weight * weights.cwiseProduct(values.measures());
 
-        sources = source.segment(first, count);
+        sources = source.middleRows(first, count);
         element.local_load(values, weights, sources, local);
         space_.dofs_on_element(cell, dofs);
         add_to_load(dofs, local);
@@ -577,6 +600,14 @@ void Assembler<Basis, n>::assemble_stiffness(
     if (!patch_.is_affine())
         throw std::invalid_argument("Assembler: "
                                     "a ghost penalty needs an affine patch");
+
+    // A repeated knot would let lower derivatives jump unpenalized
+    for (std::size_t direction = 0; direction < dim; ++direction) {
+        if (!simple_interior_knots(patch_.basis().grid().knots(direction)))
+            throw std::invalid_argument("Assembler: "
+                                        "a ghost penalty needs simple "
+                                        "interior knots");
+    }
 
     ElementValues<Basis, n> before(patch_, penalty.flags());
     ElementValues<Basis, n> after(patch_, penalty.flags());
@@ -938,16 +969,16 @@ template void Assembler<TensorNURBS<double, 3>, 3>::assemble_stiffness(
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
     const PoissonElement<TensorBSpline<double, 2>, 2>&,
-    const QuadratureDomain<double, 2>&, const Eigen::VectorX<double>&);
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&);
 template void Assembler<TensorBSpline<double, 3>, 3>::assemble_load(
     const PoissonElement<TensorBSpline<double, 3>, 3>&,
-    const QuadratureDomain<double, 3>&, const Eigen::VectorX<double>&);
+    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
     const PoissonElement<TensorNURBS<double, 2>, 2>&,
-    const QuadratureDomain<double, 2>&, const Eigen::VectorX<double>&);
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&);
 template void Assembler<TensorNURBS<double, 3>, 3>::assemble_load(
     const PoissonElement<TensorNURBS<double, 3>, 3>&,
-    const QuadratureDomain<double, 3>&, const Eigen::VectorX<double>&);
+    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_stiffness(
     const PoissonElement<TensorBSpline<double, 2>, 2>&,
@@ -964,19 +995,19 @@ template void Assembler<TensorNURBS<double, 3>, 3>::assemble_stiffness(
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
     const PoissonElement<TensorBSpline<double, 2>, 2>&,
-    const QuadratureDomain<double, 2>&, const Eigen::VectorX<double>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&,
     const Eigen::VectorX<double>&);
 template void Assembler<TensorBSpline<double, 3>, 3>::assemble_load(
     const PoissonElement<TensorBSpline<double, 3>, 3>&,
-    const QuadratureDomain<double, 3>&, const Eigen::VectorX<double>&,
+    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&,
     const Eigen::VectorX<double>&);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
     const PoissonElement<TensorNURBS<double, 2>, 2>&,
-    const QuadratureDomain<double, 2>&, const Eigen::VectorX<double>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&,
     const Eigen::VectorX<double>&);
 template void Assembler<TensorNURBS<double, 3>, 3>::assemble_load(
     const PoissonElement<TensorNURBS<double, 3>, 3>&,
-    const QuadratureDomain<double, 3>&, const Eigen::VectorX<double>&,
+    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&,
     const Eigen::VectorX<double>&);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_mass(
@@ -1003,6 +1034,88 @@ template void Assembler<TensorNURBS<double, 2>, 2>::assemble_mass(
     const QuadratureDomain<double, 2>&, const Eigen::VectorX<double>&);
 template void Assembler<TensorNURBS<double, 3>, 3>::assemble_mass(
     const PoissonElement<TensorNURBS<double, 3>, 3>&,
+    const QuadratureDomain<double, 3>&, const Eigen::VectorX<double>&);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_stiffness(
+    const StokesElement<TensorBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&);
+template void Assembler<TensorBSpline<double, 3>, 3>::assemble_stiffness(
+    const StokesElement<TensorBSpline<double, 3>, 3>&,
+    const QuadratureDomain<double, 3>&);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_stiffness(
+    const StokesElement<TensorNURBS<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&);
+template void Assembler<TensorNURBS<double, 3>, 3>::assemble_stiffness(
+    const StokesElement<TensorNURBS<double, 3>, 3>&,
+    const QuadratureDomain<double, 3>&);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
+    const StokesElement<TensorBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&);
+template void Assembler<TensorBSpline<double, 3>, 3>::assemble_load(
+    const StokesElement<TensorBSpline<double, 3>, 3>&,
+    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
+    const StokesElement<TensorNURBS<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&);
+template void Assembler<TensorNURBS<double, 3>, 3>::assemble_load(
+    const StokesElement<TensorNURBS<double, 3>, 3>&,
+    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_stiffness(
+    const StokesElement<TensorBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::VectorX<double>&);
+template void Assembler<TensorBSpline<double, 3>, 3>::assemble_stiffness(
+    const StokesElement<TensorBSpline<double, 3>, 3>&,
+    const QuadratureDomain<double, 3>&, const Eigen::VectorX<double>&);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_stiffness(
+    const StokesElement<TensorNURBS<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::VectorX<double>&);
+template void Assembler<TensorNURBS<double, 3>, 3>::assemble_stiffness(
+    const StokesElement<TensorNURBS<double, 3>, 3>&,
+    const QuadratureDomain<double, 3>&, const Eigen::VectorX<double>&);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
+    const StokesElement<TensorBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&,
+    const Eigen::VectorX<double>&);
+template void Assembler<TensorBSpline<double, 3>, 3>::assemble_load(
+    const StokesElement<TensorBSpline<double, 3>, 3>&,
+    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&,
+    const Eigen::VectorX<double>&);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
+    const StokesElement<TensorNURBS<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&,
+    const Eigen::VectorX<double>&);
+template void Assembler<TensorNURBS<double, 3>, 3>::assemble_load(
+    const StokesElement<TensorNURBS<double, 3>, 3>&,
+    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&,
+    const Eigen::VectorX<double>&);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_mass(
+    const StokesElement<TensorBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&);
+template void Assembler<TensorBSpline<double, 3>, 3>::assemble_mass(
+    const StokesElement<TensorBSpline<double, 3>, 3>&,
+    const QuadratureDomain<double, 3>&);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_mass(
+    const StokesElement<TensorNURBS<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&);
+template void Assembler<TensorNURBS<double, 3>, 3>::assemble_mass(
+    const StokesElement<TensorNURBS<double, 3>, 3>&,
+    const QuadratureDomain<double, 3>&);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_mass(
+    const StokesElement<TensorBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::VectorX<double>&);
+template void Assembler<TensorBSpline<double, 3>, 3>::assemble_mass(
+    const StokesElement<TensorBSpline<double, 3>, 3>&,
+    const QuadratureDomain<double, 3>&, const Eigen::VectorX<double>&);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_mass(
+    const StokesElement<TensorNURBS<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::VectorX<double>&);
+template void Assembler<TensorNURBS<double, 3>, 3>::assemble_mass(
+    const StokesElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::VectorX<double>&);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_stiffness(

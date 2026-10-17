@@ -16,12 +16,16 @@ namespace iguana
 
 template<typename Basis, std::size_t n>
 SkeletonGhostPenalty<Basis, n>::SkeletonGhostPenalty(
-    const Trace<Basis, n>& trace, Scalar penalty)
-    : trace_(trace), penalty_(penalty)
+    const Trace<Basis, n>& trace, Scalar penalty, int scaling)
+    : trace_(trace), penalty_(penalty), scaling_(scaling)
 {
-    if (penalty <= 0)
+    if (penalty == 0)
         throw std::invalid_argument("SkeletonGhostPenalty: "
-                                    "the penalty must be positive");
+                                    "the penalty must not be zero");
+
+    if (scaling < 0)
+        throw std::invalid_argument("SkeletonGhostPenalty: "
+                                    "the scaling must be non-negative");
 }
 
 template<typename Basis, std::size_t n>
@@ -40,14 +44,14 @@ void SkeletonGhostPenalty<Basis, n>::local_stiffness(
                                  before_trace.cols());
     jumps << -before_trace, after_trace;
 
-    // Penalty times h^(2p−1), with h the mean size of the two cells
-    const Scalar exponent = static_cast<Scalar>(2 * order - 1);
+    // Penalty times h^(2p−1+s), with h the mean size of the two cells
+    const Scalar exponent = static_cast<Scalar>(2 * order - 1 + scaling_);
     const Eigen::ArrayX<Scalar> sizes = (before.sizes() + after.sizes()) / 2;
     const Eigen::VectorX<Scalar> penalized =
         (penalty_ * weights.array() * sizes.pow(exponent)).matrix();
 
-    // K_ij = β ( [[∂ₙᵖ T(N_i)]], h^(2p−1) [[∂ₙᵖ T(N_j)]] )_Γ
-    //      ≈ Σ_q w_q β h_q^(2p−1) J_iq J_jq
+    // K_ij = β ( [[∂ₙᵖ T(N_i)]], h^(2p−1+s) [[∂ₙᵖ T(N_j)]] )_Γ
+    //      ≈ Σ_q w_q β h_q^(2p−1+s) J_iq J_jq
     stiffness = jumps * penalized.asDiagonal() * jumps.transpose();
 }
 

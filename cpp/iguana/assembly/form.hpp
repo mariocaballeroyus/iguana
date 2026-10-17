@@ -55,6 +55,11 @@ public:
     ///        or per cell, whose values may change in between
     using Data = Eigen::Ref<const Eigen::VectorX<Scalar>>;
 
+    /// @brief Source an element reads at every assembly, a row per point
+    ///        and a column per component, whose values may change in
+    ///        between
+    using Source = Eigen::Ref<const Eigen::MatrixX<Scalar>>;
+
     /**
      * @brief Adds the stiffness and load of an element over a domain
      *        quadrature, with the test functions of each cell weighted
@@ -63,7 +68,8 @@ public:
      *
      * @param element Element whose local stiffness and load are added
      * @param quadrature Quadrature over elements of the grid of the basis
-     * @param source Value of the source at each point of @p quadrature
+     * @param source Value of the source at each point of @p quadrature, a
+     *        row per point and a column per component
      * @param cell_weights Weight of the test functions on each element of
      *        the grid
      *
@@ -74,9 +80,9 @@ public:
     template<std::derived_from<Element<Basis, n>> E>
     void add_domain_integral(const E& element,
                              const QuadratureDomain<Scalar, dim>& quadrature,
-                             Data source, Data cell_weights)
+                             Source source, Data cell_weights)
     {
-        const Eigen::Map<const Eigen::VectorX<Scalar>> sources = view(source);
+        const SourceView sources = view(source);
         const Eigen::Map<const Eigen::VectorX<Scalar>> weights =
             view(cell_weights);
 
@@ -261,9 +267,20 @@ private:
     /// @brief Assembly of one integral into an assembler
     using Integral = std::function<void(Assembler<Basis, n>&)>;
 
+    /// @brief View of a source, its columns as far apart as in the source
+    using SourceView =
+        Eigen::Map<const Eigen::MatrixX<Scalar>, 0, Eigen::OuterStride<>>;
+
     /// @brief View of data, read where it lies at every assembly
     static Eigen::Map<const Eigen::VectorX<Scalar>> view(Data data)
     { return {data.data(), data.size()}; }
+
+    /// @brief View of a source, read where it lies at every assembly
+    static SourceView view(Source source)
+    {
+        return {source.data(), source.rows(), source.cols(),
+                Eigen::OuterStride<>(source.outerStride())};
+    }
 
     /// @brief Integrals in the order they were added
     std::vector<Integral> integrals_;
