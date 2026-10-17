@@ -61,8 +61,10 @@ void fspace(py::module_& module)
 {
     py::class_<FunctionSpace2d>(module, "FunctionSpace2d")
         .def(py::init<TensorBSpline<double, 2>,
-                      const CellClassification<double, 2>&>(),
-             py::arg("basis"), py::arg("classification"))
+                      const CellClassification<double, 2>&, int>(),
+             py::arg("basis"), py::arg("classification"),
+             py::arg("block_size") = 1)
+        .def_property_readonly("block_size", &FunctionSpace2d::block_size)
         .def_property_readonly("num_dofs",
                                &num_dofs<TensorBSpline<double, 2>>)
         .def_property_readonly("functions",
@@ -70,8 +72,10 @@ void fspace(py::module_& module)
 
     py::class_<FunctionSpace3d>(module, "FunctionSpace3d")
         .def(py::init<TensorBSpline<double, 3>,
-                      const CellClassification<double, 3>&>(),
-             py::arg("basis"), py::arg("classification"))
+                      const CellClassification<double, 3>&, int>(),
+             py::arg("basis"), py::arg("classification"),
+             py::arg("block_size") = 1)
+        .def_property_readonly("block_size", &FunctionSpace3d::block_size)
         .def_property_readonly("num_dofs",
                                &num_dofs<TensorBSpline<double, 3>>)
         .def_property_readonly("functions",
@@ -79,8 +83,11 @@ void fspace(py::module_& module)
 
     py::class_<NURBSFunctionSpace2d>(module, "NURBSFunctionSpace2d")
         .def(py::init<TensorNURBS<double, 2>,
-                      const CellClassification<double, 2>&>(),
-             py::arg("basis"), py::arg("classification"))
+                      const CellClassification<double, 2>&, int>(),
+             py::arg("basis"), py::arg("classification"),
+             py::arg("block_size") = 1)
+        .def_property_readonly("block_size",
+                               &NURBSFunctionSpace2d::block_size)
         .def_property_readonly("num_dofs",
                                &num_dofs<TensorNURBS<double, 2>>)
         .def_property_readonly("functions",

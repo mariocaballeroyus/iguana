@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include <cstddef>
+
 #include <Eigen/Core>
 #include <pybind11/eigen.h>
 #include <pybind11/pybind11.h>
@@ -21,6 +23,7 @@ namespace
 using Trace2d = Trace<TensorBSpline<double, 2>, 2>;
 using Flux2d = Flux<TensorBSpline<double, 2>, 2>;
 using PoissonElement2d = PoissonElement<TensorBSpline<double, 2>, 2>;
+using StokesElement2d = StokesElement<TensorBSpline<double, 2>, 2>;
 using PenaltyCondition2d = PenaltyCondition<TensorBSpline<double, 2>, 2>;
 using NeumannCondition2d = NeumannCondition<TensorBSpline<double, 2>, 2>;
 using NitscheCondition2d = NitscheCondition<TensorBSpline<double, 2>, 2>;
@@ -59,6 +62,20 @@ void assembly(py::module_& module)
     py::class_<PoissonElement2d::Q, Flux2d>(poisson_element_2d, "Q")
         .def(py::init<>());
 
+    py::class_<StokesElement2d> stokes_element_2d(module, "StokesElement2d");
+    stokes_element_2d.def(py::init<double, double>(), py::arg("viscosity"),
+                          py::arg("stabilization"));
+
+    py::class_<StokesElement2d::U, Trace2d>(stokes_element_2d, "U")
+        .def(py::init<std::size_t>(), py::arg("component"));
+
+    py::class_<StokesElement2d::P, Trace2d>(stokes_element_2d, "P")
+        .def(py::init<>());
+
+    py::class_<StokesElement2d::T, Flux2d>(stokes_element_2d, "T")
+        .def(py::init<double, std::size_t>(), py::arg("viscosity"),
+             py::arg("component"));
+
     // A condition keeps a reference to its trace, which Python keeps alive
     // with it
     py::class_<PenaltyCondition2d>(module, "PenaltyCondition2d")
@@ -80,8 +97,9 @@ void assembly(py::module_& module)
              py::keep_alive<1, 2>(), py::keep_alive<1, 3>());
 
     py::class_<SkeletonGhostPenalty2d>(module, "SkeletonGhostPenalty2d")
-        .def(py::init<const Trace2d&, double>(), py::arg("trace"),
-             py::arg("penalty"), py::keep_alive<1, 2>());
+        .def(py::init<const Trace2d&, double, int>(), py::arg("trace"),
+             py::arg("penalty"), py::arg("scaling") = 0,
+             py::keep_alive<1, 2>());
 
     // An assembler keeps references to its space and patch, which Python
     // keeps alive with it, and shares its PETSc system with Python through
@@ -110,8 +128,20 @@ void assembly(py::module_& module)
              py::arg("cell_weights").noconvert(), py::keep_alive<1, 2>(),
              py::keep_alive<1, 3>(), py::keep_alive<1, 4>(),
              py::keep_alive<1, 5>())
+        .def("add_domain_integral",
+             &Form2d::add_domain_integral<StokesElement2d>,
+             py::arg("element"), py::arg("quadrature"),
+             py::arg("source").noconvert(),
+             py::arg("cell_weights").noconvert(), py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>(),
+             py::keep_alive<1, 5>())
         .def("add_mass_integral",
              &Form2d::add_mass_integral<PoissonElement2d>,
+             py::arg("element"), py::arg("quadrature"),
+             py::arg("cell_weights").noconvert(), py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>())
+        .def("add_mass_integral",
+             &Form2d::add_mass_integral<StokesElement2d>,
              py::arg("element"), py::arg("quadrature"),
              py::arg("cell_weights").noconvert(), py::keep_alive<1, 2>(),
              py::keep_alive<1, 3>(), py::keep_alive<1, 4>())
