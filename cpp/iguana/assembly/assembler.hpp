@@ -370,8 +370,9 @@ public:
      *
      * @throws std::invalid_argument If the faces are not coupled, if the map
      *         of the patch is not affine, if the patch is not a B-spline one,
-     *         or if the local matrices of @p penalty do not match the
-     *         degrees of freedom of the space
+     *         if a knot vector of the patch repeats an interior knot, or if
+     *         the local matrices of @p penalty do not match the degrees of
+     *         freedom of the space
      *
      * @pre @p quadrature is built on the grid of the basis, and every cell
      *      it holds has its degrees of freedom in the space

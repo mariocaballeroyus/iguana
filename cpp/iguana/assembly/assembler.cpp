@@ -5,6 +5,7 @@
 
 #include "assembler.hpp"
 
+#include <algorithm>
 #include <array>
 #include <concepts>
 #include <cstddef>
@@ -25,6 +26,7 @@
 #include "iguana/condition/skeleton_nitsche_condition.hpp"
 #include "iguana/element/poisson/poisson_element.hpp"
 #include "iguana/element/stokes/stokes_element.hpp"
+#include "iguana/grid/knot_vector.hpp"
 #include "iguana/utils/multi_index.hpp"
 
 namespace iguana
@@ -116,6 +118,26 @@ void differentiate_values(ElementValues<Basis, n>& values,
         throw std::invalid_argument("Assembler: "
                                     "a ghost penalty needs a B-spline patch");
     }
+}
+
+/**
+ * @brief Whether every interior knot of a knot vector is simple, so that
+ *        its splines have maximal continuity and only their derivatives of
+ *        the order of the degree jump between its elements
+ */
+template<std::floating_point T>
+bool simple_interior_knots(const KnotVector<T>& knot_vector)
+{
+    const std::vector<T>& knots = knot_vector.values();
+
+    for (int element = 1; element < knot_vector.num_elements(); ++element) {
+        const T knot = knot_vector.element_start(element);
+
+        if (std::count(knots.begin(), knots.end(), knot) > 1)
+            return false;
+    }
+
+    return true;
 }
 
 } // namespace
@@ -578,6 +600,14 @@ void Assembler<Basis, n>::assemble_stiffness(
     if (!patch_.is_affine())
         throw std::invalid_argument("Assembler: "
                                     "a ghost penalty needs an affine patch");
+
+    // A repeated knot would let lower derivatives jump unpenalized
+    for (std::size_t direction = 0; direction < dim; ++direction) {
+        if (!simple_interior_knots(patch_.basis().grid().knots(direction)))
+            throw std::invalid_argument("Assembler: "
+                                        "a ghost penalty needs simple "
+                                        "interior knots");
+    }
 
     ElementValues<Basis, n> before(patch_, penalty.flags());
     ElementValues<Basis, n> after(patch_, penalty.flags());

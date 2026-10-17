@@ -23,7 +23,11 @@ namespace iguana
  * @details It penalizes the jumps of the derivatives of order p, the degree
  *          across a face, the only ones that jump for splines of maximal
  *          continuity. They vanish on a field that is one polynomial across
- *          the faces, so the penalty is consistent. Rows and columns follow
+ *          the faces, so the penalty is consistent. Its sign is that of
+ *          the block of its field in the system, which it keeps definite:
+ *          positive for the field of PoissonElement or the velocity of
+ *          StokesElement, negative for the pressure of StokesElement, whose
+ *          block is negative in the symmetric form. Rows and columns follow
  *          the degrees of freedom of the cell before the face, then those of
  *          the cell after, each ordered as for Element
  *
@@ -40,20 +44,34 @@ public:
     /**
      * @brief Constructs the penalty on a trace
      *
-     * @param trace Trace whose jumps are penalized
-     * @param penalty Penalty beta, which the size of the cells scales
+     *     β h^(2p − 1 + s)
      *
-     * @throws std::invalid_argument If the penalty is not positive
+     * @details The penalty on a face, with h the mean size of its two
+     *          cells, p the degree across it and s the scaling
+     *
+     * @param trace Trace whose jumps are penalized
+     * @param penalty Penalty β, of the sign of the block of the field of
+     *        @p trace
+     * @param scaling Extra powers s of the size of the cells, two for the
+     *        pressure of StokesElement
+     *
+     * @throws std::invalid_argument If the penalty is zero, or if the
+     *         scaling is negative
      *
      * @pre @p trace reads the values alone, as the field of PoissonElement
      *      does, so that it differentiates with them, and it outlives the
      *      penalty, which keeps a reference to it
      */
-    SkeletonGhostPenalty(const Trace<Basis, n>& trace, Scalar penalty);
+    SkeletonGhostPenalty(const Trace<Basis, n>& trace, Scalar penalty,
+                         int scaling = 0);
 
-    /// @brief Penalty beta
+    /// @brief Penalty β
     constexpr Scalar penalty() const noexcept
     { return penalty_; }
+
+    /// @brief Extra powers s of the size of the cells
+    constexpr int scaling() const noexcept
+    { return scaling_; }
 
     /// @brief Optional values the penalty reads from ElementValues
     ValueFlags flags() const noexcept
@@ -83,8 +101,11 @@ private:
     /// @brief Trace whose jumps are penalized
     const Trace<Basis, n>& trace_;
 
-    /// @brief Penalty beta
+    /// @brief Penalty β
     Scalar penalty_;
+
+    /// @brief Extra powers s of the size of the cells
+    int scaling_;
 };
 
 } // namespace iguana
