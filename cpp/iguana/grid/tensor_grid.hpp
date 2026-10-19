@@ -119,6 +119,9 @@ public:
     constexpr std::default_sentinel_t end() const noexcept
     { return std::default_sentinel; }
 
+    /// @brief Whether two grids have the same knot vectors
+    bool operator==(const TensorGrid& other) const = default;
+
 private:
     /// @brief Number of elements of each direction
     std::array<int, d> element_counts() const noexcept;

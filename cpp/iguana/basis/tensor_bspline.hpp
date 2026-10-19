@@ -228,6 +228,9 @@ public:
                            const Eigen::MatrixX<T>& shifts, int order,
                            Eigen::MatrixX<T>& values) const;
 
+    /// @brief Whether two bases have the same knot vectors
+    bool operator==(const TensorBSpline& other) const = default;
+
 private:
     /// @brief Grid, with the knot vector of each direction
     TensorGrid<T, d> grid_;

@@ -92,6 +92,9 @@ public:
     constexpr T domain_end() const noexcept
     { return element_end(num_elements() - 1); }
 
+    /// @brief Whether two knot vectors have the same degree and knots
+    bool operator==(const KnotVector& other) const = default;
+
 private:
     /// @brief Polynomial degree of the space
     int degree_;
