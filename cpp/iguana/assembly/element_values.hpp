@@ -37,17 +37,19 @@ struct ValueFlags
 };
 
 /**
- * @brief Values of the functions of a patch and of its map at points of one
- *        element at a time
+ * @brief Values of the functions of a basis and of the map of a patch at
+ *        points of one element at a time
  *
- * The functions are those of the basis of the patch, which also maps the
- * points, so that one evaluation of the basis gives both the functions and
- * the Jacobian J of the map. reinit() moves the values to an element and
- * fills them there, reusing the buffers of the previous element. The rows
- * follow active_on_element(), so that the k-th row pairs with the k-th
- * degree of freedom a space lists on the element
+ * The functions are those of a basis on the elements of the patch, which
+ * maps the points. When the basis is the patch's own, as in isoparametric
+ * analysis, one evaluation of it gives both the functions and the Jacobian
+ * J of the map. reinit() moves the values to an element and fills them
+ * there, reusing the buffers of the previous element. The rows follow
+ * active_on_element() of the basis, so that the k-th row pairs with the
+ * k-th degree of freedom a space of that basis lists on the element
  *
- * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
+ * @tparam Basis Basis of the patch and of the functions, TensorBSpline or
+ *         TensorNURBS
  * @tparam n Dimension of the physical space of the patch
  */
 template<typename Basis, std::size_t n>
@@ -75,6 +77,25 @@ public:
      * @pre @p patch outlives the values, which keep a reference to it
      */
     ElementValues(const Patch<Basis, n>& patch, ValueFlags flags);
+
+    /**
+     * @brief Constructs the values of the functions of a basis on the
+     *        elements of a patch, filled by reinit()
+     *
+     * @param patch Patch that maps the points
+     * @param basis Basis whose functions are evaluated, of any degrees and
+     *        continuities on the elements of the patch
+     * @param flags Optional values to compute
+     *
+     * @throws std::invalid_argument If the basis does not have the elements
+     *         of the patch, or if physical gradients or Hessians are flagged
+     *         on a patch with fewer directions than its space
+     *
+     * @pre @p patch and @p basis outlive the values, which keep references
+     *      to them
+     */
+    ElementValues(const Patch<Basis, n>& patch, const Basis& basis,
+                  ValueFlags flags);
 
     /**
      * @brief Moves the values to an element and fills them at points of it
@@ -112,11 +133,11 @@ public:
 
     /**
      * @brief Replaces the values by their derivatives across the knot lines
-     *        of a direction, of the order of the degree there, in physical
-     *        space
+     *        of a direction, of the order of the degree of the basis there,
+     *        in physical space
      *
-     * Across a knot line of maximal continuity, these are the only
-     * derivatives that jump, as a ghost penalty compares them. The
+     * Across a knot line of maximal continuity of the basis, these are the
+     * only derivatives that jump, as a ghost penalty compares them. The
      * derivative of order p along the direction is scaled by |J^-T e_k|^p,
      * the length of the physical gradient of its parameter. On an affine map
      * its jump across the knot line is then that of the physical normal
@@ -196,19 +217,27 @@ public:
     { return physical_hessians_; }
 
 private:
-    /// @brief Patch whose functions are evaluated
+    /// @brief Patch that maps the points
     const Patch<Basis, n>& patch_;
+
+    /// @brief Basis whose functions are evaluated
+    const Basis& basis_;
+
+    /// @brief Whether the basis is the patch's own, whose functions then
+    ///        give the map as well
+    bool isoparametric_;
 
     /// @brief Optional values to compute
     ValueFlags flags_;
 
-    /// @brief First active function of each direction on the element
+    /// @brief First active function of the basis along each direction on
+    ///        the element
     std::array<int, dim> first_active_{};
 
     /// @brief Points of the element in parameter space
     Eigen::MatrixX<Scalar> points_;
 
-    /// @brief Functions active on the element
+    /// @brief Functions of the basis active on the element
     Eigen::VectorXi actives_;
 
     /// @brief Values of the active functions
@@ -227,6 +256,21 @@ private:
     /// @brief Second derivatives of the map along each pair of directions,
     ///        empty unless physical Hessians are flagged
     std::array<PointMatrix<Scalar, n>, dim * (dim + 1) / 2> second_tangents_;
+
+    /// @brief Functions of the patch active on the element, which give the
+    ///        map when the basis is not the patch's
+    Eigen::VectorXi map_actives_;
+
+    /// @brief Values of the functions of the patch, a byproduct of their
+    ///        derivatives
+    Eigen::MatrixX<Scalar> map_values_;
+
+    /// @brief Derivatives of the functions of the patch along each direction
+    std::array<Eigen::MatrixX<Scalar>, dim> map_gradients_;
+
+    /// @brief Second derivatives of the functions of the patch along each
+    ///        pair of directions
+    std::array<Eigen::MatrixX<Scalar>, dim * (dim + 1) / 2> map_hessians_;
 
     /// @brief Measure of the patch at each point
     Eigen::VectorX<Scalar> measures_;
