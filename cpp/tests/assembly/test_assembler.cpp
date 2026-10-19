@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <initializer_list>
 #include <stdexcept>
 #include <vector>
 
@@ -405,6 +406,67 @@ TEST_CASE("The Poisson system of a rectangle integrates exactly",
     REQUIRE((stiffness * constant).cwiseAbs().maxCoeff() < 1e-12);
     REQUIRE_THAT(load_of(assembler).sum(),
                  WithinRel(width * height * height / 2., 1e-12));
+}
+
+TEST_CASE("A space of another basis on the elements of the patch assembles "
+          "the Poisson system", "[assembler]")
+{
+    // A space cubic along the first direction on the quadratic rectangle,
+    // whose elements it shares
+    const iguana::Patch<Basis, 2> patch = rectangle(uneven());
+    const Basis basis = cubic_by_quadratic();
+    const CellClassification<double, 2> classification =
+        all_cells(CellType::inside);
+    const iguana::FunctionSpace<Basis> space(basis, classification);
+    const iguana::QuadratureDomain<double, 2> quadrature =
+        inside_quadrature(basis, classification);
+    const iguana::PoissonElement<Basis, 2> element;
+
+    iguana::Assembler<Basis, 2> assembler(space, patch);
+
+    // The source f = y, with y = height times the second parameter
+    const Eigen::VectorXd source = height * quadrature.points().col(1);
+
+    assembler.assemble_stiffness(element, quadrature);
+    assembler.assemble_load(element, quadrature, source);
+
+    const Eigen::SparseMatrix<double, Eigen::RowMajor> stiffness =
+        stiffness_of(assembler);
+
+    // Every spline space holds the linear fields, whose coefficients are
+    // b . x at the Greville points of its own basis
+    const Eigen::Vector2d b(1., -2.);
+    const int count = basis.axis(0).num_functions();
+    Eigen::VectorXd u(basis.num_functions());
+
+    for (int function = 0; function < basis.num_functions(); ++function)
+        u(function) =
+            b(0) * width * greville(basis.grid().knots(0), function % count)
+            + b(1) * height
+                  * greville(basis.grid().knots(1), function / count);
+
+    REQUIRE_THAT(u.dot(stiffness * u),
+                 WithinRel(b.squaredNorm() * width * height, 1e-12));
+
+    const Eigen::VectorXd constant =
+        Eigen::VectorXd::Ones(space.dof_map().num_dofs());
+
+    REQUIRE((stiffness * constant).cwiseAbs().maxCoeff() < 1e-12);
+    REQUIRE_THAT(load_of(assembler).sum(),
+                 WithinRel(width * height * height / 2., 1e-12));
+}
+
+TEST_CASE("An assembler needs a space on the elements of the patch",
+          "[assembler]")
+{
+    const iguana::Patch<Basis, 2> patch = rectangle(uneven());
+    const iguana::FunctionSpace<Basis> space(
+        five_by_five(),
+        CellClassification<double, 2>(
+            std::vector<CellType>(25, CellType::inside)));
+
+    REQUIRE_THROWS_AS((iguana::Assembler<Basis, 2>(space, patch)),
+                      std::invalid_argument);
 }
 
 TEST_CASE("The Poisson system leaves out the functions of outside cells",
@@ -1055,11 +1117,10 @@ TEST_CASE("A Stokes system with Nitsche conditions holds a divergence-free "
     REQUIRE((stiffness * pressure).cwiseAbs().maxCoeff() < 1e-12);
 }
 
-TEST_CASE("A ghost penalty penalizes the jumps of the highest derivatives "
-          "across faces", "[assembler]")
+TEST_CASE("A ghost penalty penalizes the jumps of the highest derivatives of "
+          "the space across faces", "[assembler]")
 {
     const Basis basis = cubic_by_quadratic();
-    const iguana::Patch<Basis, 2> patch = rectangle(basis);
     const KnotVector<double>& along_x = basis.axis(0).knots();
     const KnotVector<double>& along_y = basis.axis(1).knots();
     const int count = basis.axis(0).num_functions();
@@ -1079,16 +1140,6 @@ TEST_CASE("A ghost penalty penalizes the jumps of the highest derivatives "
     const double penalty = .3;
     const iguana::SkeletonGhostPenalty<Basis, 2> ghost(trace, penalty);
 
-    iguana::Assembler<Basis, 2> assembler(space, patch, true);
-    const Eigen::Index entries = stiffness_of(assembler).nonZeros();
-    assembler.assemble_stiffness(ghost, quadrature);
-
-    // The faces were coupled beforehand, so the pattern holds
-    REQUIRE(stiffness_of(assembler).nonZeros() == entries);
-
-    const Eigen::SparseMatrix<double, Eigen::RowMajor> stiffness =
-        stiffness_of(assembler);
-
     // xi^3 eta^2 is one polynomial across every face, so it has no jumps
     const Eigen::VectorXd xs = truncated_power(along_x, 0.);
     const Eigen::VectorXd ys = truncated_power(along_y, 0.);
@@ -1096,8 +1147,6 @@ TEST_CASE("A ghost penalty penalizes the jumps of the highest derivatives "
 
     for (int function = 0; function < basis.num_functions(); ++function)
         u(function) = xs(function % count) * ys(function / count);
-
-    REQUIRE((stiffness * u).cwiseAbs().maxCoeff() < 1e-12);
 
     // (xi - .6)_+^3 + (eta - .7)_+^2, each basis summing to one, jumps in
     // its third derivative across xi = .6, by 3! / width^3 in physical
@@ -1129,7 +1178,24 @@ TEST_CASE("A ghost penalty penalizes the jumps of the highest derivatives "
                     * span;
     }
 
-    REQUIRE_THAT(v.dot(stiffness * v), WithinRel(expected, 1e-12));
+    // The penalty reads the degrees of the space, not of the patch: on the
+    // quadratic rectangle, the same map, the third derivatives along the
+    // first direction still jump, scaled by h^5
+    for (const iguana::Patch<Basis, 2>& patch :
+         {rectangle(basis), rectangle(uneven())}) {
+        iguana::Assembler<Basis, 2> assembler(space, patch, true);
+        const Eigen::Index entries = stiffness_of(assembler).nonZeros();
+        assembler.assemble_stiffness(ghost, quadrature);
+
+        // The faces were coupled beforehand, so the pattern holds
+        REQUIRE(stiffness_of(assembler).nonZeros() == entries);
+
+        const Eigen::SparseMatrix<double, Eigen::RowMajor> stiffness =
+            stiffness_of(assembler);
+
+        REQUIRE((stiffness * u).cwiseAbs().maxCoeff() < 1e-12);
+        REQUIRE_THAT(v.dot(stiffness * v), WithinRel(expected, 1e-12));
+    }
 }
 
 TEST_CASE("A ghost penalty needs coupled faces, simple interior knots and an "
@@ -1167,15 +1233,14 @@ TEST_CASE("A ghost penalty needs coupled faces, simple interior knots and an "
     REQUIRE_THROWS_AS(on_curved.assemble_stiffness(ghost, quadrature),
                       std::invalid_argument);
 
-    // A repeated knot, across which the second derivatives jump too
+    // A repeated knot of the space, across which the second derivatives jump
+    // too, though the patch's knots are simple
     const Basis repeated(TensorGrid<double, 2>(
         {KnotVector<double>(3, {0., 0., 0., 0., .2, .6, .6, 1., 1., 1., 1.}),
          KnotVector<double>(2, {0., 0., 0., .7, 1., 1., 1.})}));
     const iguana::FunctionSpace<Basis> repeated_space(
         repeated, all_cells(CellType::inside));
-    const iguana::Patch<Basis, 2> repeated_patch = rectangle(repeated);
-    iguana::Assembler<Basis, 2> on_repeated(repeated_space, repeated_patch,
-                                            true);
+    iguana::Assembler<Basis, 2> on_repeated(repeated_space, patch, true);
 
     REQUIRE_THROWS_AS(on_repeated.assemble_stiffness(ghost, quadrature),
                       std::invalid_argument);

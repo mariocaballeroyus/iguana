@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstddef>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 #include <Eigen/Geometry>
@@ -353,6 +354,118 @@ void check_coordinate_fields(const iguana::Patch<Basis, d>& patch)
     }
 }
 
+/**
+ * @brief Knot vector of one degree more with the continuities kept, each
+ *        knot repeated once more, so that its splines hold those of the
+ *        original
+ */
+KnotVector<double> elevated(const KnotVector<double>& knots)
+{
+    std::vector<double> values;
+
+    for (const double knot : knots.values()) {
+        if (values.empty() || knot != values.back())
+            values.push_back(knot);
+
+        values.push_back(knot);
+    }
+
+    return KnotVector<double>(knots.degree() + 1, std::move(values));
+}
+
+/// @brief Basis of one degree more on the elements of a basis, with its
+///        continuities kept
+template<std::size_t d>
+TensorBSpline<double, d> elevated(const TensorBSpline<double, d>& basis)
+{
+    std::array<KnotVector<double>, d> knots = first_knot_vectors<d>();
+
+    for (std::size_t direction = 0; direction < d; ++direction)
+        knots[direction] = elevated(basis.grid().knots(direction));
+
+    return TensorBSpline<double, d>{TensorGrid<double, d>(knots)};
+}
+
+/**
+ * @brief Checks the functions of a basis of one degree more than the bent
+ *        box, which hold the coordinates of its map: projected onto it, they
+ *        have unit physical gradients and no physical second derivatives,
+ *        with the map taken from the patch alone
+ */
+template<std::size_t d>
+void check_elevated_basis()
+{
+    using Basis = TensorBSpline<double, d>;
+
+    const iguana::Patch<Basis, d> patch = bent_box<d>();
+    const Basis basis = elevated(patch.basis());
+    const iguana::GaussLegendre<double, d> rule(4);
+
+    // L2 projection of the coordinates onto the basis, in parameter space,
+    // with the map from the patch's own functions at the same points
+    iguana::ElementValues<Basis, d> functions(patch, basis, {});
+    iguana::ElementValues<Basis, d> map(patch, {});
+    Eigen::MatrixXd mass =
+        Eigen::MatrixXd::Zero(basis.num_functions(), basis.num_functions());
+    Eigen::MatrixXd moments = Eigen::MatrixXd::Zero(basis.num_functions(), d);
+
+    Eigen::MatrixXd points;
+    Eigen::VectorXd weights;
+    Eigen::VectorXi actives;
+    Eigen::VectorXi map_actives;
+    iguana::PointMatrix<double, d> positions;
+
+    for (const auto& element : patch.basis().grid()) {
+        rule.fill_to_reference_space(element.start(), element.end(), points,
+                                     weights);
+        iguana::BoxRule<double, d>::map_to_parameter_space(
+            element.start(), element.end(), points, weights);
+        functions.reinit(element.index(), points);
+        map.reinit(element.index(), points);
+        basis.active_on_element(element.index(), actives);
+        patch.basis().active_on_element(element.index(), map_actives);
+        patch.position_on_element(map_actives, map.values(), positions);
+
+        const Eigen::MatrixXd& values = functions.values();
+        mass(actives, actives) +=
+            values * weights.asDiagonal() * values.transpose();
+        moments(actives, Eigen::placeholders::all) +=
+            values * weights.asDiagonal() * positions;
+    }
+
+    const Eigen::MatrixXd coordinates = mass.ldlt().solve(moments);
+
+    iguana::ElementValues<Basis, d> element_values(
+        patch, basis, {.physical_hessians = true});
+
+    for (const auto& element : patch.basis().grid()) {
+        INFO("element " << element.index());
+
+        rule.fill_to_reference_space(element.start(), element.end(), points,
+                                     weights);
+        iguana::BoxRule<double, d>::map_to_parameter_space(
+            element.start(), element.end(), points, weights);
+        element_values.reinit(element.index(), points);
+        basis.active_on_element(element.index(), actives);
+
+        const Eigen::MatrixXd u =
+            coordinates(actives, Eigen::placeholders::all);
+
+        for (std::size_t c = 0; c < d; ++c) {
+            const Eigen::MatrixXd gradient =
+                u.transpose() * element_values.physical_gradients()[c];
+            Eigen::MatrixXd unit = Eigen::MatrixXd::Zero(d, points.rows());
+            unit.row(static_cast<Eigen::Index>(c)).setOnes();
+
+            REQUIRE((gradient - unit).cwiseAbs().maxCoeff() < 1e-10);
+        }
+
+        for (const Eigen::MatrixXd& hessians :
+             element_values.physical_hessians())
+            REQUIRE((u.transpose() * hessians).cwiseAbs().maxCoeff() < 1e-9);
+    }
+}
+
 } // namespace
 
 TEST_CASE("Element values integrate the energy of a linear field exactly",
@@ -391,6 +504,27 @@ TEST_CASE("Element values cancel the curvature of the map in the second "
     check_coordinate_fields(
         iguana::Patch<iguana::TensorNURBS<double, 2>, 2>(rational,
                                                          box.coefficients()));
+}
+
+TEST_CASE("Element values take the map from the patch and the functions "
+          "from a basis of higher degree", "[element_values]")
+{
+    check_elevated_basis<2>();
+    check_elevated_basis<3>();
+}
+
+TEST_CASE("Element values need a basis on the elements of the patch",
+          "[element_values]")
+{
+    using Basis = TensorBSpline<double, 2>;
+
+    const iguana::Patch<Basis, 2> patch = bent_box<2>();
+    const Basis moved{TensorGrid<double, 2>(
+        {KnotVector<double>(2, {0., 0., 0., .3, .6, 1., 1., 1.}),
+         knot_vectors[1]})};
+
+    REQUIRE_THROWS_AS((iguana::ElementValues<Basis, 2>(patch, moved, {})),
+                      std::invalid_argument);
 }
 
 TEST_CASE("Element values on a shell measure its area",
