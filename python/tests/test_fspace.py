@@ -53,9 +53,23 @@ def test_nurbs_surface():
     assert np.array_equal(space.control_points, surface.control_points)
 
 
+def test_block_size():
+    """A field of several components gives each degree of freedom a
+    coefficient per component, the degrees of freedom staying those of the
+    functions."""
+    patch = rectangle()
+    space = FunctionSpace(patch, block_size=3)
+
+    assert space.block_size == 3
+    assert space.num_dofs == FunctionSpace(patch).num_dofs
+
+
 def test_invalid_arguments():
     with pytest.raises(TypeError):
         FunctionSpace('patch')
 
     with pytest.raises(ValueError):
         FunctionSpace(rectangle(), [CellType.inside])
+
+    with pytest.raises(ValueError):
+        FunctionSpace(rectangle(), block_size=0)

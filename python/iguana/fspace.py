@@ -6,7 +6,10 @@
 A function space holds the basis functions of a patch that a field is
 built from. The standard space gives one degree of freedom to each function
 active on a cell that is not outside the physical domain, so that a
-function supported on outside cells alone carries none.
+function supported on outside cells alone carries none. A field of several
+components, such as the velocity and the pressure of a fluid, gives each
+degree of freedom a coefficient per component, as many as the block size of
+the space.
 """
 
 from __future__ import annotations
@@ -29,8 +32,13 @@ class FunctionSpace:
     _cpp_object: (_cpp.FunctionSpace2d | _cpp.FunctionSpace3d
                   | _cpp.NURBSFunctionSpace2d)
 
-    def __init__(self, patch: PlanarPatch | SurfacePatch | VolumePatch,
-                 cell_types: Sequence[CellType] | None = None) -> None:
+    def __init__(
+        self,
+        patch: PlanarPatch | SurfacePatch | VolumePatch,
+        cell_types: Sequence[CellType] | None = None,
+        *,
+        block_size: int = 1,
+    ) -> None:
         """Initialize the space of the basis of a patch.
 
         Args:
@@ -39,11 +47,14 @@ class FunctionSpace:
             cell_types: The type of each element of the patch, with the
                 first direction running fastest. Without them, every cell
                 lies inside and every function gets a degree of freedom.
+            block_size: The number of components of the field, positive,
+                such as the three of `StokesElement`.
 
         Raises:
             TypeError: If the patch is not a planar, surface or volume
                 patch.
-            ValueError: If there is not one cell type per element.
+            ValueError: If there is not one cell type per element, or if
+                the block size is not positive.
         """
         if isinstance(patch, VolumePatch):
             space = _cpp.FunctionSpace3d
@@ -70,9 +81,13 @@ class FunctionSpace:
         if len(cell_types) != num_elements:
             raise ValueError('there must be one cell type per cell')
 
+        if block_size < 1:
+            raise ValueError('the block size must be positive')
+
         self._patch = patch
         self._cpp_object = space(patch._cpp_object.basis,
-                                 classification(list(cell_types)))
+                                 classification(list(cell_types)),
+                                 int(block_size))
 
     @property
     def patch(self) -> PlanarPatch | SurfacePatch | VolumePatch:
@@ -80,8 +95,15 @@ class FunctionSpace:
         return self._patch
 
     @property
+    def block_size(self) -> int:
+        """Number of components of the field, the coefficients of each
+        degree of freedom."""
+        return self._cpp_object.block_size
+
+    @property
     def num_dofs(self) -> int:
-        """Number of degrees of freedom."""
+        """Number of degrees of freedom, one per function the space keeps,
+        each with a coefficient per component of the field."""
         return self._cpp_object.num_dofs
 
     @property
@@ -113,4 +135,8 @@ class FunctionSpace:
         return np.flatnonzero(on_boundary)
 
     def __repr__(self) -> str:
-        return f'FunctionSpace(num_dofs={self.num_dofs})'
+        if self.block_size == 1:
+            return f'FunctionSpace(num_dofs={self.num_dofs})'
+
+        return (f'FunctionSpace(num_dofs={self.num_dofs}, '
+                f'block_size={self.block_size})')

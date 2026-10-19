@@ -15,10 +15,14 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from iguana import cpp as _cpp
-from iguana.element import PoissonElement
+from iguana.element import PoissonElement, StokesElement
 from iguana.embedding import CellType
 from iguana.grid import HierarchicalGrid
 from iguana.patch import PlanarPatch
+
+
+# The traces a ghost penalty extends
+_TRACES = (PoissonElement.U, StokesElement.U, StokesElement.P)
 
 
 class GhostPenalty:
@@ -27,7 +31,7 @@ class GhostPenalty:
 
     def __init__(
         self,
-        trace: PoissonElement.U,
+        trace: PoissonElement.U | StokesElement.U | StokesElement.P,
         patch: PlanarPatch,
         cell_types: Sequence[CellType],
         penalty: float,
@@ -42,11 +46,20 @@ class GhostPenalty:
         jumps for splines of maximal continuity, scaled by the size h of
         the cells as h^(2p - 1). It vanishes on any field that is one
         polynomial across the faces, and extends the field from the
-        physical domain over every function the cells beyond it keep.
+        physical domain over every function the cells beyond it keep. The
+        patch must have simple interior knots, or lower derivatives would
+        jump too, which its problem rejects when it solves.
+
+        The traces of a fluid scale the penalty as their fields need: the
+        velocity by the viscosity, on each of its components, and the
+        pressure by minus h^2 over the viscosity, negative as the pressure
+        block of the symmetric Stokes form is. The penalty given stays
+        positive for every trace.
 
         Args:
-            trace: The trace whose jumps are penalized, such as
-                `PoissonElement().u`.
+            trace: The trace whose jumps are penalized, such as the field u
+                of `PoissonElement`, or the velocity u or the pressure p of
+                `StokesElement`.
             patch: The background patch, a planar patch with an affine map,
                 whose elements are the cells.
             cell_types: The type of each element of the patch, with the
@@ -60,7 +73,7 @@ class GhostPenalty:
             ValueError: If there is not one cell type per element, or if
                 the penalty is not positive.
         """
-        if not isinstance(trace, PoissonElement.U):
+        if not isinstance(trace, _TRACES):
             raise TypeError('the trace must be the trace of an element')
 
         if not isinstance(patch, PlanarPatch):
@@ -91,7 +104,7 @@ class GhostPenalty:
             num_points=max(patch.degrees) + 1)
 
     @property
-    def trace(self) -> PoissonElement.U:
+    def trace(self) -> PoissonElement.U | StokesElement.U | StokesElement.P:
         """The trace whose jumps are penalized."""
         return self._trace
 
@@ -113,9 +126,13 @@ class GhostPenalty:
     def _add_to(self, form: _cpp.Form2d) -> None:
         """Add the integral of the penalty to the compiled form of a planar
         problem, assembled with its faces coupled."""
-        penalty = _cpp.SkeletonGhostPenalty2d(self._trace._cpp_trace(),
-                                              self._penalty)
-        form.add_skeleton_integral(penalty, self._quadrature)
+        factor, scaling = self._trace._ghost_scaling()
+
+        for trace in self._trace._cpp_traces():
+            penalty = _cpp.SkeletonGhostPenalty2d(trace,
+                                                  factor * self._penalty,
+                                                  scaling)
+            form.add_skeleton_integral(penalty, self._quadrature)
 
     def __repr__(self) -> str:
         return f'GhostPenalty({self._trace!r}, penalty={self._penalty})'

@@ -12,7 +12,7 @@ from iguana import cpp
 from iguana.boundary import Boundary
 from iguana.condition import (NeumannCondition, NitscheCondition,
                               PenaltyCondition, SkeletonNitscheCondition)
-from iguana.element import PoissonElement
+from iguana.element import PoissonElement, StokesElement
 from iguana.embedding import CellType, SurrogateBoundary, classify_cells
 from iguana.fspace import FunctionSpace
 from iguana.grid import HierarchicalGrid
@@ -28,6 +28,7 @@ __all__ = ['Boundary', 'CellType', 'CurvePatch', 'FunctionSpace',
            'GhostPenalty', 'HierarchicalGrid', 'NeumannCondition',
            'NitscheCondition', 'PenaltyCondition', 'PlanarPatch',
            'PoissonElement', 'QuadratureBoundary', 'QuadratureDomain',
-           'SkeletonNitscheCondition', 'SurfacePatch', 'SurrogateBoundary',
-           'VolumePatch', 'classify_cells', 'create_box', 'create_curve',
-           'create_rectangle', 'create_surface']
+           'SkeletonNitscheCondition', 'StokesElement', 'SurfacePatch',
+           'SurrogateBoundary', 'VolumePatch', 'classify_cells',
+           'create_box', 'create_curve', 'create_rectangle',
+           'create_surface']

@@ -9,7 +9,9 @@ consistently through the flux conjugate to the trace, and a Neumann
 condition loads the trace of the test functions with natural data, such as
 a flux. Nitsche's method on faces imposes them across the faces of the cells
 where their weights jump, as the generalized shifted boundary method does.
-It holds its data and where it applies, and a problem assembles it with the
+A trace of several components, such as the velocity of `StokesElement`,
+takes as many values per point, each acting on its component. A condition
+holds its data and where it applies, and a problem assembles it with the
 element. Its values can change between solves, as in a time loop.
 """
 
@@ -22,11 +24,14 @@ import numpy.typing as npt
 
 from iguana import cpp as _cpp
 from iguana.boundary import Boundary
-from iguana.element import PoissonElement
+from iguana.element import PoissonElement, StokesElement
 from iguana.embedding import CellType
 from iguana.grid import HierarchicalGrid
 from iguana.patch import PlanarPatch
 from iguana.quadrature import QuadratureBoundary
+
+# The traces conditions act on, of one value per point or of several
+_TRACES = (PoissonElement.U, StokesElement.U)
 
 
 class PenaltyCondition:
@@ -35,7 +40,7 @@ class PenaltyCondition:
 
     def __init__(
         self,
-        trace: PoissonElement.U,
+        trace: PoissonElement.U | StokesElement.U,
         quadrature: QuadratureBoundary,
         values: (npt.ArrayLike
                  | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
@@ -55,29 +60,30 @@ class PenaltyCondition:
         imposes the values consistently.
 
         Args:
-            trace: The trace whose values are imposed, such as
-                `PoissonElement().u`.
+            trace: The trace whose values are imposed, such as the field u
+                of `PoissonElement` or the velocity u of `StokesElement`.
             quadrature: The quadrature of the boundary the values are
                 imposed along.
-            values: The value imposed at each point of the quadrature, in
-                its order, or a function that takes the points where they
-                apply, `quadrature.projections` of shape `(num_points, 2)`,
-                and returns those values.
+            values: The values imposed at each point of the quadrature, in
+                its order, one per point or two for the velocity, or a
+                function that takes the points where they apply,
+                `quadrature.projections` of shape `(num_points, 2)`, and
+                returns those values.
             penalty: The penalty, positive.
 
         Raises:
             TypeError: If the trace is not the trace of an element, or if
                 the quadrature is not a boundary quadrature.
-            ValueError: If the values are not one per point, or if the
-                penalty is not positive.
+            ValueError: If the values are not those of the trace at each
+                point, or if the penalty is not positive.
         """
-        if not isinstance(trace, PoissonElement.U):
+        if not isinstance(trace, _TRACES):
             raise TypeError('the trace must be the trace of an element')
 
         if not isinstance(quadrature, QuadratureBoundary):
             raise TypeError('the quadrature must be a boundary quadrature')
 
-        values = _values(quadrature.projections, values)
+        values = _values(quadrature.projections, values, trace._shape)
 
         if not penalty > 0.:
             raise ValueError('the penalty must be positive')
@@ -88,7 +94,7 @@ class PenaltyCondition:
         self._penalty = float(penalty)
 
     @property
-    def trace(self) -> PoissonElement.U:
+    def trace(self) -> PoissonElement.U | StokesElement.U:
         """The trace whose values are imposed."""
         return self._trace
 
@@ -99,10 +105,11 @@ class PenaltyCondition:
 
     @property
     def values(self) -> npt.NDArray[np.float64]:
-        """Value imposed at each point of the quadrature, of shape
-        `(num_points,)`. It is set as at initialization, by its values or
-        by a function of the points where they apply."""
-        return self._values.copy()
+        """Values imposed at each point of the quadrature, of shape
+        `(num_points,)`, or `(num_points, 2)` for the velocity. They are set
+        as at initialization, by their values or by a function of the points
+        where they apply."""
+        return _given(self._values, self._trace._shape)
 
     @values.setter
     def values(
@@ -110,7 +117,8 @@ class PenaltyCondition:
         values: (npt.ArrayLike
                  | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
     ) -> None:
-        self._values[...] = _values(self._quadrature.projections, values)
+        self._values[...] = _values(self._quadrature.projections, values,
+                                    self._trace._shape)
 
     @property
     def penalty(self) -> float:
@@ -120,9 +128,9 @@ class PenaltyCondition:
     def _add_to(self, form: _cpp.Form2d) -> None:
         """Add the integral of the condition to the compiled form of a
         planar problem, which reads its values where they lie."""
-        condition = _cpp.PenaltyCondition2d(self._trace._cpp_trace(),
-                                            self._penalty)
-        _add_along(form, condition, self._quadrature, self._values)
+        for trace, values in zip(self._trace._cpp_traces(), self._values):
+            condition = _cpp.PenaltyCondition2d(trace, self._penalty)
+            _add_along(form, condition, self._quadrature, values)
 
     def __repr__(self) -> str:
         return f'PenaltyCondition({self._trace!r}, penalty={self._penalty})'
@@ -134,7 +142,7 @@ class NitscheCondition:
 
     def __init__(
         self,
-        trace: PoissonElement.U,
+        trace: PoissonElement.U | StokesElement.U,
         quadrature: QuadratureBoundary,
         values: (npt.ArrayLike
                  | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
@@ -148,7 +156,8 @@ class NitscheCondition:
         scaled by the size of the elements. Unlike a penalty alone, it is
         consistent: the error decays with the order of the space for any
         penalty large enough to keep the method stable, about ten times the
-        square of the degree of the patch.
+        square of the degree of the patch, and times the viscosity for the
+        velocity of a fluid, whose flux is the traction.
 
         On a shifted quadrature, the adjoint and the penalty act on the
         Taylor expansion of the trace from each point to its closest point,
@@ -156,30 +165,31 @@ class NitscheCondition:
         method needs.
 
         Args:
-            trace: The trace whose values are imposed, such as
-                `PoissonElement().u`.
+            trace: The trace whose values are imposed, such as the field u
+                of `PoissonElement` or the velocity u of `StokesElement`.
             quadrature: The quadrature of the boundary the values are
                 imposed along.
-            values: The value imposed at each point of the quadrature, in
-                its order, or a function that takes the points where they
-                apply, `quadrature.projections` of shape `(num_points, 2)`,
-                and returns those values.
+            values: The values imposed at each point of the quadrature, in
+                its order, one per point or two for the velocity, or a
+                function that takes the points where they apply,
+                `quadrature.projections` of shape `(num_points, 2)`, and
+                returns those values.
             penalty: The penalty, positive, which the size of the elements
                 scales.
 
         Raises:
             TypeError: If the trace is not the trace of an element, or if
                 the quadrature is not a boundary quadrature.
-            ValueError: If the values are not one per point, or if the
-                penalty is not positive.
+            ValueError: If the values are not those of the trace at each
+                point, or if the penalty is not positive.
         """
-        if not isinstance(trace, PoissonElement.U):
+        if not isinstance(trace, _TRACES):
             raise TypeError('the trace must be the trace of an element')
 
         if not isinstance(quadrature, QuadratureBoundary):
             raise TypeError('the quadrature must be a boundary quadrature')
 
-        values = _values(quadrature.projections, values)
+        values = _values(quadrature.projections, values, trace._shape)
 
         if not penalty > 0.:
             raise ValueError('the penalty must be positive')
@@ -190,7 +200,7 @@ class NitscheCondition:
         self._penalty = float(penalty)
 
     @property
-    def trace(self) -> PoissonElement.U:
+    def trace(self) -> PoissonElement.U | StokesElement.U:
         """The trace whose values are imposed."""
         return self._trace
 
@@ -201,10 +211,11 @@ class NitscheCondition:
 
     @property
     def values(self) -> npt.NDArray[np.float64]:
-        """Value imposed at each point of the quadrature, of shape
-        `(num_points,)`. It is set as at initialization, by its values or
-        by a function of the points where they apply."""
-        return self._values.copy()
+        """Values imposed at each point of the quadrature, of shape
+        `(num_points,)`, or `(num_points, 2)` for the velocity. They are set
+        as at initialization, by their values or by a function of the points
+        where they apply."""
+        return _given(self._values, self._trace._shape)
 
     @values.setter
     def values(
@@ -212,7 +223,8 @@ class NitscheCondition:
         values: (npt.ArrayLike
                  | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
     ) -> None:
-        self._values[...] = _values(self._quadrature.projections, values)
+        self._values[...] = _values(self._quadrature.projections, values,
+                                    self._trace._shape)
 
     @property
     def penalty(self) -> float:
@@ -222,10 +234,11 @@ class NitscheCondition:
     def _add_to(self, form: _cpp.Form2d) -> None:
         """Add the integral of the condition to the compiled form of a
         planar problem, which reads its values where they lie."""
-        condition = _cpp.NitscheCondition2d(self._trace._cpp_trace(),
-                                            self._trace._cpp_flux(),
-                                            self._penalty)
-        _add_along(form, condition, self._quadrature, self._values)
+        for trace, flux, values in zip(self._trace._cpp_traces(),
+                                       self._trace._cpp_fluxes(),
+                                       self._values):
+            condition = _cpp.NitscheCondition2d(trace, flux, self._penalty)
+            _add_along(form, condition, self._quadrature, values)
 
     def __repr__(self) -> str:
         return f'NitscheCondition({self._trace!r}, penalty={self._penalty})'
@@ -237,7 +250,7 @@ class NeumannCondition:
 
     def __init__(
         self,
-        trace: PoissonElement.U,
+        trace: PoissonElement.U | StokesElement.U,
         quadrature: QuadratureBoundary,
         values: (npt.ArrayLike
                  | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
@@ -246,27 +259,30 @@ class NeumannCondition:
 
         The data is the boundary term of the weak form where it is known,
         so it adds a load and no stiffness. For the field u of the Poisson
-        element it is the outward flux ∂u/∂n. Data that depends on the
-        normal is given at the points, from the normals of the quadrature,
-        such as `quadrature.normals @ gradient`.
+        element it is the outward flux ∂u/∂n, and for the velocity of the
+        Stokes element the traction. Data that depends on the normal is
+        given at the points, from the normals of the quadrature, such as
+        `quadrature.normals @ gradient`.
 
         Args:
             trace: The trace of the test functions the data does work on,
-                such as `PoissonElement().u` for a flux.
+                such as the field u of `PoissonElement` for a flux or the
+                velocity u of `StokesElement` for a traction.
             quadrature: The quadrature of the boundary the data is given
                 along, not shifted.
             values: The data at each point of the quadrature, in its order,
-                or a function that takes their positions, of shape
-                `(num_points, 2)`, and returns it.
+                one value per point or two for the velocity, or a function
+                that takes their positions, of shape `(num_points, 2)`, and
+                returns it.
 
         Raises:
             TypeError: If the trace is not the trace of an element, or if
                 the quadrature is not a boundary quadrature.
             ValueError: If the quadrature is shifted, whose flux would need
                 the gradients at the closest points, or if the values are
-                not one per point.
+                not those of the trace at each point.
         """
-        if not isinstance(trace, PoissonElement.U):
+        if not isinstance(trace, _TRACES):
             raise TypeError('the trace must be the trace of an element')
 
         if not isinstance(quadrature, QuadratureBoundary):
@@ -277,10 +293,10 @@ class NeumannCondition:
 
         self._trace = trace
         self._quadrature = quadrature
-        self._values = _values(quadrature.positions, values)
+        self._values = _values(quadrature.positions, values, trace._shape)
 
     @property
-    def trace(self) -> PoissonElement.U:
+    def trace(self) -> PoissonElement.U | StokesElement.U:
         """The trace of the test functions the data does work on."""
         return self._trace
 
@@ -291,10 +307,11 @@ class NeumannCondition:
 
     @property
     def values(self) -> npt.NDArray[np.float64]:
-        """Data at each point of the quadrature, of shape `(num_points,)`.
-        It is set as at initialization, by its values or by a function of
-        the positions of the points."""
-        return self._values.copy()
+        """Data at each point of the quadrature, of shape `(num_points,)`,
+        or `(num_points, 2)` for the velocity. It is set as at
+        initialization, by its values or by a function of the positions of
+        the points."""
+        return _given(self._values, self._trace._shape)
 
     @values.setter
     def values(
@@ -302,14 +319,16 @@ class NeumannCondition:
         values: (npt.ArrayLike
                  | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
     ) -> None:
-        self._values[...] = _values(self._quadrature.positions, values)
+        self._values[...] = _values(self._quadrature.positions, values,
+                                    self._trace._shape)
 
     def _add_to(self, form: _cpp.Form2d) -> None:
         """Add the integral of the condition, a load, to the compiled form of
         a planar problem, which reads its values where they lie."""
-        condition = _cpp.NeumannCondition2d(self._trace._cpp_trace())
-        form.add_boundary_integral(condition, self._quadrature._cpp_object,
-                                   self._values)
+        for trace, values in zip(self._trace._cpp_traces(), self._values):
+            condition = _cpp.NeumannCondition2d(trace)
+            form.add_boundary_integral(condition,
+                                       self._quadrature._cpp_object, values)
 
     def __repr__(self) -> str:
         return f'NeumannCondition({self._trace!r})'
@@ -322,7 +341,7 @@ class SkeletonNitscheCondition:
 
     def __init__(
         self,
-        trace: PoissonElement.U,
+        trace: PoissonElement.U | StokesElement.U,
         patch: PlanarPatch,
         cell_types: Sequence[CellType],
         boundary: Boundary,
@@ -346,17 +365,18 @@ class SkeletonNitscheCondition:
         weight must stay off the edge of the patch.
 
         Args:
-            trace: The trace whose values are imposed, such as
-                `PoissonElement().u`.
+            trace: The trace whose values are imposed, such as the field u
+                of `PoissonElement` or the velocity u of `StokesElement`.
             patch: The background patch, a planar patch with an affine map,
                 whose elements are the cells.
             cell_types: The type of each element of the patch, with the
                 first direction running fastest.
             boundary: The true boundary, made of curves in the plane of the
                 patch, where the values apply.
-            values: The value imposed at the closest point of each face
-                point, or a function that takes those closest points, of
-                shape `(num_points, 2)`, and returns their values.
+            values: The values imposed at the closest point of each face
+                point, one per point or two for the velocity, or a function
+                that takes those closest points, of shape `(num_points, 2)`,
+                and returns their values.
             penalty: The penalty, positive, which the size of the cells
                 scales, as for `NitscheCondition`.
             order: Total order of the Taylor expansion towards the
@@ -368,11 +388,11 @@ class SkeletonNitscheCondition:
                 patch is not a planar patch, or if the boundary is not a
                 boundary.
             ValueError: If there is not one cell type per element, if the
-                map of the patch is not affine, if the values are not one per
-                point, if the penalty is not positive, or if the order is
-                negative.
+                map of the patch is not affine, if the values are not those
+                of the trace at each point, if the penalty is not positive,
+                or if the order is negative.
         """
-        if not isinstance(trace, PoissonElement.U):
+        if not isinstance(trace, _TRACES):
             raise TypeError('the trace must be the trace of an element')
 
         if not isinstance(patch, PlanarPatch):
@@ -409,7 +429,8 @@ class SkeletonNitscheCondition:
             patch=patch._cpp_object, boundary=boundary._cpp_object,
             points=quadrature.points)
 
-        values = _values(np.array(projection.positions), values)
+        values = _values(np.array(projection.positions), values,
+                         trace._shape)
 
         self._trace = trace
         self._patch = patch
@@ -420,7 +441,7 @@ class SkeletonNitscheCondition:
         self._penalty = float(penalty)
 
     @property
-    def trace(self) -> PoissonElement.U:
+    def trace(self) -> PoissonElement.U | StokesElement.U:
         """The trace whose values are imposed."""
         return self._trace
 
@@ -436,10 +457,11 @@ class SkeletonNitscheCondition:
 
     @property
     def values(self) -> npt.NDArray[np.float64]:
-        """Value imposed at the closest point of each face point, of shape
-        `(num_points,)`. It is set as at initialization, by its values or
-        by a function of the closest points."""
-        return self._values.copy()
+        """Values imposed at the closest point of each face point, of shape
+        `(num_points,)`, or `(num_points, 2)` for the velocity. They are set
+        as at initialization, by their values or by a function of the
+        closest points."""
+        return _given(self._values, self._trace._shape)
 
     @values.setter
     def values(
@@ -448,7 +470,7 @@ class SkeletonNitscheCondition:
                  | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
     ) -> None:
         positions = np.array(self._projection.positions)
-        self._values[...] = _values(positions, values)
+        self._values[...] = _values(positions, values, self._trace._shape)
 
     @property
     def penalty(self) -> float:
@@ -460,12 +482,14 @@ class SkeletonNitscheCondition:
         """Add the integral of the condition to the compiled form of a planar
         problem, assembled with its faces coupled, with the weights of the
         cells. The form reads the values and weights where they lie."""
-        condition = _cpp.SkeletonNitscheCondition2d(self._trace._cpp_trace(),
-                                                    self._trace._cpp_flux(),
-                                                    self._penalty)
-        form.add_skeleton_integral(condition, self._quadrature,
-                                   self._projection, self._order,
-                                   self._values, cell_weights)
+        for trace, flux, values in zip(self._trace._cpp_traces(),
+                                       self._trace._cpp_fluxes(),
+                                       self._values):
+            condition = _cpp.SkeletonNitscheCondition2d(trace, flux,
+                                                        self._penalty)
+            form.add_skeleton_integral(condition, self._quadrature,
+                                       self._projection, self._order, values,
+                                       cell_weights)
 
     def __repr__(self) -> str:
         return (f'SkeletonNitscheCondition({self._trace!r}, '
@@ -493,17 +517,29 @@ def _values(
     points: npt.NDArray[np.float64],
     values: (npt.ArrayLike
              | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
+    shape: tuple[int, ...],
 ) -> npt.NDArray[np.float64]:
     """Values of a condition at the points where they apply, such as the
     closest points of a shifted quadrature, given at them or as a function
-    of them, checked to be one per point. They are contiguous, as a compiled
-    form reads them where they lie."""
+    of them, checked to be of the shape of the trace at each point. They are
+    stored a component per row, each contiguous, as a compiled form reads
+    them where they lie."""
     if callable(values):
         values = values(points)
 
-    values = np.ascontiguousarray(values, dtype=np.float64)
+    values = np.asarray(values, dtype=np.float64)
 
-    if values.shape != (len(points),):
-        raise ValueError('the values must be one per point')
+    if values.shape != (len(points), *shape):
+        raise ValueError('the values must be those of the trace at each '
+                         'point')
 
-    return values
+    return np.ascontiguousarray(values.reshape(len(points), -1).T)
+
+
+def _given(
+    values: npt.NDArray[np.float64],
+    shape: tuple[int, ...],
+) -> npt.NDArray[np.float64]:
+    """Copy of the stored values of a condition, of shape
+    `(num_points, *shape)` as they were given."""
+    return values.T.reshape(-1, *shape).copy()

@@ -14,6 +14,7 @@ one problem. It needs a build of iguana with PETSc.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Sequence
 
 import numpy as np
@@ -23,7 +24,7 @@ from petsc4py import PETSc
 from iguana import cpp as _cpp
 from iguana.condition import (NeumannCondition, NitscheCondition,
                               PenaltyCondition, SkeletonNitscheCondition)
-from iguana.element import PoissonElement
+from iguana.element import PoissonElement, StokesElement
 from iguana.fspace import FunctionSpace
 from iguana.patch import PlanarPatch
 from iguana.quadrature import QuadratureDomain
@@ -36,7 +37,7 @@ class LinearProblem:
 
     def __init__(
         self,
-        element: PoissonElement,
+        element: PoissonElement | StokesElement,
         space: FunctionSpace,
         quadrature: QuadratureDomain,
         source: (npt.ArrayLike
@@ -49,6 +50,7 @@ class LinearProblem:
                              | SkeletonNitscheCondition] = (),
         stabilizations: Sequence[GhostPenalty] = (),
         step: float | None = None,
+        pressure_reference: npt.ArrayLike | None = None,
         petsc_options: dict[str, object] | None = None,
     ) -> None:
         """Initialize the problem of an element on a space.
@@ -61,14 +63,25 @@ class LinearProblem:
         K + M / step and F becomes F + M u_p / step, with the mass M of the
         element weighted by the cells like its other terms.
 
+        With the velocity of a fluid imposed on the whole boundary, the
+        pressure is only determined up to a constant, which a pressure
+        reference fixes: the pressure of the function whose control point
+        lies nearest the reference is set to zero, by its row and column of
+        the system after each assembly. Any point serves, the constant
+        being the same everywhere.
+
         Args:
-            element: The element stating the problem.
-            space: The space of the solution, on a planar patch.
+            element: The element stating the problem, a Poisson or a Stokes
+                element.
+            space: The space of the solution, on a planar patch, with the
+                block size of the element.
             quadrature: A quadrature over the elements of the patch of the
                 space, not over a refined grid.
-            source: The value of the source at each point of the quadrature,
-                in its order, or a function that takes their positions, of
-                shape `(num_points, 2)`, and returns those values.
+            source: The source at each point of the quadrature, in its
+                order, one value per point for the Poisson element and the
+                two components of the body force for the Stokes element, or
+                a function that takes their positions, of shape
+                `(num_points, 2)`, and returns those values.
             petsc_options_prefix: The prefix of the options of the PETSc
                 solver, unique to the problem, such as `'poisson_'`.
             cell_weights: The weight of the test functions of the element on
@@ -76,38 +89,55 @@ class LinearProblem:
                 the volume fractions of the generalized shifted boundary
                 method. Cells of weight zero add nothing. Without them, every
                 cell weighs one.
-            conditions: Conditions along boundaries in the patch of the
-                space, penalties or Nitsche conditions imposing values, or
-                Neumann conditions loading fluxes, or Nitsche conditions on
-                the faces where the cell weights jump, which need them.
-            stabilizations: Ghost penalties across the faces of the cells of
-                the patch of the space, which need an affine map. They
-                extend the field beyond the physical domain, as a space
-                keeping the functions of every cell needs.
+            conditions: Conditions on traces of the element along
+                boundaries in the patch of the space, penalties or Nitsche
+                conditions imposing values, or Neumann conditions loading
+                fluxes, or Nitsche conditions on the faces where the cell
+                weights jump, which need them.
+            stabilizations: Ghost penalties on traces of the element across
+                the faces of the cells of the patch of the space, which need
+                an affine map. They extend the field beyond the physical
+                domain, as a space keeping the functions of every cell
+                needs, the velocity and the pressure of a fluid each by its
+                own.
             step: The time step of backward Euler, positive. Without it, the
                 problem is steady.
+            pressure_reference: The point near which the pressure is zero,
+                of shape `(2,)`, for an element with a pressure. Without it,
+                nothing fixes the constant pressure.
             petsc_options: Options of the PETSc linear solver, such as
                 `{'ksp_type': 'gmres', 'pc_type': 'ilu'}`. Without them, the
                 solver factorizes the system, with MUMPS when PETSc has it.
 
         Raises:
-            TypeError: If the element is not a Poisson element, if the space
-                is not a function space on a planar patch, if the quadrature
+            TypeError: If the element is neither a Poisson nor a Stokes
+                element, if the space is not a function space on a planar
+                patch, if the quadrature
                 is not a domain quadrature, if a condition is neither a
                 penalty, a Nitsche, a Neumann nor a skeleton Nitsche
                 condition, or if a stabilization is not a ghost penalty.
-            ValueError: If the quadrature, the boundary of a condition or the
-                cells of a stabilization do not lie on the elements of the
-                patch of the space, if the source does not give one value per
-                point, if the cell weights are not one per cell, if a
-                skeleton Nitsche condition is given without them, or if the
-                time step is not positive.
+            ValueError: If the space does not have the block size of the
+                element, if the quadrature, the boundary of a condition or
+                the cells of a stabilization do not lie on the elements of
+                the patch of the space, if a condition or a stabilization
+                acts on a trace of another element, if the source does not
+                give each point the values the element takes, if the cell
+                weights are not one per cell, if a skeleton Nitsche
+                condition is given without them, if the time step is not
+                positive, or if a pressure reference is given for an element
+                without a pressure or is not a point of the plane.
         """
-        if not isinstance(element, PoissonElement):
-            raise TypeError('the element must be a Poisson element')
+        if not isinstance(element, (PoissonElement, StokesElement)):
+            raise TypeError('the element must be a Poisson or a Stokes '
+                            'element')
 
         if not isinstance(space, FunctionSpace):
             raise TypeError('the space must be a function space')
+
+        # A coefficient per unknown of the element
+        if space.block_size != element._block_size:
+            raise ValueError('the space must have the block size of the '
+                             'element')
 
         # Boundaries and faces lie in the plane, and so do the problems so far
         patch = space.patch
@@ -128,13 +158,17 @@ class LinearProblem:
 
         conditions = list(conditions)
         stabilizations = list(stabilizations)
-        _check_terms(patch, conditions, stabilizations)
+        _check_terms(element, patch, conditions, stabilizations)
 
         on_faces = any(isinstance(condition, SkeletonNitscheCondition)
                        for condition in conditions)
 
+        # A column per component of the source, contiguous, as the form
+        # reads each where it lies
         self._quadrature = quadrature
-        self._source = np.empty(quadrature.num_points)
+        self._source_shape = element._source_shape
+        self._source = np.empty((quadrature.num_points,
+                                 math.prod(self._source_shape)), order='F')
         self.source = source
         self._cell_weights = _cell_weights(quadrature, cell_weights, on_faces)
 
@@ -142,6 +176,7 @@ class LinearProblem:
             raise ValueError('the time step must be positive')
 
         self._step = None if step is None else float(step)
+        self._pinned = _pinned(element, space, pressure_reference)
 
         # The form reads the data where it lies, so a source or values set
         # later reach it without building it again
@@ -184,7 +219,11 @@ class LinearProblem:
             self._previous = self._load.duplicate()
             self._previous.zeroEntries()
 
+        # The solution, as the previous one, has a coefficient per degree of
+        # freedom and component
         self._x = self._load.duplicate()
+        self._shape = ((space.num_dofs,) if space.block_size == 1
+                       else (space.num_dofs, space.block_size))
         self._solver = _linear_solver(self._A, petsc_options_prefix,
                                       petsc_options)
 
@@ -206,10 +245,11 @@ class LinearProblem:
 
     @property
     def source(self) -> npt.NDArray[np.float64]:
-        """Value of the source at each point of the quadrature, of shape
-        `(num_points,)`. It is set as at initialization, by its values or
-        by a function of the positions of the points."""
-        return self._source.copy()
+        """Source at each point of the quadrature, of shape `(num_points,)`
+        for the Poisson element and `(num_points, 2)` for the Stokes
+        element. It is set as at initialization, by its values or by a
+        function of the positions of the points."""
+        return self._source.reshape(-1, *self._source_shape).copy()
 
     @source.setter
     def source(
@@ -222,16 +262,19 @@ class LinearProblem:
 
         source = np.asarray(source, dtype=np.float64)
 
-        if source.shape != (self._quadrature.num_points,):
-            raise ValueError('the source must give one value per point')
+        if source.shape != (self._quadrature.num_points,
+                            *self._source_shape):
+            raise ValueError('the source must give each point the values the '
+                             'element takes')
 
         # In place, where the form reads it
-        self._source[...] = source
+        self._source[...] = source.reshape(len(self._source), -1)
 
     @property
     def previous(self) -> npt.NDArray[np.float64] | None:
-        """Coefficient of each degree of freedom at the previous time, of
-        shape `(num_dofs,)`, zero at first, from which a transient problem
+        """Coefficients of each degree of freedom at the previous time, of
+        shape `(num_dofs,)`, or `(num_dofs, block_size)` for a space of
+        several components, zero at first, from which a transient problem
         takes its next step. A steady problem has none. On a space that
         keeps the functions of every cell, as the generalized shifted
         boundary method does, the degrees of freedom stay the same however
@@ -239,7 +282,7 @@ class LinearProblem:
         if self._previous is None:
             return None
 
-        return self._previous.getArray().copy()
+        return self._previous.getArray().reshape(self._shape).copy()
 
     @previous.setter
     def previous(self, previous: npt.ArrayLike) -> None:
@@ -248,22 +291,24 @@ class LinearProblem:
 
         previous = np.asarray(previous, dtype=np.float64)
 
-        if previous.shape != (self._previous.getSize(),):
-            raise ValueError('the previous solution must give one '
-                             'coefficient per degree of freedom')
+        if previous.shape != self._shape:
+            raise ValueError('the previous solution must give the '
+                             'coefficients of every degree of freedom')
 
-        self._previous.setArray(previous)
+        self._previous.setArray(previous.ravel())
 
     def solve(self) -> npt.NDArray[np.float64]:
         """Assemble the system with the current data and solve it.
 
         Returns:
-            The coefficient of each degree of freedom, of shape
-            `(num_dofs,)`.
+            The coefficients of each degree of freedom, of shape
+            `(num_dofs,)`, or `(num_dofs, block_size)` for a space of
+            several components, the velocity and the pressure of a Stokes
+            element in that order.
 
         Raises:
             ValueError: If a stabilization is given on a patch whose map is
-                not affine.
+                not affine, or that repeats an interior knot.
             RuntimeError: If the linear solver does not converge.
         """
         # Anew from the current data, every integral in one call
@@ -278,28 +323,44 @@ class LinearProblem:
             self._mass.mult(self._previous, self._b)
             self._b.aypx(1. / self._step, self._load)
 
+        # The pinned pressure, zero, left out of the other equations
+        if self._pinned is not None:
+            self._x.zeroEntries()
+            self._A.zeroRowsColumns([self._pinned], diag=1., x=self._x,
+                                    b=self._b)
+
         self._solver.solve(self._b, self._x)
 
         if self._solver.getConvergedReason() < 0:
             raise RuntimeError('the linear solver did not converge')
 
-        return self._x.getArray().copy()
+        return self._x.getArray().reshape(self._shape).copy()
 
 
 def _check_terms(
+    element: PoissonElement | StokesElement,
     patch: PlanarPatch,
     conditions: list[PenaltyCondition | NitscheCondition | NeumannCondition
                      | SkeletonNitscheCondition],
     stabilizations: list[GhostPenalty],
 ) -> None:
     """Check that the conditions and stabilizations of a problem are of the
-    kinds it assembles and lie on the patch of its space."""
+    kinds it assembles, act on traces of its element and lie on the patch of
+    its space."""
+    # The pressure of a fluid has a ghost penalty, but no condition
+    traces = ((StokesElement.U, StokesElement.P)
+              if isinstance(element, StokesElement) else PoissonElement.U)
+
     for condition in conditions:
         if not isinstance(condition, (PenaltyCondition, NitscheCondition,
                                       NeumannCondition,
                                       SkeletonNitscheCondition)):
             raise TypeError('the conditions must be penalty, Nitsche, '
                             'Neumann or skeleton Nitsche conditions')
+
+        if not isinstance(condition.trace, type(element).U):
+            raise ValueError('the trace of a condition must be one of the '
+                             'element')
 
         if isinstance(condition, SkeletonNitscheCondition):
             if condition.patch is not patch:
@@ -313,9 +374,40 @@ def _check_terms(
         if not isinstance(stabilization, GhostPenalty):
             raise TypeError('the stabilizations must be ghost penalties')
 
+        if not isinstance(stabilization.trace, traces):
+            raise ValueError('the trace of a stabilization must be one of '
+                             'the element')
+
         if stabilization.patch is not patch:
             raise ValueError('the cells of a stabilization must lie on the '
                              'patch of the space')
+
+
+def _pinned(
+    element: PoissonElement | StokesElement,
+    space: FunctionSpace,
+    pressure_reference: npt.ArrayLike | None,
+) -> int | None:
+    """Row of the system of the pressure pinned near a reference point, that
+    of the function whose control point lies nearest, or none without a
+    reference."""
+    if pressure_reference is None:
+        return None
+
+    if element._pressure_component is None:
+        raise ValueError('a pressure reference needs an element with a '
+                         'pressure')
+
+    point = np.asarray(pressure_reference, dtype=np.float64)
+
+    if point.shape != (2,):
+        raise ValueError('the pressure reference must be a point of the '
+                         'plane')
+
+    distances = np.linalg.norm(space.control_points - point, axis=1)
+    nearest = int(np.argmin(distances))
+
+    return space.block_size * nearest + element._pressure_component
 
 
 def _cell_weights(

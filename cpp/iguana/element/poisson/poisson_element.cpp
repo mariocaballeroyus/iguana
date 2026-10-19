@@ -29,12 +29,12 @@ template<typename Basis, std::size_t n>
 void PoissonElement<Basis, n>::local_load(
     const ElementValues<Basis, n>& values,
     const Eigen::VectorX<Scalar>& weights,
-    const Eigen::VectorX<Scalar>& source,
+    const Eigen::MatrixX<Scalar>& source,
     Eigen::VectorX<Scalar>& load) const
 {
     // F_i = ( N_i, f )_Ω
     //     ≈ Σ_q w_q f(x_q) N_i(x_q)
-    load = values.values() * weights.cwiseProduct(source);
+    load = values.values() * weights.cwiseProduct(source.col(0));
 }
 
 template<typename Basis, std::size_t n>
