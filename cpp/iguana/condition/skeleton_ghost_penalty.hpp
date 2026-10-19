@@ -21,15 +21,16 @@ namespace iguana
  *        interior faces of a grid
  *
  * @details It penalizes the jumps of the derivatives of order p, the degree
- *          across a face, the only ones that jump for splines of maximal
- *          continuity. They vanish on a field that is one polynomial across
- *          the faces, so the penalty is consistent. Its sign is that of
- *          the block of its field in the system, which it keeps definite:
- *          positive for the field of PoissonElement or the velocity of
- *          StokesElement, negative for the pressure of StokesElement, whose
- *          block is negative in the symmetric form. Rows and columns follow
- *          the degrees of freedom of the cell before the face, then those of
- *          the cell after, each ordered as for Element
+ *          of the space across a face, the only ones that jump for splines
+ *          of maximal continuity. They vanish on a field that is one
+ *          polynomial across the faces, so the penalty is consistent. Its
+ *          sign is that of the block of its field in the system, which it
+ *          keeps definite: positive for the field of PoissonElement or the
+ *          velocity of StokesElement, negative for the pressure of
+ *          StokesElement, whose block is negative in the symmetric form.
+ *          Rows and columns follow the degrees of freedom of the cell
+ *          before the face, then those of the cell after, each ordered as
+ *          for Element
  *
  * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
  * @tparam n Dimension of the physical space of the patch

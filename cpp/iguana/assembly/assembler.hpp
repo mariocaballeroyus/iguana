@@ -50,8 +50,9 @@ namespace iguana
  * on the cell, it scales the weights of its points, and a cell of weight
  * zero adds nothing and is skipped
  *
- * The basis of the space spans the functions and that of the patch maps the
- * points, so both must be one basis, as in isoparametric analysis
+ * The basis of the space spans the functions and the patch maps the
+ * points, so the two bases may differ in degrees and continuities, as long
+ * as they share the elements
  *
  * The space has a block size, the number of components of its field, and
  * on a cell its degrees of freedom run component after component, the
@@ -93,10 +94,12 @@ public:
      *        coupled, so that the pattern holds whichever faces a term acts
      *        on, as they change with a moving boundary
      *
+     * @throws std::invalid_argument If the space does not have the elements
+     *         of the patch
      * @throws std::runtime_error If PETSc fails to create the system
      *
-     * @pre PETSc is initialized, and @p space and @p patch share one basis
-     *      and both outlive the assembler, which keeps references to them
+     * @pre PETSc is initialized, and @p space and @p patch outlive the
+     *      assembler, which keeps references to them
      */
     Assembler(const FunctionSpace<Basis>& space,
               const Patch<Basis, n>& patch, bool couple_faces = false);
@@ -359,10 +362,11 @@ public:
      *        skeleton quadrature
      *
      * On each face, the values of the cells before and after it, each with
-     * its own polynomial, are differentiated across it at the same points.
-     * The patch maps the weights of the quadrature, which measure the faces
-     * in parameter space, into face weights, and the local stiffness
-     * couples the degrees of freedom of both cells
+     * its own polynomial, are differentiated across it at the same points,
+     * to the degree of the space there. The patch maps the weights of the
+     * quadrature, which measure the faces in parameter space, into face
+     * weights, and the local stiffness couples the degrees of freedom of
+     * both cells
      *
      * @param penalty Ghost penalty whose local stiffness is added
      * @param quadrature Quadrature over interior faces of the grid of the
@@ -370,7 +374,7 @@ public:
      *
      * @throws std::invalid_argument If the faces are not coupled, if the map
      *         of the patch is not affine, if the patch is not a B-spline one,
-     *         if a knot vector of the patch repeats an interior knot, or if
+     *         if a knot vector of the space repeats an interior knot, or if
      *         the local matrices of @p penalty do not match the degrees of
      *         freedom of the space
      *
