@@ -21,15 +21,16 @@ namespace iguana
  *        in its Galerkin form
  *
  * @details Its unknowns are the n components of the velocity and the
- *          pressure, in that order, the block size n + 1 of its space. The
- *          viscous stress is that of a Newtonian fluid, twice the viscosity
- *          times the symmetric gradient of the velocity. Without
- *          stabilization, the spaces of the velocity and the pressure must
- *          be inf-sup stable, while StokesStabilizedElement lets them take
- *          functions of one basis. Its source is the body force, of n
- *          components, its traces the components of the velocity, U, and
- *          the pressure, P, and its fluxes the components of the traction,
- *          T
+ *          pressure, in that order, either the components of one field, the
+ *          block size n + 1 of its space, or a field each, as in
+ *          divergence-conforming spaces. The viscous stress is that of a
+ *          Newtonian fluid, twice the viscosity times the symmetric gradient
+ *          of the velocity. Without stabilization, the spaces of the
+ *          velocity and the pressure must be inf-sup stable, while
+ *          StokesStabilizedElement lets them take functions of one basis.
+ *          Its source is the body force, of n components, its traces the
+ *          components of the velocity, U, and the pressure, P, and its
+ *          fluxes the components of the traction, T
  *
  * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
  * @tparam n Dimension of the physical space, the number of parametric
@@ -85,6 +86,45 @@ public:
     /// @brief Flux of a component of the velocity, that component of the
     ///        traction, defined in stokes_traces.hpp
     class T;
+
+protected:
+    /**
+     * @brief Field whose values an unknown reads, the components of the
+     *        velocity followed by the pressure
+     *
+     * The pressure reads the last field, and each component of the velocity
+     * its own of n + 1 fields, or else the first, which holds them as its
+     * components
+     *
+     * @param num_fields Number of fields of the values
+     * @param unknown Unknown, below n + 1
+     */
+    static constexpr std::size_t field_of(std::size_t num_fields,
+                                          std::size_t unknown) noexcept
+    {
+        if (unknown == n)
+            return num_fields - 1;
+
+        return num_fields == n + 1 ? unknown : 0;
+    }
+
+    /**
+     * @brief First row of an unknown in the local matrices, after the
+     *        active functions of the unknowns before it
+     *
+     * @param values Values at the points of the element
+     * @param unknown Unknown, up to n + 1, which gives the number of rows
+     */
+    static Eigen::Index first_row(const ElementValues<Basis, n>& values,
+                                  std::size_t unknown)
+    {
+        Eigen::Index row = 0;
+
+        for (std::size_t before = 0; before < unknown; ++before)
+            row += values.values(field_of(values.num_fields(), before)).rows();
+
+        return row;
+    }
 
 private:
     /// @brief Dynamic viscosity μ of the fluid

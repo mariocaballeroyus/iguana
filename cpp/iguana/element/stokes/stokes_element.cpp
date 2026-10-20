@@ -30,53 +30,58 @@ void StokesElement<Basis, n>::local_stiffness(
     const Eigen::VectorX<Scalar>& weights,
     Eigen::MatrixX<Scalar>& stiffness) const
 {
-    const std::array<Eigen::MatrixX<Scalar>, n>& grads =
-        values.physical_gradients();
-    const Eigen::Index num_active = values.values().rows();
-    const Eigen::Index pressure = static_cast<Eigen::Index>(n) * num_active;
+    const std::size_t num_fields = values.num_fields();
+    const Eigen::MatrixX<Scalar>& pressure =
+        values.values(field_of(num_fields, n));
+    const Eigen::Index pressure_row = first_row(values, n);
+    const Eigen::Index size = first_row(values, n + 1);
 
-    // ∇N_i · ∇N_j
-    Eigen::MatrixX<Scalar> laplacian =
-        Eigen::MatrixX<Scalar>::Zero(num_active, num_active);
-
-    for (std::size_t coordinate = 0; coordinate < n; ++coordinate)
-        laplacian += grads[coordinate] * weights.asDiagonal()
-                     * grads[coordinate].transpose();
-
-    stiffness.setZero(pressure + num_active, pressure + num_active);
+    stiffness.setZero(size, size);
 
     // Block (a, b) pairs component a of the test functions with component b
     // of the trial ones, the pressure following the velocity
     for (std::size_t a = 0; a < n; ++a) {
-        const Eigen::Index row = static_cast<Eigen::Index>(a) * num_active;
+        const std::array<Eigen::MatrixX<Scalar>, n>& test_grads =
+            values.physical_gradients(field_of(num_fields, a));
+        const Eigen::Index row = first_row(values, a);
+        const Eigen::Index rows = test_grads[a].rows();
 
         for (std::size_t b = 0; b < n; ++b) {
-            const Eigen::Index col = static_cast<Eigen::Index>(b) * num_active;
+            const std::array<Eigen::MatrixX<Scalar>, n>& trial_grads =
+                values.physical_gradients(field_of(num_fields, b));
+            const Eigen::Index col = first_row(values, b);
+            const Eigen::Index cols = trial_grads[b].rows();
 
             // K_ij = ( 2μ ε(N_i e_a), ε(N_j e_b) )_Ω
             //      ≈ Σ_q w_q μ (δ_ab ∇N_i · ∇N_j + ∂_b N_i ∂_a N_j)
-            stiffness.block(row, col, num_active, num_active) =
-                viscosity_ * grads[b] * weights.asDiagonal()
-                * grads[a].transpose();
+            stiffness.block(row, col, rows, cols) =
+                viscosity_ * test_grads[b] * weights.asDiagonal()
+                * trial_grads[a].transpose();
 
-            if (a == b)
-                stiffness.block(row, col, num_active, num_active) +=
-                    viscosity_ * laplacian;
+            if (a == b) {
+                for (std::size_t c = 0; c < n; ++c)
+                    stiffness.block(row, col, rows, cols) +=
+                        viscosity_ * test_grads[c] * weights.asDiagonal()
+                        * trial_grads[c].transpose();
+            }
         }
 
         // K_ij = − ( div(N_i e_a), N_j )_Ω
         //      ≈ − Σ_q w_q ∂_a N_i N_j
-        stiffness.block(row, pressure, num_active, num_active) =
-            -grads[a] * weights.asDiagonal() * values.values().transpose();
+        stiffness.block(row, pressure_row, rows, pressure.rows()) =
+            -test_grads[a] * weights.asDiagonal() * pressure.transpose();
     }
 
     for (std::size_t b = 0; b < n; ++b) {
-        const Eigen::Index col = static_cast<Eigen::Index>(b) * num_active;
+        const std::array<Eigen::MatrixX<Scalar>, n>& trial_grads =
+            values.physical_gradients(field_of(num_fields, b));
+        const Eigen::Index col = first_row(values, b);
 
         // K_ij = − ( N_i, div(N_j e_b) )_Ω
         //      ≈ − Σ_q w_q N_i ∂_b N_j
-        stiffness.block(pressure, col, num_active, num_active) =
-            -values.values() * weights.asDiagonal() * grads[b].transpose();
+        stiffness.block(pressure_row, col, pressure.rows(),
+                        trial_grads[b].rows()) =
+            -pressure * weights.asDiagonal() * trial_grads[b].transpose();
     }
 }
 
@@ -87,19 +92,17 @@ void StokesElement<Basis, n>::local_load(
     const Eigen::MatrixX<Scalar>& source,
     Eigen::VectorX<Scalar>& load) const
 {
-    const Eigen::Index num_active = values.values().rows();
-    const Eigen::Index pressure = static_cast<Eigen::Index>(n) * num_active;
-
-    load.setZero(pressure + num_active);
+    load.setZero(first_row(values, n + 1));
 
     for (std::size_t a = 0; a < n; ++a) {
-        const Eigen::Index row = static_cast<Eigen::Index>(a) * num_active;
+        const Eigen::MatrixX<Scalar>& functions =
+            values.values(field_of(values.num_fields(), a));
         const Eigen::Index component = static_cast<Eigen::Index>(a);
 
         // F_i = ( N_i, f_a )_Ω
         //     ≈ Σ_q w_q f_a(x_q) N_i(x_q)
-        load.segment(row, num_active) =
-            values.values() * weights.cwiseProduct(source.col(component));
+        load.segment(first_row(values, a), functions.rows()) =
+            functions * weights.cwiseProduct(source.col(component));
     }
 }
 
@@ -109,19 +112,19 @@ void StokesElement<Basis, n>::local_mass(
     const Eigen::VectorX<Scalar>& weights,
     Eigen::MatrixX<Scalar>& mass) const
 {
-    const Eigen::Index num_active = values.values().rows();
-    const Eigen::Index pressure = static_cast<Eigen::Index>(n) * num_active;
+    const Eigen::Index size = first_row(values, n + 1);
 
-    mass.setZero(pressure + num_active, pressure + num_active);
+    mass.setZero(size, size);
 
     for (std::size_t b = 0; b < n; ++b) {
-        const Eigen::Index col = static_cast<Eigen::Index>(b) * num_active;
+        const Eigen::MatrixX<Scalar>& functions =
+            values.values(field_of(values.num_fields(), b));
+        const Eigen::Index row = first_row(values, b);
 
         // M_ij = ( N_i e_b, N_j e_b )_Ω
         //      ≈ Σ_q w_q N_i(x_q) N_j(x_q)
-        mass.block(col, col, num_active, num_active) =
-            values.values() * weights.asDiagonal()
-            * values.values().transpose();
+        mass.block(row, row, functions.rows(), functions.rows()) =
+            functions * weights.asDiagonal() * functions.transpose();
     }
 }
 

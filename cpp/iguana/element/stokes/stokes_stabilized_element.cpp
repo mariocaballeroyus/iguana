@@ -34,67 +34,71 @@ void StokesStabilizedElement<Basis, n>::local_stiffness(
 {
     Base::local_stiffness(values, weights, stiffness);
 
-    const std::array<Eigen::MatrixX<Scalar>, n>& grads =
-        values.physical_gradients();
-    const std::array<Eigen::MatrixX<Scalar>, n * (n + 1) / 2>& hessians =
-        values.physical_hessians();
-    const Eigen::Index num_active = values.values().rows();
-    const Eigen::Index pressure = static_cast<Eigen::Index>(n) * num_active;
+    const std::size_t num_fields = values.num_fields();
+    const std::array<Eigen::MatrixX<Scalar>, n>& pressure_grads =
+        values.physical_gradients(Base::field_of(num_fields, n));
+    const Eigen::Index pressure_row = Base::first_row(values, n);
+    const Eigen::Index pressure_rows = pressure_grads[0].rows();
     const Scalar viscosity = this->viscosity();
 
     // Physical weights times τ_M
     const Eigen::VectorX<Scalar> stabilized =
         weights.cwiseProduct(tau(values));
 
-    // τ_M ∇N_i · ∇N_j, and ΔN_j
-    Eigen::MatrixX<Scalar> stabilized_laplacian =
-        Eigen::MatrixX<Scalar>::Zero(num_active, num_active);
-    Eigen::MatrixX<Scalar> laplacians =
-        Eigen::MatrixX<Scalar>::Zero(num_active, values.values().cols());
-
-    for (std::size_t coordinate = 0; coordinate < n; ++coordinate) {
-        stabilized_laplacian += grads[coordinate] * stabilized.asDiagonal()
-                                * grads[coordinate].transpose();
-        laplacians += hessians[coordinate];
-    }
-
     for (std::size_t a = 0; a < n; ++a) {
-        const Eigen::Index row = static_cast<Eigen::Index>(a) * num_active;
+        const std::array<Eigen::MatrixX<Scalar>, n>& test_grads =
+            values.physical_gradients(Base::field_of(num_fields, a));
+        const Eigen::Index row = Base::first_row(values, a);
 
         for (std::size_t b = 0; b < n; ++b) {
-            const Eigen::Index col = static_cast<Eigen::Index>(b) * num_active;
+            const std::array<Eigen::MatrixX<Scalar>, n>& trial_grads =
+                values.physical_gradients(Base::field_of(num_fields, b));
+            const Eigen::Index col = Base::first_row(values, b);
 
             // K_ij = ( τ_C div(N_i e_a), div(N_j e_b) )_Ω
             //      ≈ Σ_q w_q μ ∂_a N_i ∂_b N_j
-            stiffness.block(row, col, num_active, num_active) +=
-                viscosity * grads[a] * weights.asDiagonal()
-                * grads[b].transpose();
+            stiffness.block(row, col, test_grads[a].rows(),
+                            trial_grads[b].rows()) +=
+                viscosity * test_grads[a] * weights.asDiagonal()
+                * trial_grads[b].transpose();
         }
     }
 
     for (std::size_t b = 0; b < n; ++b) {
-        const Eigen::Index col = static_cast<Eigen::Index>(b) * num_active;
+        const std::size_t field = Base::field_of(num_fields, b);
+        const std::array<Eigen::MatrixX<Scalar>, n * (n + 1) / 2>& hessians =
+            values.physical_hessians(field);
+        const Eigen::Index col = Base::first_row(values, b);
+        const Eigen::Index cols = hessians[0].rows();
 
-        // ∇N_i · ∇∂_b N_j, from the gradient of the divergence
+        // ΔN_j, and ∇N_i · ∇∂_b N_j from the gradient of the divergence
+        Eigen::MatrixX<Scalar> laplacians =
+            Eigen::MatrixX<Scalar>::Zero(cols, hessians[0].cols());
         Eigen::MatrixX<Scalar> curvature =
-            Eigen::MatrixX<Scalar>::Zero(num_active, num_active);
+            Eigen::MatrixX<Scalar>::Zero(pressure_rows, cols);
 
-        for (std::size_t a = 0; a < n; ++a)
-            curvature += grads[a] * stabilized.asDiagonal()
+        for (std::size_t a = 0; a < n; ++a) {
+            laplacians += hessians[a];
+            curvature += pressure_grads[a] * stabilized.asDiagonal()
                          * hessians[pair_index<n>(a, b)].transpose();
+        }
 
         // K_ij = − ( τ_M ∇N_i, −div(2μ ε(N_j e_b)) )_Ω
         //      ≈ Σ_q w_q τ_M μ (∂_b N_i ΔN_j + ∇N_i · ∇∂_b N_j)
-        stiffness.block(pressure, col, num_active, num_active) +=
-            viscosity * (grads[b] * stabilized.asDiagonal()
+        stiffness.block(pressure_row, col, pressure_rows, cols) +=
+            viscosity * (pressure_grads[b] * stabilized.asDiagonal()
                              * laplacians.transpose()
                          + curvature);
     }
 
     // K_ij = − ( τ_M ∇N_i, ∇N_j )_Ω
     //      ≈ − Σ_q w_q τ_M ∇N_i · ∇N_j
-    stiffness.block(pressure, pressure, num_active, num_active) -=
-        stabilized_laplacian;
+    for (std::size_t c = 0; c < n; ++c) {
+        stiffness.block(pressure_row, pressure_row, pressure_rows,
+                        pressure_rows) -=
+            pressure_grads[c] * stabilized.asDiagonal()
+            * pressure_grads[c].transpose();
+    }
 }
 
 template<typename Basis, std::size_t n>
@@ -106,8 +110,9 @@ void StokesStabilizedElement<Basis, n>::local_load(
 {
     Base::local_load(values, weights, source, load);
 
-    const Eigen::Index num_active = values.values().rows();
-    const Eigen::Index pressure = static_cast<Eigen::Index>(n) * num_active;
+    const std::array<Eigen::MatrixX<Scalar>, n>& pressure_grads =
+        values.physical_gradients(Base::field_of(values.num_fields(), n));
+    const Eigen::Index pressure_row = Base::first_row(values, n);
 
     // Physical weights times τ_M
     const Eigen::VectorX<Scalar> stabilized =
@@ -118,9 +123,8 @@ void StokesStabilizedElement<Basis, n>::local_load(
 
         // F_i = − ( τ_M ∇N_i, f )_Ω
         //     ≈ − Σ_q w_q τ_M ∇N_i(x_q) · f(x_q)
-        load.segment(pressure, num_active) -=
-            values.physical_gradients()[a]
-            * stabilized.cwiseProduct(source.col(component));
+        load.segment(pressure_row, pressure_grads[a].rows()) -=
+            pressure_grads[a] * stabilized.cwiseProduct(source.col(component));
     }
 }
 
@@ -132,21 +136,25 @@ void StokesStabilizedElement<Basis, n>::local_mass(
 {
     Base::local_mass(values, weights, mass);
 
-    const Eigen::Index num_active = values.values().rows();
-    const Eigen::Index pressure = static_cast<Eigen::Index>(n) * num_active;
+    const std::size_t num_fields = values.num_fields();
+    const std::array<Eigen::MatrixX<Scalar>, n>& pressure_grads =
+        values.physical_gradients(Base::field_of(num_fields, n));
+    const Eigen::Index pressure_row = Base::first_row(values, n);
 
     // Physical weights times τ_M
     const Eigen::VectorX<Scalar> stabilized =
         weights.cwiseProduct(tau(values));
 
     for (std::size_t b = 0; b < n; ++b) {
-        const Eigen::Index col = static_cast<Eigen::Index>(b) * num_active;
+        const Eigen::MatrixX<Scalar>& functions =
+            values.values(Base::field_of(num_fields, b));
 
         // M_ij = − ( τ_M ∇N_i, N_j e_b )_Ω
         //      ≈ − Σ_q w_q τ_M ∂_b N_i(x_q) N_j(x_q)
-        mass.block(pressure, col, num_active, num_active) -=
-            values.physical_gradients()[b] * stabilized.asDiagonal()
-            * values.values().transpose();
+        mass.block(pressure_row, Base::first_row(values, b),
+                   pressure_grads[b].rows(), functions.rows()) -=
+            pressure_grads[b] * stabilized.asDiagonal()
+            * functions.transpose();
     }
 }
 
