@@ -121,6 +121,15 @@ Basis cubic_by_quadratic()
          KnotVector<double>(2, {0., 0., 0., .7, 1., 1., 1.})}));
 }
 
+/// @brief Basis quadratic along the first direction and cubic along the
+///        second, over the knot spans of uneven()
+Basis quadratic_by_cubic()
+{
+    return Basis(TensorGrid<double, 2>(
+        {KnotVector<double>(2, {0., 0., 0., .2, .6, 1., 1., 1.}),
+         KnotVector<double>(3, {0., 0., 0., 0., .7, 1., 1., 1., 1.})}));
+}
+
 /// @brief Greville abscissa of a B-spline of degree p, the mean of the p
 ///        knots t_{i+1}, ..., t_{i+p}
 double greville(const KnotVector<double>& knot_vector, int function)
@@ -362,6 +371,62 @@ Eigen::VectorXd linear_vector_field(const iguana::Patch<Basis, 2>& patch,
         (patch.coefficients() * a.transpose()).transpose();
 
     return components.reshaped();
+}
+
+/// @brief Trace of one field of a mixed space whose fields have one
+///        component each, the values of its functions in its rows, after
+///        those of the fields before it, and zeros in the others
+class FieldTrace final : public iguana::Trace<Basis, 2>
+{
+public:
+    explicit FieldTrace(std::size_t field) : field_(field)
+    {
+    }
+
+    iguana::ValueFlags flags() const noexcept override
+    { return {}; }
+
+    std::size_t field() const noexcept override
+    { return field_; }
+
+    void local_trace(const iguana::ElementValues<Basis, 2>& values,
+                     Eigen::MatrixXd& trace) const override
+    {
+        Eigen::Index offset = 0;
+        Eigen::Index rows = 0;
+
+        for (std::size_t other = 0; other < values.num_fields(); ++other) {
+            if (other < field_)
+                offset += values.values(other).rows();
+
+            rows += values.values(other).rows();
+        }
+
+        const Eigen::MatrixXd& own = values.values(field_);
+        trace.setZero(rows, own.cols());
+        trace.middleRows(offset, own.rows()) = own;
+    }
+
+private:
+    std::size_t field_;
+};
+
+/// @brief Matrix that places the degrees of freedom of a field at its range
+///        of a mixed space, with a one at (offset + i, i)
+Eigen::MatrixXd placement(int num_dofs, int offset, int count)
+{
+    Eigen::MatrixXd place = Eigen::MatrixXd::Zero(num_dofs, count);
+    place.middleRows(offset, count).setIdentity();
+
+    return place;
+}
+
+/// @brief Whether a matrix has the entries of another, up to rounding
+///        relative to the largest
+bool near(const Eigen::MatrixXd& computed, const Eigen::MatrixXd& expected)
+{
+    return (computed - expected).cwiseAbs().maxCoeff()
+           <= 1e-12 * expected.cwiseAbs().maxCoeff();
 }
 
 } // namespace
@@ -1603,5 +1668,116 @@ TEST_CASE("Skeleton conditions need coupled faces, one weight per cell and a "
     REQUIRE_THROWS_AS(on_rational.assemble_stiffness(rational_face, faces,
                                                      projection, 2,
                                                      fractions),
+                      std::invalid_argument);
+}
+
+TEST_CASE("A term on one field of a mixed space is the term of that field "
+          "alone, at its degrees of freedom", "[assembler]")
+{
+    // Three fields of their own degrees on the elements of the quadratic
+    // patch, with 24, 25 and 20 degrees of freedom
+    const iguana::Patch<Basis, 2> patch = rectangle(uneven());
+    const std::array<iguana::FunctionSpace<Basis>, 3> spaces{
+        iguana::FunctionSpace<Basis>(cubic_by_quadratic(),
+                                     all_cells(CellType::inside)),
+        iguana::FunctionSpace<Basis>(quadratic_by_cubic(),
+                                     all_cells(CellType::inside)),
+        iguana::FunctionSpace<Basis>(uneven(), all_cells(CellType::inside))};
+    const iguana::MixedFunctionSpace<Basis> mixed(
+        {spaces[0], spaces[1], spaces[2]});
+    const std::array<int, 3> offsets{0, 24, 49};
+
+    // A boundary crossing the knot lines, and every interior face
+    const iguana::QuadratureBoundary<double, 2> boundary =
+        boundary_quadrature(patch, quadrilateral());
+    const iguana::QuadratureSkeleton<double, 2> skeleton(
+        patch.basis().grid(),
+        iguana::ghost_faces(patch.basis().grid(), all_cells(CellType::cut)),
+        iguana::GaussLegendre<double, 1>(4));
+    const Eigen::VectorXd data = width * boundary.points().col(0)
+                                 - 2. * height * boundary.points().col(1);
+
+    iguana::Assembler<Basis, 2> assembler(mixed, patch, true);
+    const iguana::PoissonElement<Basis, 2>::U trace;
+
+    for (std::size_t field = 0; field < 3; ++field) {
+        INFO("field " << field);
+        const iguana::FunctionSpace<Basis>& space = spaces[field];
+        const Eigen::MatrixXd place =
+            placement(69, offsets[field], space.num_dofs());
+        const FieldTrace field_trace(field);
+        iguana::Assembler<Basis, 2> alone(space, patch, true);
+
+        // A penalty and its data
+        const iguana::PenaltyCondition<Basis, 2> penalty(field_trace, 10.);
+        const iguana::PenaltyCondition<Basis, 2> alone_penalty(trace, 10.);
+        assembler.clear();
+        assembler.assemble_stiffness(penalty, boundary);
+        assembler.assemble_load(penalty, boundary, data);
+        alone.assemble_stiffness(alone_penalty, boundary);
+        alone.assemble_load(alone_penalty, boundary, data);
+
+        REQUIRE(near(stiffness_of(assembler).toDense(),
+                     place * stiffness_of(alone).toDense()
+                         * place.transpose()));
+        REQUIRE(near(load_of(assembler), place * load_of(alone)));
+
+        // A ghost penalty, to the degrees of the field across the faces
+        const iguana::SkeletonGhostPenalty<Basis, 2> ghost(field_trace, .3);
+        const iguana::SkeletonGhostPenalty<Basis, 2> alone_ghost(trace, .3);
+        assembler.clear();
+        alone.clear();
+        assembler.assemble_stiffness(ghost, skeleton);
+        alone.assemble_stiffness(alone_ghost, skeleton);
+
+        REQUIRE(near(stiffness_of(assembler).toDense(),
+                     place * stiffness_of(alone).toDense()
+                         * place.transpose()));
+    }
+}
+
+TEST_CASE("Several fields share no block size, and a ghost penalty needs "
+          "simple interior knots of its own field", "[assembler]")
+{
+    const iguana::Patch<Basis, 2> patch = rectangle(uneven());
+
+    // A field of two components followed by one of one, whose degrees of
+    // freedom come in no blocks
+    const iguana::FunctionSpace<Basis> vector(uneven(),
+                                              all_cells(CellType::inside), 2);
+    const iguana::FunctionSpace<Basis> scalar(uneven(),
+                                              all_cells(CellType::inside));
+    const iguana::Assembler<Basis, 2> blocks(
+        iguana::MixedFunctionSpace<Basis>({vector, scalar}), patch);
+    PetscInt block_size = 0;
+    check(MatGetBlockSize(blocks.stiffness(), &block_size));
+
+    REQUIRE(block_size == 1);
+
+    // A first field with a repeated knot and a second with simple ones
+    const Basis repeated(TensorGrid<double, 2>(
+        {KnotVector<double>(3, {0., 0., 0., 0., .2, .6, .6, 1., 1., 1., 1.}),
+         KnotVector<double>(2, {0., 0., 0., .7, 1., 1., 1.})}));
+    const iguana::FunctionSpace<Basis> repeated_space(
+        repeated, all_cells(CellType::inside));
+    iguana::Assembler<Basis, 2> assembler(
+        iguana::MixedFunctionSpace<Basis>({repeated_space, scalar}), patch,
+        true);
+    const iguana::QuadratureSkeleton<double, 2> skeleton(
+        patch.basis().grid(),
+        iguana::ghost_faces(patch.basis().grid(), all_cells(CellType::cut)),
+        iguana::GaussLegendre<double, 1>(4));
+
+    const FieldTrace first(0);
+    const FieldTrace second(1);
+    const FieldTrace missing(2);
+    const iguana::SkeletonGhostPenalty<Basis, 2> on_first(first, 1.);
+    const iguana::SkeletonGhostPenalty<Basis, 2> on_second(second, 1.);
+    const iguana::SkeletonGhostPenalty<Basis, 2> on_missing(missing, 1.);
+
+    REQUIRE_NOTHROW(assembler.assemble_stiffness(on_second, skeleton));
+    REQUIRE_THROWS_AS(assembler.assemble_stiffness(on_first, skeleton),
+                      std::invalid_argument);
+    REQUIRE_THROWS_AS(assembler.assemble_stiffness(on_missing, skeleton),
                       std::invalid_argument);
 }
