@@ -148,6 +148,13 @@ Assembler<Basis, n>::Assembler(const FunctionSpace<Basis>& space,
                                bool couple_faces)
     : space_(space), patch_(patch), couple_faces_(couple_faces)
 {
+    // The values locate the points of each element in both bases, checked
+    // before the system exists, as nothing would destroy it
+    if (space.basis().grid().lines() != patch.basis().grid().lines())
+        throw std::invalid_argument("Assembler: "
+                                    "the space must have the elements of the "
+                                    "patch");
+
     const int num_elements = space.dof_map().num_elements();
     const int num_dofs = space.num_dofs();
 
@@ -264,7 +271,7 @@ void Assembler<Basis, n>::assemble_stiffness(
                                     "the cell weights must have one value "
                                     "per element");
 
-    ElementValues<Basis, n> values(patch_, element.flags());
+    ElementValues<Basis, n> values(patch_, space_.basis(), element.flags());
     Eigen::MatrixX<Scalar> points;
     Eigen::VectorX<Scalar> weights;
     Eigen::MatrixX<Scalar> local;
@@ -326,7 +333,7 @@ void Assembler<Basis, n>::assemble_load(
                                     "the cell weights must have one value "
                                     "per element");
 
-    ElementValues<Basis, n> values(patch_, element.flags());
+    ElementValues<Basis, n> values(patch_, space_.basis(), element.flags());
     Eigen::MatrixX<Scalar> points;
     Eigen::VectorX<Scalar> weights;
     Eigen::MatrixX<Scalar> sources;
@@ -384,7 +391,7 @@ void Assembler<Basis, n>::assemble_mass(
                                     "the cell weights must have one value "
                                     "per element");
 
-    ElementValues<Basis, n> values(patch_, element.flags());
+    ElementValues<Basis, n> values(patch_, space_.basis(), element.flags());
     Eigen::MatrixX<Scalar> points;
     Eigen::VectorX<Scalar> weights;
     Eigen::MatrixX<Scalar> local;
@@ -444,8 +451,9 @@ void Assembler<Basis, n>::add_condition_stiffness(
     if (projection != nullptr)
         check_projection(*projection, order, quadrature.num_points());
 
-    ElementValues<Basis, n> values(patch_, condition.flags());
-    ElementValues<Basis, n> shifted_values(patch_, condition.flags());
+    ElementValues<Basis, n> values(patch_, space_.basis(), condition.flags());
+    ElementValues<Basis, n> shifted_values(patch_, space_.basis(),
+                                           condition.flags());
     Eigen::MatrixX<Scalar> points;
     Eigen::MatrixX<Scalar> normals;
     Eigen::VectorX<Scalar> measures;
@@ -530,8 +538,9 @@ void Assembler<Basis, n>::add_condition_load(
     if (projection != nullptr)
         check_projection(*projection, order, quadrature.num_points());
 
-    ElementValues<Basis, n> values(patch_, condition.flags());
-    ElementValues<Basis, n> shifted_values(patch_, condition.flags());
+    ElementValues<Basis, n> values(patch_, space_.basis(), condition.flags());
+    ElementValues<Basis, n> shifted_values(patch_, space_.basis(),
+                                           condition.flags());
     Eigen::MatrixX<Scalar> points;
     Eigen::MatrixX<Scalar> normals;
     Eigen::VectorX<Scalar> measures;
@@ -601,16 +610,17 @@ void Assembler<Basis, n>::assemble_stiffness(
         throw std::invalid_argument("Assembler: "
                                     "a ghost penalty needs an affine patch");
 
-    // A repeated knot would let lower derivatives jump unpenalized
+    // A repeated knot of the space would let lower derivatives of its
+    // functions jump unpenalized
     for (std::size_t direction = 0; direction < dim; ++direction) {
-        if (!simple_interior_knots(patch_.basis().grid().knots(direction)))
+        if (!simple_interior_knots(space_.basis().grid().knots(direction)))
             throw std::invalid_argument("Assembler: "
                                         "a ghost penalty needs simple "
                                         "interior knots");
     }
 
-    ElementValues<Basis, n> before(patch_, penalty.flags());
-    ElementValues<Basis, n> after(patch_, penalty.flags());
+    ElementValues<Basis, n> before(patch_, space_.basis(), penalty.flags());
+    ElementValues<Basis, n> after(patch_, space_.basis(), penalty.flags());
     Eigen::MatrixX<Scalar> points;
     Eigen::MatrixX<Scalar> normals;
     Eigen::VectorX<Scalar> measures;
@@ -625,7 +635,7 @@ void Assembler<Basis, n>::assemble_stiffness(
         const int cell_after = quadrature.cells()(face, 1);
         const std::size_t direction =
             static_cast<std::size_t>(quadrature.directions()(face));
-        const int degree = patch_.basis().grid().knots(direction).degree();
+        const int degree = space_.basis().grid().knots(direction).degree();
 
         // The values of each cell, with its own polynomial, differentiated
         // across the face at the same points
@@ -694,10 +704,12 @@ void Assembler<Basis, n>::add_skeleton_condition_stiffness(
     if (projection != nullptr)
         check_projection(*projection, order, quadrature.num_points());
 
-    ElementValues<Basis, n> before(patch_, condition.flags());
-    ElementValues<Basis, n> after(patch_, condition.flags());
-    ElementValues<Basis, n> shifted_before(patch_, condition.flags());
-    ElementValues<Basis, n> shifted_after(patch_, condition.flags());
+    ElementValues<Basis, n> before(patch_, space_.basis(), condition.flags());
+    ElementValues<Basis, n> after(patch_, space_.basis(), condition.flags());
+    ElementValues<Basis, n> shifted_before(patch_, space_.basis(),
+                                           condition.flags());
+    ElementValues<Basis, n> shifted_after(patch_, space_.basis(),
+                                          condition.flags());
     Eigen::MatrixX<Scalar> points;
     Eigen::MatrixX<Scalar> normals;
     Eigen::VectorX<Scalar> measures;
@@ -811,10 +823,12 @@ void Assembler<Basis, n>::add_skeleton_condition_load(
     if (projection != nullptr)
         check_projection(*projection, order, quadrature.num_points());
 
-    ElementValues<Basis, n> before(patch_, condition.flags());
-    ElementValues<Basis, n> after(patch_, condition.flags());
-    ElementValues<Basis, n> shifted_before(patch_, condition.flags());
-    ElementValues<Basis, n> shifted_after(patch_, condition.flags());
+    ElementValues<Basis, n> before(patch_, space_.basis(), condition.flags());
+    ElementValues<Basis, n> after(patch_, space_.basis(), condition.flags());
+    ElementValues<Basis, n> shifted_before(patch_, space_.basis(),
+                                           condition.flags());
+    ElementValues<Basis, n> shifted_after(patch_, space_.basis(),
+                                          condition.flags());
     Eigen::MatrixX<Scalar> points;
     Eigen::MatrixX<Scalar> normals;
     Eigen::VectorX<Scalar> measures;

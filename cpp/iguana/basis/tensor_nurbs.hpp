@@ -160,6 +160,9 @@ public:
         std::array<Eigen::MatrixX<T>, d>& gradients,
         std::array<Eigen::MatrixX<T>, d * (d + 1) / 2>& hessians) const;
 
+    /// @brief Whether two bases have the same B-splines and weights
+    bool operator==(const TensorNURBS& other) const = default;
+
 private:
     /// @brief B-spline basis that the weights rationalize
     TensorBSpline<T, d> bspline_;

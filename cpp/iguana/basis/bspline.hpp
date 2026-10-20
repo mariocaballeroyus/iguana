@@ -120,6 +120,9 @@ public:
                            int order,
                            std::vector<Eigen::MatrixX<T>>& derivatives) const;
 
+    /// @brief Whether two bases have the same knot vector
+    bool operator==(const BSpline& other) const = default;
+
 private:
     /// @brief Knot vector, with the degree and the elements of the basis
     KnotVector<T> knots_;
