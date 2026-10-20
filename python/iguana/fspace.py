@@ -3,13 +3,13 @@
 
 """Function spaces, the functions of a patch that carry unknowns
 
-A function space holds the basis functions of a patch that a field is
-built from. The standard space gives one degree of freedom to each function
-active on a cell that is not outside the physical domain, so that a
-function supported on outside cells alone carries none. A field of several
-components, such as the velocity and the pressure of a fluid, gives each
-degree of freedom a coefficient per component, as many as the block size of
-the space.
+A function space holds the basis functions that a field is built from,
+those of a patch or B-splines of other degrees on its knots. The standard
+space gives one degree of freedom to each function active on a cell that is
+not outside the physical domain, so that a function supported on outside
+cells alone carries none. A field of several components, such as the
+velocity and the pressure of a fluid, gives each degree of freedom a
+coefficient per component, as many as the block size of the space.
 """
 
 from __future__ import annotations
@@ -26,8 +26,8 @@ from iguana.patch import PlanarPatch, SurfacePatch, VolumePatch
 
 
 class FunctionSpace:
-    """The standard space of a patch, one degree of freedom per function
-    active on the physical domain."""
+    """The standard space of a basis on the elements of a patch, one degree
+    of freedom per function active on the physical domain."""
 
     _cpp_object: (_cpp.FunctionSpace2d | _cpp.FunctionSpace3d
                   | _cpp.NURBSFunctionSpace2d)
@@ -38,23 +38,37 @@ class FunctionSpace:
         cell_types: Sequence[CellType] | None = None,
         *,
         block_size: int = 1,
+        degrees: Sequence[int] | None = None,
     ) -> None:
-        """Initialize the space of the basis of a patch.
+        """Initialize the space of a basis on the elements of a patch.
+
+        Without degrees, the basis of the patch spans the space. With them,
+        the B-splines of those degrees on the knots of the patch do: the
+        interior knots keep their multiplicities and the end knots repeat
+        once per degree plus one, so that each degree raised above the
+        patch adds an order of continuity across its knots, as the
+        components of the velocity of a divergence-conforming space take
+        them.
 
         Args:
             patch: The background patch, a planar, surface or volume
-                patch, whose basis spans the space.
+                patch, whose elements carry the space.
             cell_types: The type of each element of the patch, with the
                 first direction running fastest. Without them, every cell
                 lies inside and every function gets a degree of freedom.
             block_size: The number of components of the field, positive,
                 such as the three of `StokesElement`.
+            degrees: The degree of the basis along each direction, on the
+                knots of the patch, which must be open. Without them, the
+                degrees of the patch.
 
         Raises:
             TypeError: If the patch is not a planar, surface or volume
-                patch.
-            ValueError: If there is not one cell type per element, or if
-                the block size is not positive.
+                patch, or if degrees are given for a NURBS patch, whose
+                weights belong to its own basis.
+            ValueError: If there is not one cell type per element, if the
+                block size is not positive, or if the degrees are not one
+                non-negative degree per direction on open knots.
         """
         if isinstance(patch, VolumePatch):
             space = _cpp.FunctionSpace3d
@@ -84,15 +98,35 @@ class FunctionSpace:
         if block_size < 1:
             raise ValueError('the block size must be positive')
 
+        if degrees is None:
+            basis = patch._cpp_object.basis
+            self._degrees = tuple(patch.degrees)
+            self._knots = tuple(patch.knots)
+        elif space is _cpp.NURBSFunctionSpace2d:
+            raise TypeError('a NURBS patch spans its space with its own '
+                            'degrees')
+        else:
+            basis, self._degrees, self._knots = _bspline_basis(patch,
+                                                               degrees)
+
         self._patch = patch
-        self._cpp_object = space(patch._cpp_object.basis,
-                                 classification(list(cell_types)),
+        self._cpp_object = space(basis, classification(list(cell_types)),
                                  int(block_size))
 
     @property
     def patch(self) -> PlanarPatch | SurfacePatch | VolumePatch:
         """The background patch, whose basis spans the space."""
         return self._patch
+
+    @property
+    def degrees(self) -> tuple[int, ...]:
+        """Degree of the basis of the space along each direction."""
+        return self._degrees
+
+    @property
+    def knots(self) -> tuple[npt.NDArray[np.float64], ...]:
+        """Knots of the basis of the space along each direction."""
+        return tuple(knots.copy() for knots in self._knots)
 
     @property
     def block_size(self) -> int:
@@ -107,10 +141,25 @@ class FunctionSpace:
         return self._cpp_object.num_dofs
 
     @property
+    def functions(self) -> npt.NDArray[np.int64]:
+        """Basis function of each degree of freedom, its index in the basis
+        of the space, with the first direction running fastest."""
+        return np.asarray(self._cpp_object.functions, dtype=np.int64)
+
+    @property
     def control_points(self) -> npt.NDArray[np.float64]:
         """Control point of the function of each degree of freedom, of
         shape `(num_dofs, 2)` on a planar patch and `(num_dofs, 3)`
-        otherwise."""
+        otherwise.
+
+        Raises:
+            ValueError: If the space has other degrees than its patch,
+                whose control points belong to the basis of the patch.
+        """
+        if self._degrees != tuple(self._patch.degrees):
+            raise ValueError('a space of other degrees than its patch has no '
+                             'control points')
+
         return self._patch.control_points[self._cpp_object.functions]
 
     @property
@@ -120,8 +169,7 @@ class FunctionSpace:
         as those of `create_rectangle` and `create_box`, they are the
         functions first or last along some direction."""
         counts = [len(knots) - degree - 1
-                  for degree, knots in zip(self._patch.degrees,
-                                           self._patch.knots)]
+                  for degree, knots in zip(self._degrees, self._knots)]
 
         # Index of the function of each degree of freedom along each
         # direction, the first running fastest
@@ -135,8 +183,49 @@ class FunctionSpace:
         return np.flatnonzero(on_boundary)
 
     def __repr__(self) -> str:
-        if self.block_size == 1:
-            return f'FunctionSpace(num_dofs={self.num_dofs})'
+        details = [f'num_dofs={self.num_dofs}']
 
-        return (f'FunctionSpace(num_dofs={self.num_dofs}, '
-                f'block_size={self.block_size})')
+        if self._degrees != tuple(self._patch.degrees):
+            details.append(f'degrees={self._degrees}')
+
+        if self.block_size != 1:
+            details.append(f'block_size={self.block_size}')
+
+        return 'FunctionSpace(' + ', '.join(details) + ')'
+
+
+def _bspline_basis(
+    patch: PlanarPatch | SurfacePatch | VolumePatch,
+    degrees: Sequence[int],
+) -> tuple[_cpp.BivariateBSpline | _cpp.TrivariateBSpline, tuple[int, ...],
+           tuple[npt.NDArray[np.float64], ...]]:
+    """B-splines of some degrees on the knots of a patch, with its interior
+    knots and its ends repeated once per degree plus one, and their degrees
+    and knots."""
+    degrees = tuple(int(degree) for degree in degrees)
+
+    if len(degrees) != len(patch.degrees) or min(degrees) < 0:
+        raise ValueError('the degrees must be one non-negative degree per '
+                         'direction')
+
+    axes = []
+    all_knots = []
+
+    for degree, own, knots in zip(degrees, patch.degrees, patch.knots):
+        # Open knots repeat each end once per degree plus one
+        start, end = knots[:own + 1], knots[len(knots) - own - 1:]
+
+        if np.any(start != knots[0]) or np.any(end != knots[-1]):
+            raise ValueError('the knots of the patch must be open')
+
+        interior = knots[own + 1:len(knots) - own - 1]
+        knots = np.concatenate([np.full(degree + 1, knots[0]), interior,
+                                np.full(degree + 1, knots[-1])])
+
+        axes.append(_cpp.BSpline(degree, knots.tolist()))
+        all_knots.append(knots)
+
+    basis = (_cpp.BivariateBSpline(axes) if len(axes) == 2
+             else _cpp.TrivariateBSpline(axes))
+
+    return basis, degrees, tuple(all_knots)
