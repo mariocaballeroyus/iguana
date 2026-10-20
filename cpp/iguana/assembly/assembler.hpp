@@ -19,6 +19,7 @@
 #include "iguana/condition/skeleton_ghost_penalty.hpp"
 #include "iguana/element/element.hpp"
 #include "iguana/fspace/function_space.hpp"
+#include "iguana/fspace/mixed_function_space.hpp"
 #include "iguana/geometry/boundary_projection.hpp"
 #include "iguana/geometry/patch.hpp"
 #include "iguana/quadrature/quadrature_boundary.hpp"
@@ -50,17 +51,20 @@ namespace iguana
  * on the cell, it scales the weights of its points, and a cell of weight
  * zero adds nothing and is skipped
  *
- * The basis of the space spans the functions and the patch maps the
- * points, so the two bases may differ in degrees and continuities, as long
- * as they share the elements
+ * The bases of the space span the functions and the patch maps the
+ * points, so they may differ from the patch's in degrees and continuities,
+ * as long as they share the elements
  *
- * The space has a block size, the number of components of its field, and
- * on a cell its degrees of freedom run component after component, the
- * layout of the local matrices of the elements and conditions. The PETSc
- * matrices and vectors carry the block size, so that its solvers can tell
- * the components apart. A local matrix that does not match the degrees of
- * freedom of its cell, as one of another block size, throws
- * std::invalid_argument, since PETSc would read past its end
+ * The space has one field or several, each with a basis and a block size,
+ * the number of its components. On a cell its degrees of freedom run field
+ * after field, and component after component within each, the layout of
+ * the local matrices of the elements and conditions. With one field, the
+ * PETSc matrices and vectors carry its block size, so that its solvers can
+ * tell the components apart. Fields one after another share no block
+ * structure, so with several the block size is one. A local matrix that
+ * does not match the degrees of freedom of its cell, as one of another
+ * block size, throws std::invalid_argument, since PETSc would read past
+ * its end
  *
  * @tparam Basis Basis of the space and the patch, TensorBSpline or
  *         TensorNURBS
@@ -86,6 +90,7 @@ public:
 
     /**
      * @brief Constructs a zero stiffness and load with the pattern of a space
+     *        of one field
      *
      * @param space Space whose degrees of freedom number the system
      * @param patch Patch that maps the points of the quadratures
@@ -102,6 +107,27 @@ public:
      *      assembler, which keeps references to them
      */
     Assembler(const FunctionSpace<Basis>& space,
+              const Patch<Basis, n>& patch, bool couple_faces = false);
+
+    /**
+     * @brief Constructs a zero stiffness and load with the pattern of a space
+     *        of several fields
+     *
+     * @param space Space whose degrees of freedom number the system, field
+     *        after field
+     * @param patch Patch that maps the points of the quadratures
+     * @param couple_faces Whether to couple the degrees of freedom of the
+     *        two cells of every interior face of the grid, as for a space of
+     *        one field
+     *
+     * @throws std::invalid_argument If the space does not have the elements
+     *         of the patch
+     * @throws std::runtime_error If PETSc fails to create the system
+     *
+     * @pre PETSc is initialized, and the fields of @p space and @p patch
+     *      outlive the assembler, which keeps references to them
+     */
+    Assembler(const MixedFunctionSpace<Basis>& space,
               const Patch<Basis, n>& patch, bool couple_faces = false);
 
     /// @brief Drops the references of the assembler to the stiffness, mass
@@ -363,10 +389,10 @@ public:
      *
      * On each face, the values of the cells before and after it, each with
      * its own polynomial, are differentiated across it at the same points,
-     * to the degree of the space there. The patch maps the weights of the
-     * quadrature, which measure the faces in parameter space, into face
-     * weights, and the local stiffness couples the degrees of freedom of
-     * both cells
+     * to the degree of the field of the penalty there. The patch maps the
+     * weights of the quadrature, which measure the faces in parameter
+     * space, into face weights, and the local stiffness couples the degrees
+     * of freedom of both cells
      *
      * @param penalty Ghost penalty whose local stiffness is added
      * @param quadrature Quadrature over interior faces of the grid of the
@@ -374,9 +400,10 @@ public:
      *
      * @throws std::invalid_argument If the faces are not coupled, if the map
      *         of the patch is not affine, if the patch is not a B-spline one,
-     *         if a knot vector of the space repeats an interior knot, or if
-     *         the local matrices of @p penalty do not match the degrees of
-     *         freedom of the space
+     *         if the field of @p penalty is not one of the space, if a knot
+     *         vector of that field repeats an interior knot, or if the local
+     *         matrices of @p penalty do not match the degrees of freedom of
+     *         the space
      *
      * @pre @p quadrature is built on the grid of the basis, and every cell
      *      it holds has its degrees of freedom in the space
@@ -634,8 +661,9 @@ private:
      */
     void face_dofs(int before, int after, std::vector<int>& dofs) const;
 
-    /// @brief Space whose degrees of freedom number the system
-    const FunctionSpace<Basis>& space_;
+    /// @brief Space whose degrees of freedom number the system, a view of
+    ///        its fields
+    MixedFunctionSpace<Basis> space_;
 
     /// @brief Patch that maps the points of the quadratures
     const Patch<Basis, n>& patch_;

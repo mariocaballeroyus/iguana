@@ -9,6 +9,7 @@
 #include <array>
 #include <concepts>
 #include <cstddef>
+#include <functional>
 #include <initializer_list>
 #include <span>
 #include <stdexcept>
@@ -146,16 +147,26 @@ template<typename Basis, std::size_t n>
 Assembler<Basis, n>::Assembler(const FunctionSpace<Basis>& space,
                                const Patch<Basis, n>& patch,
                                bool couple_faces)
+    : Assembler(MixedFunctionSpace<Basis>(std::vector{std::cref(space)}),
+                patch, couple_faces)
+{
+}
+
+template<typename Basis, std::size_t n>
+Assembler<Basis, n>::Assembler(const MixedFunctionSpace<Basis>& space,
+                               const Patch<Basis, n>& patch,
+                               bool couple_faces)
     : space_(space), patch_(patch), couple_faces_(couple_faces)
 {
-    // The values locate the points of each element in both bases, checked
-    // before the system exists, as nothing would destroy it
-    if (space.basis().grid().lines() != patch.basis().grid().lines())
+    // The values locate the points of each element in every basis, checked
+    // before the system exists, as nothing would destroy it. The fields
+    // share the elements of the first
+    if (space.field(0).basis().grid().lines() != patch.basis().grid().lines())
         throw std::invalid_argument("Assembler: "
                                     "the space must have the elements of the "
                                     "patch");
 
-    const int num_elements = space.dof_map().num_elements();
+    const int num_elements = space.num_elements();
     const int num_dofs = space.num_dofs();
 
     // Sparsity pattern: K_ij can only be non-zero when functions i and j
@@ -181,7 +192,7 @@ Assembler<Basis, n>::Assembler(const FunctionSpace<Basis>& space,
 
         for (std::size_t direction = 0; direction < dim; ++direction)
             counts[direction] =
-                space.basis().grid().knots(direction).num_elements();
+                patch.basis().grid().knots(direction).num_elements();
 
         std::vector<int> after;
 
@@ -214,11 +225,14 @@ Assembler<Basis, n>::Assembler(const FunctionSpace<Basis>& space,
     // The compressed rows of the pattern preallocate the stiffness, its
     // explicit zeros the only entries a write may reach. The block size
     // tells the solvers which degrees of freedom are components of one
-    // function
+    // function, in blocks only when the space has a single field
+    const int block_size =
+        space.num_fields() == 1 ? space.field(0).block_size() : 1;
+
     check_petsc(MatCreate(PETSC_COMM_SELF, &stiffness_));
     check_petsc(MatSetSizes(stiffness_, num_dofs, num_dofs, num_dofs,
                             num_dofs));
-    check_petsc(MatSetBlockSize(stiffness_, space.block_size()));
+    check_petsc(MatSetBlockSize(stiffness_, block_size));
     check_petsc(MatSetType(stiffness_, MATSEQAIJ));
     check_petsc(MatSeqAIJSetPreallocationCSR(
         stiffness_, pattern.outerIndexPtr(), pattern.innerIndexPtr(),
@@ -255,7 +269,7 @@ void Assembler<Basis, n>::assemble_stiffness(
 {
     // Every cell weighted by one
     const Eigen::VectorX<Scalar> ones =
-        Eigen::VectorX<Scalar>::Ones(space_.dof_map().num_elements());
+        Eigen::VectorX<Scalar>::Ones(space_.num_elements());
 
     assemble_stiffness(element, quadrature, ones);
 }
@@ -266,12 +280,12 @@ void Assembler<Basis, n>::assemble_stiffness(
     const E& element, const QuadratureDomain<Scalar, dim>& quadrature,
     const Eigen::VectorX<Scalar>& cell_weights)
 {
-    if (cell_weights.size() != space_.dof_map().num_elements())
+    if (cell_weights.size() != space_.num_elements())
         throw std::invalid_argument("Assembler: "
                                     "the cell weights must have one value "
                                     "per element");
 
-    ElementValues<Basis, n> values(patch_, space_.basis(), element.flags());
+    ElementValues<Basis, n> values(patch_, space_.bases(), element.flags());
     Eigen::MatrixX<Scalar> points;
     Eigen::VectorX<Scalar> weights;
     Eigen::MatrixX<Scalar> local;
@@ -312,7 +326,7 @@ void Assembler<Basis, n>::assemble_load(
 {
     // Every cell weighted by one
     const Eigen::VectorX<Scalar> ones =
-        Eigen::VectorX<Scalar>::Ones(space_.dof_map().num_elements());
+        Eigen::VectorX<Scalar>::Ones(space_.num_elements());
 
     assemble_load(element, quadrature, source, ones);
 }
@@ -328,12 +342,12 @@ void Assembler<Basis, n>::assemble_load(
         throw std::invalid_argument("Assembler: "
                                     "the source must have one row per point");
 
-    if (cell_weights.size() != space_.dof_map().num_elements())
+    if (cell_weights.size() != space_.num_elements())
         throw std::invalid_argument("Assembler: "
                                     "the cell weights must have one value "
                                     "per element");
 
-    ElementValues<Basis, n> values(patch_, space_.basis(), element.flags());
+    ElementValues<Basis, n> values(patch_, space_.bases(), element.flags());
     Eigen::MatrixX<Scalar> points;
     Eigen::VectorX<Scalar> weights;
     Eigen::MatrixX<Scalar> sources;
@@ -375,7 +389,7 @@ void Assembler<Basis, n>::assemble_mass(
 {
     // Every cell weighted by one
     const Eigen::VectorX<Scalar> ones =
-        Eigen::VectorX<Scalar>::Ones(space_.dof_map().num_elements());
+        Eigen::VectorX<Scalar>::Ones(space_.num_elements());
 
     assemble_mass(element, quadrature, ones);
 }
@@ -386,12 +400,12 @@ void Assembler<Basis, n>::assemble_mass(
     const E& element, const QuadratureDomain<Scalar, dim>& quadrature,
     const Eigen::VectorX<Scalar>& cell_weights)
 {
-    if (cell_weights.size() != space_.dof_map().num_elements())
+    if (cell_weights.size() != space_.num_elements())
         throw std::invalid_argument("Assembler: "
                                     "the cell weights must have one value "
                                     "per element");
 
-    ElementValues<Basis, n> values(patch_, space_.basis(), element.flags());
+    ElementValues<Basis, n> values(patch_, space_.bases(), element.flags());
     Eigen::MatrixX<Scalar> points;
     Eigen::VectorX<Scalar> weights;
     Eigen::MatrixX<Scalar> local;
@@ -451,8 +465,8 @@ void Assembler<Basis, n>::add_condition_stiffness(
     if (projection != nullptr)
         check_projection(*projection, order, quadrature.num_points());
 
-    ElementValues<Basis, n> values(patch_, space_.basis(), condition.flags());
-    ElementValues<Basis, n> shifted_values(patch_, space_.basis(),
+    ElementValues<Basis, n> values(patch_, space_.bases(), condition.flags());
+    ElementValues<Basis, n> shifted_values(patch_, space_.bases(),
                                            condition.flags());
     Eigen::MatrixX<Scalar> points;
     Eigen::MatrixX<Scalar> normals;
@@ -538,8 +552,8 @@ void Assembler<Basis, n>::add_condition_load(
     if (projection != nullptr)
         check_projection(*projection, order, quadrature.num_points());
 
-    ElementValues<Basis, n> values(patch_, space_.basis(), condition.flags());
-    ElementValues<Basis, n> shifted_values(patch_, space_.basis(),
+    ElementValues<Basis, n> values(patch_, space_.bases(), condition.flags());
+    ElementValues<Basis, n> shifted_values(patch_, space_.bases(),
                                            condition.flags());
     Eigen::MatrixX<Scalar> points;
     Eigen::MatrixX<Scalar> normals;
@@ -610,17 +624,25 @@ void Assembler<Basis, n>::assemble_stiffness(
         throw std::invalid_argument("Assembler: "
                                     "a ghost penalty needs an affine patch");
 
-    // A repeated knot of the space would let lower derivatives of its
+    // The penalty extends one field, whose basis gives the degrees
+    if (penalty.field() >= space_.num_fields())
+        throw std::invalid_argument("Assembler: "
+                                    "a ghost penalty must act on a field of "
+                                    "the space");
+
+    const Basis& basis = space_.field(penalty.field()).basis();
+
+    // A repeated knot of the field would let lower derivatives of its
     // functions jump unpenalized
     for (std::size_t direction = 0; direction < dim; ++direction) {
-        if (!simple_interior_knots(space_.basis().grid().knots(direction)))
+        if (!simple_interior_knots(basis.grid().knots(direction)))
             throw std::invalid_argument("Assembler: "
                                         "a ghost penalty needs simple "
                                         "interior knots");
     }
 
-    ElementValues<Basis, n> before(patch_, space_.basis(), penalty.flags());
-    ElementValues<Basis, n> after(patch_, space_.basis(), penalty.flags());
+    ElementValues<Basis, n> before(patch_, space_.bases(), penalty.flags());
+    ElementValues<Basis, n> after(patch_, space_.bases(), penalty.flags());
     Eigen::MatrixX<Scalar> points;
     Eigen::MatrixX<Scalar> normals;
     Eigen::VectorX<Scalar> measures;
@@ -635,7 +657,7 @@ void Assembler<Basis, n>::assemble_stiffness(
         const int cell_after = quadrature.cells()(face, 1);
         const std::size_t direction =
             static_cast<std::size_t>(quadrature.directions()(face));
-        const int degree = space_.basis().grid().knots(direction).degree();
+        const int degree = basis.grid().knots(direction).degree();
 
         // The values of each cell, with its own polynomial, differentiated
         // across the face at the same points
@@ -696,7 +718,7 @@ void Assembler<Basis, n>::add_skeleton_condition_stiffness(
                                     "a skeleton condition needs the faces "
                                     "coupled");
 
-    if (cell_weights.size() != space_.dof_map().num_elements())
+    if (cell_weights.size() != space_.num_elements())
         throw std::invalid_argument("Assembler: "
                                     "the cell weights must have one value "
                                     "per element");
@@ -704,11 +726,11 @@ void Assembler<Basis, n>::add_skeleton_condition_stiffness(
     if (projection != nullptr)
         check_projection(*projection, order, quadrature.num_points());
 
-    ElementValues<Basis, n> before(patch_, space_.basis(), condition.flags());
-    ElementValues<Basis, n> after(patch_, space_.basis(), condition.flags());
-    ElementValues<Basis, n> shifted_before(patch_, space_.basis(),
+    ElementValues<Basis, n> before(patch_, space_.bases(), condition.flags());
+    ElementValues<Basis, n> after(patch_, space_.bases(), condition.flags());
+    ElementValues<Basis, n> shifted_before(patch_, space_.bases(),
                                            condition.flags());
-    ElementValues<Basis, n> shifted_after(patch_, space_.basis(),
+    ElementValues<Basis, n> shifted_after(patch_, space_.bases(),
                                           condition.flags());
     Eigen::MatrixX<Scalar> points;
     Eigen::MatrixX<Scalar> normals;
@@ -815,7 +837,7 @@ void Assembler<Basis, n>::add_skeleton_condition_load(
                                     "a skeleton condition needs the faces "
                                     "coupled");
 
-    if (cell_weights.size() != space_.dof_map().num_elements())
+    if (cell_weights.size() != space_.num_elements())
         throw std::invalid_argument("Assembler: "
                                     "the cell weights must have one value "
                                     "per element");
@@ -823,11 +845,11 @@ void Assembler<Basis, n>::add_skeleton_condition_load(
     if (projection != nullptr)
         check_projection(*projection, order, quadrature.num_points());
 
-    ElementValues<Basis, n> before(patch_, space_.basis(), condition.flags());
-    ElementValues<Basis, n> after(patch_, space_.basis(), condition.flags());
-    ElementValues<Basis, n> shifted_before(patch_, space_.basis(),
+    ElementValues<Basis, n> before(patch_, space_.bases(), condition.flags());
+    ElementValues<Basis, n> after(patch_, space_.bases(), condition.flags());
+    ElementValues<Basis, n> shifted_before(patch_, space_.bases(),
                                            condition.flags());
-    ElementValues<Basis, n> shifted_after(patch_, space_.basis(),
+    ElementValues<Basis, n> shifted_after(patch_, space_.bases(),
                                           condition.flags());
     Eigen::MatrixX<Scalar> points;
     Eigen::MatrixX<Scalar> normals;
