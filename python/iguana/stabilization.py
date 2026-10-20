@@ -52,9 +52,10 @@ class GhostPenalty:
 
         The traces of a fluid scale the penalty as their fields need: the
         velocity by the viscosity, on each of its components, and the
-        pressure by minus h^2 over the viscosity, negative as the pressure
-        block of the symmetric Stokes form is. The penalty given stays
-        positive for every trace.
+        pressure by minus h^2 over the viscosity, on the side of the
+        pressure block of the symmetric Stokes form, negative with a
+        stabilization and zero without. The penalty given stays positive
+        for every trace.
 
         Args:
             trace: The trace whose jumps are penalized, such as the field u
@@ -91,7 +92,8 @@ class GhostPenalty:
 
         # Along a face, the squared jumps are polynomials of twice the degree
         # along it, which one point more than the degree integrates exactly
-        # on an affine map
+        # on an affine map, for fields up to one degree above the patch, as
+        # those of a divergence-conforming space
         faces = _cpp.ghost_faces(
             patch=patch._cpp_object,
             classification=_cpp.CellClassification2d(cell_types))
@@ -101,7 +103,7 @@ class GhostPenalty:
         self._penalty = float(penalty)
         self._quadrature = _cpp.QuadratureSkeleton2d(
             patch=patch._cpp_object, faces=faces,
-            num_points=max(patch.degrees) + 1)
+            num_points=max(patch.degrees) + 2)
 
     @property
     def trace(self) -> PoissonElement.U | StokesElement.U | StokesElement.P:

@@ -25,7 +25,7 @@ from iguana import cpp as _cpp
 from iguana.condition import (NeumannCondition, NitscheCondition,
                               PenaltyCondition, SkeletonNitscheCondition)
 from iguana.element import PoissonElement, StokesElement
-from iguana.fspace import FunctionSpace
+from iguana.fspace import FunctionSpace, MixedFunctionSpace
 from iguana.patch import PlanarPatch
 from iguana.quadrature import QuadratureDomain
 from iguana.stabilization import GhostPenalty
@@ -38,7 +38,7 @@ class LinearProblem:
     def __init__(
         self,
         element: PoissonElement | StokesElement,
-        space: FunctionSpace,
+        space: FunctionSpace | MixedFunctionSpace,
         quadrature: QuadratureDomain,
         source: (npt.ArrayLike
                  | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
@@ -73,8 +73,11 @@ class LinearProblem:
         Args:
             element: The element stating the problem, a Poisson or a Stokes
                 element.
-            space: The space of the solution, on a planar patch, with the
-                block size of the element.
+            space: The space of the solution, on a planar patch: a function
+                space with a component per unknown of the element, or a
+                mixed space with a field of one component each, such as
+                the divergence-conforming space of the Galerkin Stokes
+                element.
             quadrature: A quadrature over the elements of the patch of the
                 space, not over a refined grid.
             source: The source at each point of the quadrature, in its
@@ -111,13 +114,14 @@ class LinearProblem:
 
         Raises:
             TypeError: If the element is neither a Poisson nor a Stokes
-                element, if the space is not a function space on a planar
-                patch, if the quadrature
-                is not a domain quadrature, if a condition is neither a
-                penalty, a Nitsche, a Neumann nor a skeleton Nitsche
-                condition, or if a stabilization is not a ghost penalty.
-            ValueError: If the space does not have the block size of the
-                element, if the quadrature, the boundary of a condition or
+                element, if the space is neither a function space nor a
+                mixed space on a planar patch, if the quadrature is not a
+                domain quadrature, if a condition is neither a penalty, a
+                Nitsche, a Neumann nor a skeleton Nitsche condition, or if a
+                stabilization is not a ghost penalty.
+            ValueError: If the space does not give each unknown of the
+                element a component of one field or a field of its own, if
+                the quadrature, the boundary of a condition or
                 the cells of a stabilization do not lie on the elements of
                 the patch of the space, if a condition or a stabilization
                 acts on a trace of another element, if the source does not
@@ -131,13 +135,16 @@ class LinearProblem:
             raise TypeError('the element must be a Poisson or a Stokes '
                             'element')
 
-        if not isinstance(space, FunctionSpace):
-            raise TypeError('the space must be a function space')
+        if not isinstance(space, (FunctionSpace, MixedFunctionSpace)):
+            raise TypeError('the space must be a function space or a mixed '
+                            'space')
 
-        # A coefficient per unknown of the element
-        if space.block_size != element._block_size:
-            raise ValueError('the space must have the block size of the '
-                             'element')
+        # A coefficient per unknown of the element, the components of one
+        # field or a field each
+        if not _holds_unknowns(space, element._num_unknowns):
+            raise ValueError('the space must give each unknown of the '
+                             'element a component of one field or a field '
+                             'of its own')
 
         # Boundaries and faces lie in the plane, and so do the problems so far
         patch = space.patch
@@ -220,10 +227,9 @@ class LinearProblem:
             self._previous.zeroEntries()
 
         # The solution, as the previous one, has a coefficient per degree of
-        # freedom and component
+        # freedom and component, field after field on a mixed space
+        self._space = space
         self._x = self._load.duplicate()
-        self._shape = ((space.num_dofs,) if space.block_size == 1
-                       else (space.num_dofs, space.block_size))
         self._solver = _linear_solver(self._A, petsc_options_prefix,
                                       petsc_options)
 
@@ -271,40 +277,42 @@ class LinearProblem:
         self._source[...] = source.reshape(len(self._source), -1)
 
     @property
-    def previous(self) -> npt.NDArray[np.float64] | None:
+    def previous(
+        self,
+    ) -> npt.NDArray[np.float64] | tuple[npt.NDArray[np.float64], ...] | None:
         """Coefficients of each degree of freedom at the previous time, of
         shape `(num_dofs,)`, or `(num_dofs, block_size)` for a space of
-        several components, zero at first, from which a transient problem
-        takes its next step. A steady problem has none. On a space that
-        keeps the functions of every cell, as the generalized shifted
-        boundary method does, the degrees of freedom stay the same however
-        the boundary moves."""
+        several components, or those of each field of a mixed space, zero
+        at first, from which a transient problem takes its next step. A
+        steady problem has none. On a space that keeps the functions of
+        every cell, as the generalized shifted boundary method does, the
+        degrees of freedom stay the same however the boundary moves."""
         if self._previous is None:
             return None
 
-        return self._previous.getArray().reshape(self._shape).copy()
+        return _coefficients(self._space, self._previous.getArray())
 
     @previous.setter
-    def previous(self, previous: npt.ArrayLike) -> None:
+    def previous(
+        self,
+        previous: npt.ArrayLike | Sequence[npt.ArrayLike],
+    ) -> None:
         if self._previous is None:
             raise ValueError('a steady problem has no previous solution')
 
-        previous = np.asarray(previous, dtype=np.float64)
+        self._previous.setArray(_entries(self._space, previous))
 
-        if previous.shape != self._shape:
-            raise ValueError('the previous solution must give the '
-                             'coefficients of every degree of freedom')
-
-        self._previous.setArray(previous.ravel())
-
-    def solve(self) -> npt.NDArray[np.float64]:
+    def solve(
+        self,
+    ) -> npt.NDArray[np.float64] | tuple[npt.NDArray[np.float64], ...]:
         """Assemble the system with the current data and solve it.
 
         Returns:
             The coefficients of each degree of freedom, of shape
             `(num_dofs,)`, or `(num_dofs, block_size)` for a space of
             several components, the velocity and the pressure of a Stokes
-            element in that order.
+            element in that order. On a mixed space, a tuple of those of
+            each field, in its order.
 
         Raises:
             ValueError: If a stabilization is given on a patch whose map is
@@ -334,7 +342,7 @@ class LinearProblem:
         if self._solver.getConvergedReason() < 0:
             raise RuntimeError('the linear solver did not converge')
 
-        return self._x.getArray().reshape(self._shape).copy()
+        return _coefficients(self._space, self._x.getArray())
 
 
 def _check_terms(
@@ -383,9 +391,69 @@ def _check_terms(
                              'patch of the space')
 
 
+def _holds_unknowns(
+    space: FunctionSpace | MixedFunctionSpace,
+    num_unknowns: int,
+) -> bool:
+    """Whether a space gives each of a number of unknowns a component of its
+    one field, or a field of one component each."""
+    if isinstance(space, FunctionSpace):
+        return space.block_size == num_unknowns
+
+    return (len(space.fields) == num_unknowns
+            and all(field.block_size == 1 for field in space.fields))
+
+
+def _shape(space: FunctionSpace) -> tuple[int, ...]:
+    """Shape of the coefficients of a space, a value per degree of freedom
+    and component."""
+    if space.block_size == 1:
+        return (space.num_dofs,)
+
+    return (space.num_dofs, space.block_size)
+
+
+def _coefficients(
+    space: FunctionSpace | MixedFunctionSpace,
+    entries: npt.NDArray[np.float64],
+) -> npt.NDArray[np.float64] | tuple[npt.NDArray[np.float64], ...]:
+    """Coefficients of each degree of freedom of a space from the entries of
+    a vector of its system, or those of each field of a mixed space."""
+    if isinstance(space, FunctionSpace):
+        return entries.reshape(_shape(space)).copy()
+
+    return tuple(entries[offset:offset + math.prod(_shape(field))]
+                 .reshape(_shape(field)).copy()
+                 for offset, field in zip(space.offsets, space.fields))
+
+
+def _entries(
+    space: FunctionSpace | MixedFunctionSpace,
+    coefficients: npt.ArrayLike | Sequence[npt.ArrayLike],
+) -> npt.NDArray[np.float64]:
+    """Entries of a vector of the system of a space from the coefficients of
+    each degree of freedom, or those of each field of a mixed space,
+    checked to give every one."""
+    if isinstance(space, FunctionSpace):
+        spaces, fields = [space], [coefficients]
+    else:
+        spaces, fields = space.fields, list(coefficients)
+
+    fields = [np.asarray(field, dtype=np.float64) for field in fields]
+
+    mismatched = len(fields) != len(spaces) or any(
+        field.shape != _shape(each) for field, each in zip(fields, spaces))
+
+    if mismatched:
+        raise ValueError('the previous solution must give the '
+                         'coefficients of every degree of freedom')
+
+    return np.concatenate([field.ravel() for field in fields])
+
+
 def _pinned(
     element: PoissonElement | StokesElement,
-    space: FunctionSpace,
+    space: FunctionSpace | MixedFunctionSpace,
     pressure_reference: npt.ArrayLike | None,
 ) -> int | None:
     """Row of the system of the pressure pinned near a reference point, that
@@ -404,10 +472,18 @@ def _pinned(
         raise ValueError('the pressure reference must be a point of the '
                          'plane')
 
-    distances = np.linalg.norm(space.control_points - point, axis=1)
+    # The pressure is a component of the one field, or a field of its own
+    component = element._pressure_component
+    field, offset = space, 0
+
+    if isinstance(space, MixedFunctionSpace):
+        field, offset = space.fields[component], space.offsets[component]
+        component = 0
+
+    distances = np.linalg.norm(field.control_points - point, axis=1)
     nearest = int(np.argmin(distances))
 
-    return space.block_size * nearest + element._pressure_component
+    return offset + field.block_size * nearest + component
 
 
 def _cell_weights(
