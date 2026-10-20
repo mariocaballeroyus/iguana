@@ -9,7 +9,10 @@ space gives one degree of freedom to each function active on a cell that is
 not outside the physical domain, so that a function supported on outside
 cells alone carries none. A field of several components, such as the
 velocity and the pressure of a fluid, gives each degree of freedom a
-coefficient per component, as many as the block size of the space.
+coefficient per component, as many as the block size of the space. A mixed
+space holds several fields instead, each a function space of its own
+degrees, such as the velocity and the pressure of a divergence-conforming
+space.
 """
 
 from __future__ import annotations
@@ -192,6 +195,116 @@ class FunctionSpace:
             details.append(f'block_size={self.block_size}')
 
         return 'FunctionSpace(' + ', '.join(details) + ')'
+
+
+class MixedFunctionSpace:
+    """Space of several fields on the elements of one planar patch, each a
+    function space of its own degrees and block size, their degrees of
+    freedom one field after another."""
+
+    _cpp_object: _cpp.MixedFunctionSpace2d
+
+    def __init__(self, fields: Sequence[FunctionSpace]) -> None:
+        """Initialize the space of several fields.
+
+        Each field takes a contiguous range of the degrees of freedom, from
+        its offset, in the order of the fields.
+
+        Args:
+            fields: The spaces of the fields, in the order of their degrees
+                of freedom, on one planar patch.
+
+        Raises:
+            TypeError: If a field is not a function space, or if the fields
+                do not lie on a planar patch.
+            ValueError: If there is no field, or if the fields do not lie on
+                one patch.
+        """
+        fields = tuple(fields)
+
+        if not fields:
+            raise ValueError('a mixed space needs at least one field')
+
+        if not all(isinstance(field, FunctionSpace) for field in fields):
+            raise TypeError('the fields must be function spaces')
+
+        patch = fields[0].patch
+
+        if any(field.patch is not patch for field in fields):
+            raise ValueError('the fields must lie on one patch')
+
+        # The compiled mixed spaces are planar, as the problems are so far
+        if not isinstance(patch, PlanarPatch):
+            raise TypeError('the fields must lie on a planar patch')
+
+        self._fields = fields
+        self._cpp_object = _cpp.MixedFunctionSpace2d(
+            [field._cpp_object for field in fields])
+
+    @classmethod
+    def divergence_conforming(
+        cls,
+        patch: PlanarPatch,
+        cell_types: Sequence[CellType] | None = None,
+    ) -> MixedFunctionSpace:
+        """The divergence-conforming space of a fluid on a planar patch.
+
+        Its fields are the components of the velocity and the pressure, in
+        that order. The pressure takes the basis of the patch, of degrees
+        (p, q), and each component of the velocity one degree and one order
+        of continuity more along its own direction, (p + 1, q) and
+        (p, q + 1). The divergence then maps the velocities onto the
+        pressures, so that a velocity whose divergence is orthogonal to
+        every pressure is divergence-free at every point.
+
+        Args:
+            patch: The background patch, a planar patch with open knots.
+            cell_types: The type of each element of the patch, with the
+                first direction running fastest. Without them, every cell
+                lies inside and every function gets a degree of freedom.
+
+        Returns:
+            The space of the velocity and the pressure of the Galerkin
+            `StokesElement`.
+
+        Raises:
+            TypeError: If the patch is not a planar patch.
+            ValueError: If there is not one cell type per element, or if
+                the knots of the patch are not open.
+        """
+        if not isinstance(patch, PlanarPatch):
+            raise TypeError('the patch must be a planar patch')
+
+        p, q = patch.degrees
+
+        return cls([FunctionSpace(patch, cell_types, degrees=(p + 1, q)),
+                    FunctionSpace(patch, cell_types, degrees=(p, q + 1)),
+                    FunctionSpace(patch, cell_types)])
+
+    @property
+    def fields(self) -> tuple[FunctionSpace, ...]:
+        """Spaces of the fields, in the order of their degrees of freedom."""
+        return self._fields
+
+    @property
+    def patch(self) -> PlanarPatch:
+        """The background patch, whose elements carry the fields."""
+        return self._fields[0].patch
+
+    @property
+    def num_dofs(self) -> int:
+        """Number of degrees of freedom of all the fields."""
+        return self._cpp_object.num_dofs
+
+    @property
+    def offsets(self) -> tuple[int, ...]:
+        """First degree of freedom of each field."""
+        return tuple(self._cpp_object.offset(field)
+                     for field in range(len(self._fields)))
+
+    def __repr__(self) -> str:
+        return (f'MixedFunctionSpace(num_dofs={self.num_dofs}, '
+                f'num_fields={len(self._fields)})')
 
 
 def _bspline_basis(
