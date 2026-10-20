@@ -21,6 +21,7 @@
 #include "embedding/surrogate_boundary.hpp"
 #include "fspace/dof_map.hpp"
 #include "fspace/function_space.hpp"
+#include "fspace/mixed_function_space.hpp"
 #include "geometry/boundary.hpp"
 #include "geometry/boundary_projection.hpp"
 #include "geometry/nurbs/bezier_points.hpp"

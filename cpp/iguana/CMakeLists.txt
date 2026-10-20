@@ -15,6 +15,7 @@ add_library(iguana
     embedding/surrogate_boundary.cpp
     fspace/dof_map.cpp
     fspace/function_space.cpp
+    fspace/mixed_function_space.cpp
     geometry/boundary.cpp
     geometry/boundary_projection.cpp
     geometry/patch.cpp
