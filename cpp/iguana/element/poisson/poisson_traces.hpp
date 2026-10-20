@@ -37,6 +37,9 @@ public:
     ValueFlags flags() const noexcept override
     { return {}; }
 
+    std::size_t field(std::size_t) const noexcept override
+    { return 0; }
+
     void local_trace(const ElementValues<Basis, n>& values,
                      Eigen::MatrixX<Scalar>& trace) const override
     { trace = values.values(); }

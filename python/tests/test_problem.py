@@ -3,13 +3,15 @@
 
 """Tests of the linear problems on a function space, solved with PETSc"""
 
+import itertools
+
 import numpy as np
 import pytest
 
 import iguana
 from iguana import (Boundary, CellType, FunctionSpace, GhostPenalty,
-                    HierarchicalGrid, NitscheCondition, PoissonElement,
-                    QuadratureBoundary, QuadratureDomain,
+                    HierarchicalGrid, MixedFunctionSpace, NitscheCondition,
+                    PoissonElement, QuadratureBoundary, QuadratureDomain,
                     SkeletonNitscheCondition, StokesElement,
                     SurrogateBoundary, classify_cells)
 
@@ -69,6 +71,17 @@ def quadratic_flow(patch):
     return np.column_stack([np.kron(np.ones(len(s)), width ** 2 * t_squared),
                             -2. * np.kron(height * s, width * t),
                             patch.control_points.sum(axis=1)])
+
+
+def blossoms(knots, degree, power):
+    """Coefficients of t^k in a B-spline basis of a degree, the blossom of
+    each function: the mean of the products of k of its inner knots."""
+    count = len(knots) - degree - 1
+
+    return np.array([np.mean([np.prod(chosen) for chosen in
+                              itertools.combinations(
+                                  knots[i + 1:i + degree + 1], power)])
+                     for i in range(count)])
 
 
 def stokes():
@@ -142,6 +155,49 @@ def test_stokes_flow_is_exact():
     assert np.allclose(u[:, 2] - u[nearest, 2], exact[:, 2]
                        - exact[nearest, 2], rtol=0., atol=1e-12)
     assert u[nearest, 2] == 0.
+
+
+def test_stokes_flow_on_a_divergence_conforming_space_is_exact():
+    """Each component of the velocity one degree higher along its own
+    direction holds the flow, and the pressure the basis of the patch, so
+    the Galerkin Stokes element finds them exactly with the velocity imposed
+    all around by Nitsche's method, each field in its own array, the
+    pressure up to the constant its reference fixes."""
+    patch = rectangle()
+    space = MixedFunctionSpace.divergence_conforming(patch)
+    _, velocity, body_force = stokes()
+    element = StokesElement(1.5)
+
+    # Four points integrate the products of the cubic functions exactly
+    quadrature = QuadratureDomain(patch)
+    quadrature.fill_gauss_legendre(CellType.inside, 4)
+
+    condition = NitscheCondition(element.u, edges(patch), velocity,
+                                 40. * element.viscosity)
+    u_x, u_y, p = LinearProblem(element, space, quadrature, body_force,
+                                conditions=[condition],
+                                pressure_reference=(1., 1.6),
+                                petsc_options_prefix='divergence_').solve()
+
+    # In parameters, x^2 is the width squared times t^2, and x y the
+    # product of the sides and of t along each, each by its blossoms
+    width, height = patch.control_points.max(axis=0)
+    first, second, pressure = space.fields
+    count = len(first.knots[1]) - first.degrees[1] - 1
+    exact_x = np.kron(np.ones(count),
+                      width ** 2 * blossoms(first.knots[0], 3, 2))
+    exact_y = -2. * np.kron(height * blossoms(second.knots[1], 3, 1),
+                            width * blossoms(second.knots[0], 2, 1))
+    exact_p = pressure.control_points.sum(axis=1)
+    nearest = np.argmin(np.linalg.norm(pressure.control_points - [1., 1.6],
+                                       axis=1))
+
+    assert [field.shape for field in (u_x, u_y, p)] == [(24,), (25,), (20,)]
+    assert np.allclose(u_x, exact_x, rtol=0., atol=1e-10)
+    assert np.allclose(u_y, exact_y, rtol=0., atol=1e-10)
+    assert np.allclose(p - p[nearest], exact_p - exact_p[nearest], rtol=0.,
+                       atol=1e-10)
+    assert p[nearest] == 0.
 
 
 def test_stokes_flow_by_the_generalized_shifted_boundary_method():
@@ -395,9 +451,21 @@ def test_invalid_arguments():
                       pressure_reference=(1., 1., 1.),
                       petsc_options_prefix=prefix)
 
-    for viscosity, stabilization in ((0., 3.), (1., 0.)):
+    for viscosity, stabilization in ((0., 3.), (1., 0.), (0., None)):
         with pytest.raises(ValueError):
             StokesElement(viscosity, stabilization)
+
+    # A mixed space gives each unknown of the element a field of its own
+    mixed = MixedFunctionSpace.divergence_conforming(patch)
+    galerkin = StokesElement(1.5)
+
+    with pytest.raises(ValueError):
+        LinearProblem(element, mixed, quadrature, ones,
+                      petsc_options_prefix=prefix)
+
+    with pytest.raises(ValueError):
+        LinearProblem(galerkin, MixedFunctionSpace(mixed.fields[:2]),
+                      quadrature, force, petsc_options_prefix=prefix)
 
     # A field of several components has a coefficient per component
     stepped = LinearProblem(fluid, vector, quadrature, force, step=.1,
@@ -407,3 +475,17 @@ def test_invalid_arguments():
 
     with pytest.raises(ValueError):
         stepped.previous = np.zeros(3 * vector.num_dofs)
+
+    # On a mixed space, the coefficients of each field
+    mixed_stepped = LinearProblem(galerkin, mixed, quadrature, force,
+                                  step=.1, petsc_options_prefix=prefix)
+    previous = mixed_stepped.previous
+
+    assert [field.shape for field in previous] == [
+        (field.num_dofs,) for field in mixed.fields]
+
+    mixed_stepped.previous = previous
+
+    for wrong in (previous[:2], np.zeros(mixed.num_dofs)):
+        with pytest.raises(ValueError):
+            mixed_stepped.previous = wrong

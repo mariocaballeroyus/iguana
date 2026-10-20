@@ -24,6 +24,8 @@ using Trace2d = Trace<TensorBSpline<double, 2>, 2>;
 using Flux2d = Flux<TensorBSpline<double, 2>, 2>;
 using PoissonElement2d = PoissonElement<TensorBSpline<double, 2>, 2>;
 using StokesElement2d = StokesElement<TensorBSpline<double, 2>, 2>;
+using StokesStabilizedElement2d =
+    StokesStabilizedElement<TensorBSpline<double, 2>, 2>;
 using PenaltyCondition2d = PenaltyCondition<TensorBSpline<double, 2>, 2>;
 using NeumannCondition2d = NeumannCondition<TensorBSpline<double, 2>, 2>;
 using NitscheCondition2d = NitscheCondition<TensorBSpline<double, 2>, 2>;
@@ -35,6 +37,7 @@ using BoundaryProjection2d = BoundaryProjection<double>;
 using QuadratureBoundary2d = QuadratureBoundary<double, 2>;
 using QuadratureSkeleton2d = QuadratureSkeleton<double, 2>;
 using Assembler2d = Assembler<TensorBSpline<double, 2>, 2>;
+using MixedFunctionSpace2d = MixedFunctionSpace<TensorBSpline<double, 2>>;
 using Form2d = Form<TensorBSpline<double, 2>, 2>;
 using Data = Form2d::Data;
 
@@ -62,9 +65,14 @@ void assembly(py::module_& module)
     py::class_<PoissonElement2d::Q, Flux2d>(poisson_element_2d, "Q")
         .def(py::init<>());
 
+    // The Galerkin element holds the traces and fluxes of both
     py::class_<StokesElement2d> stokes_element_2d(module, "StokesElement2d");
-    stokes_element_2d.def(py::init<double, double>(), py::arg("viscosity"),
-                          py::arg("stabilization"));
+    stokes_element_2d.def(py::init<double>(), py::arg("viscosity"));
+
+    py::class_<StokesStabilizedElement2d, StokesElement2d>(
+        module, "StokesStabilizedElement2d")
+        .def(py::init<double, double>(), py::arg("viscosity"),
+             py::arg("stabilization"));
 
     py::class_<StokesElement2d::U, Trace2d>(stokes_element_2d, "U")
         .def(py::init<std::size_t>(), py::arg("component"));
@@ -110,6 +118,11 @@ void assembly(py::module_& module)
              py::arg("space"), py::arg("patch"),
              py::arg("couple_faces") = false, py::keep_alive<1, 2>(),
              py::keep_alive<1, 3>())
+        .def(py::init<const MixedFunctionSpace2d&,
+                      const Patch<TensorBSpline<double, 2>, 2>&, bool>(),
+             py::arg("space"), py::arg("patch"),
+             py::arg("couple_faces") = false, py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>())
         .def("clear", &Assembler2d::clear)
         .def_property_readonly("stiffness", &Assembler2d::stiffness)
         .def_property_readonly("mass", &Assembler2d::mass)
@@ -118,11 +131,19 @@ void assembly(py::module_& module)
     // A form keeps references to what its integrals read, which Python keeps
     // alive with it. Its data are the arrays themselves, never copies, so
     // that the problems of iguana.petsc change them in place between
-    // assemblies
+    // assemblies. The stabilized Stokes element comes before the Galerkin
+    // one, its base, as pybind takes the first overload that matches
     py::class_<Form2d>(module, "Form2d")
         .def(py::init<>())
         .def("add_domain_integral",
              &Form2d::add_domain_integral<PoissonElement2d>,
+             py::arg("element"), py::arg("quadrature"),
+             py::arg("source").noconvert(),
+             py::arg("cell_weights").noconvert(), py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>(),
+             py::keep_alive<1, 5>())
+        .def("add_domain_integral",
+             &Form2d::add_domain_integral<StokesStabilizedElement2d>,
              py::arg("element"), py::arg("quadrature"),
              py::arg("source").noconvert(),
              py::arg("cell_weights").noconvert(), py::keep_alive<1, 2>(),
@@ -137,6 +158,11 @@ void assembly(py::module_& module)
              py::keep_alive<1, 5>())
         .def("add_mass_integral",
              &Form2d::add_mass_integral<PoissonElement2d>,
+             py::arg("element"), py::arg("quadrature"),
+             py::arg("cell_weights").noconvert(), py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>())
+        .def("add_mass_integral",
+             &Form2d::add_mass_integral<StokesStabilizedElement2d>,
              py::arg("element"), py::arg("quadrature"),
              py::arg("cell_weights").noconvert(), py::keep_alive<1, 2>(),
              py::keep_alive<1, 3>(), py::keep_alive<1, 4>())

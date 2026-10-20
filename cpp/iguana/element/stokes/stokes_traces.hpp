@@ -60,16 +60,19 @@ public:
     ValueFlags flags() const noexcept override
     { return {}; }
 
+    std::size_t field(std::size_t num_fields) const noexcept override
+    { return field_of(num_fields, component_); }
+
     void local_trace(const ElementValues<Basis, n>& values,
                      Eigen::MatrixX<Scalar>& trace) const override
     {
-        const Eigen::Index rows = values.values().rows();
-        const Eigen::Index row = static_cast<Eigen::Index>(component_) * rows;
+        const Eigen::MatrixX<Scalar>& functions =
+            values.values(field_of(values.num_fields(), component_));
 
         // B_iq = N_i(x_q) in the rows of the component
-        trace.setZero(static_cast<Eigen::Index>(n + 1) * rows,
-                      values.values().cols());
-        trace.middleRows(row, rows) = values.values();
+        trace.setZero(first_row(values, n + 1), functions.cols());
+        trace.middleRows(first_row(values, component_), functions.rows()) =
+            functions;
     }
 
 private:
@@ -96,15 +99,18 @@ public:
     ValueFlags flags() const noexcept override
     { return {}; }
 
+    std::size_t field(std::size_t num_fields) const noexcept override
+    { return field_of(num_fields, n); }
+
     void local_trace(const ElementValues<Basis, n>& values,
                      Eigen::MatrixX<Scalar>& trace) const override
     {
-        const Eigen::Index rows = values.values().rows();
-        const Eigen::Index row = static_cast<Eigen::Index>(n) * rows;
+        const Eigen::MatrixX<Scalar>& functions =
+            values.values(field_of(values.num_fields(), n));
 
         // B_iq = N_i(x_q) in the rows of the pressure
-        trace.setZero(row + rows, values.values().cols());
-        trace.middleRows(row, rows) = values.values();
+        trace.setZero(first_row(values, n + 1), functions.cols());
+        trace.middleRows(first_row(values, n), functions.rows()) = functions;
     }
 };
 
@@ -162,36 +168,34 @@ public:
                     const PointMatrix<Scalar, n>& normals,
                     Eigen::MatrixX<Scalar>& flux) const override
     {
-        const std::array<Eigen::MatrixX<Scalar>, n>& grads =
-            values.physical_gradients();
-        const Eigen::Index rows = values.values().rows();
-        const Eigen::Index pressure_row = static_cast<Eigen::Index>(n) * rows;
+        const std::size_t num_fields = values.num_fields();
+        const Eigen::MatrixX<Scalar>& pressure =
+            values.values(field_of(num_fields, n));
 
-        // ∂N_i/∂n, the derivatives along the normal
-        Eigen::MatrixX<Scalar> normal_derivatives =
-            Eigen::MatrixX<Scalar>::Zero(rows, values.values().cols());
-
-        for (std::size_t coordinate = 0; coordinate < n; ++coordinate)
-            normal_derivatives +=
-                grads[coordinate] * normals.col(coordinate).asDiagonal();
-
-        flux.setZero(pressure_row + rows, values.values().cols());
+        flux.setZero(first_row(values, n + 1), pressure.cols());
 
         // F_iq = μ (δ_ab ∂N_i/∂n + ∂_a N_i n_b)(x_q) in the rows of the
         // component b of the velocity, for the component a of the traction
         for (std::size_t b = 0; b < n; ++b) {
-            const Eigen::Index row = static_cast<Eigen::Index>(b) * rows;
+            const std::array<Eigen::MatrixX<Scalar>, n>& grads =
+                values.physical_gradients(field_of(num_fields, b));
+            const Eigen::Index row = first_row(values, b);
+            const Eigen::Index rows = grads[b].rows();
 
             flux.middleRows(row, rows) =
                 viscosity_ * grads[component_] * normals.col(b).asDiagonal();
 
-            if (b == component_)
-                flux.middleRows(row, rows) += viscosity_ * normal_derivatives;
+            // ∂N_i/∂n, the derivatives along the normal
+            if (b == component_) {
+                for (std::size_t c = 0; c < n; ++c)
+                    flux.middleRows(row, rows) +=
+                        viscosity_ * grads[c] * normals.col(c).asDiagonal();
+            }
         }
 
         // F_iq = −N_i(x_q) n_a(x_q) in the rows of the pressure
-        flux.middleRows(pressure_row, rows) =
-            -values.values() * normals.col(component_).asDiagonal();
+        flux.middleRows(first_row(values, n), pressure.rows()) =
+            -pressure * normals.col(component_).asDiagonal();
     }
 
 private:

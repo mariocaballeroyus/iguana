@@ -44,12 +44,14 @@ public:
      * @brief Field whose values the trace reads, an index into the bases of
      *        ElementValues
      *
-     * It is the first, the only one of an element on one basis, unless the
-     * element overrides it. A ghost penalty differentiates the values of
-     * this field and takes the degree of its basis
+     * The unknowns of an element may share one field, as its components, or
+     * take a field each, so the field may depend on how many the space has.
+     * A ghost penalty differentiates the values of this field and takes the
+     * degree of its basis
+     *
+     * @param num_fields Number of fields of the space
      */
-    virtual std::size_t field() const noexcept
-    { return 0; }
+    virtual std::size_t field(std::size_t num_fields) const noexcept = 0;
 
     /**
      * @brief Trace of each degree of freedom of the element at the boundary

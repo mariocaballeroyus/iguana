@@ -27,10 +27,10 @@ namespace iguana
  *          sign is that of the block of its field in the system, which it
  *          keeps definite: positive for the field of PoissonElement or the
  *          velocity of StokesElement, negative for the pressure of
- *          StokesElement, whose block is negative in the symmetric form.
- *          Rows and columns follow the degrees of freedom of the cell
- *          before the face, then those of the cell after, each ordered as
- *          for Element
+ *          StokesStabilizedElement, whose block is negative in the
+ *          symmetric form. Rows and columns follow the degrees of freedom
+ *          of the cell before the face, then those of the cell after, each
+ *          ordered as for Element
  *
  * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
  * @tparam n Dimension of the physical space of the patch
@@ -54,7 +54,7 @@ public:
      * @param penalty Penalty β, of the sign of the block of the field of
      *        @p trace
      * @param scaling Extra powers s of the size of the cells, two for the
-     *        pressure of StokesElement
+     *        pressure of StokesStabilizedElement
      *
      * @throws std::invalid_argument If the penalty is zero, or if the
      *         scaling is negative
@@ -78,9 +78,13 @@ public:
     ValueFlags flags() const noexcept
     { return trace_.flags(); }
 
-    /// @brief Field the penalty extends, that of its trace
-    std::size_t field() const noexcept
-    { return trace_.field(); }
+    /**
+     * @brief Field the penalty extends, that of its trace
+     *
+     * @param num_fields Number of fields of the space
+     */
+    std::size_t field(std::size_t num_fields) const noexcept
+    { return trace_.field(num_fields); }
 
     /**
      * @brief Stiffness matrix of the penalty on one face

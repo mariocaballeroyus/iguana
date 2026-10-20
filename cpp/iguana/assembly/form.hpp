@@ -64,7 +64,7 @@ public:
      * @brief Adds the stiffness and load of an element over a domain
      *        quadrature, with the test functions of each cell weighted
      *
-     * @tparam E Element, a final class derived from Element
+     * @tparam E Element, a class derived from Element
      *
      * @param element Element whose local stiffness and load are added
      * @param quadrature Quadrature over elements of the grid of the basis
@@ -97,7 +97,7 @@ public:
      * @brief Adds the mass of an element over a domain quadrature, with the
      *        test functions of each cell weighted
      *
-     * @tparam E Element, a final class derived from Element
+     * @tparam E Element, a class derived from Element
      *
      * @param element Element whose local mass is added
      * @param quadrature Quadrature over elements of the grid of the basis

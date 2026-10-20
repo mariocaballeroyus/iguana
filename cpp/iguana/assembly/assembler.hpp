@@ -141,7 +141,7 @@ public:
      * @brief Adds the stiffness of an element over the points of a
      *        quadrature
      *
-     * @tparam E Element, a final class derived from Element
+     * @tparam E Element, a class derived from Element
      *
      * @param element Element whose local stiffness is added
      * @param quadrature Quadrature over elements of the grid of the basis
@@ -161,7 +161,7 @@ public:
      * @brief Adds the stiffness of an element over the points of a
      *        quadrature, with the test functions of each cell weighted
      *
-     * @tparam E Element, a final class derived from Element
+     * @tparam E Element, a class derived from Element
      *
      * @param element Element whose local stiffness is added
      * @param quadrature Quadrature over elements of the grid of the basis
@@ -185,7 +185,7 @@ public:
      * @brief Adds the load of an element over the points of a quadrature,
      *        from a source given at them
      *
-     * @tparam E Element, a final class derived from Element
+     * @tparam E Element, a class derived from Element
      *
      * @param element Element whose local load is added
      * @param quadrature Quadrature over elements of the grid of the basis
@@ -209,7 +209,7 @@ public:
      *        from a source given at them, with the test functions of each
      *        cell weighted
      *
-     * @tparam E Element, a final class derived from Element
+     * @tparam E Element, a class derived from Element
      *
      * @param element Element whose local load is added
      * @param quadrature Quadrature over elements of the grid of the basis
@@ -235,7 +235,7 @@ public:
     /**
      * @brief Adds the mass of an element over the points of a quadrature
      *
-     * @tparam E Element, a final class derived from Element
+     * @tparam E Element, a class derived from Element
      *
      * @param element Element whose local mass is added
      * @param quadrature Quadrature over elements of the grid of the basis
@@ -253,7 +253,7 @@ public:
      * @brief Adds the mass of an element over the points of a quadrature,
      *        with the test functions of each cell weighted
      *
-     * @tparam E Element, a final class derived from Element
+     * @tparam E Element, a class derived from Element
      *
      * @param element Element whose local mass is added
      * @param quadrature Quadrature over elements of the grid of the basis

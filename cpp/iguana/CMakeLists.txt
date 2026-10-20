@@ -32,6 +32,7 @@ add_library(iguana
     assembly/element_values.cpp
     element/poisson/poisson_element.cpp
     element/stokes/stokes_element.cpp
+    element/stokes/stokes_stabilized_element.cpp
     condition/penalty_condition.cpp
     condition/nitsche_condition.cpp
     condition/skeleton_nitsche_condition.cpp
