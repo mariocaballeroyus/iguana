@@ -9,6 +9,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <functional>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -466,6 +467,96 @@ void check_elevated_basis()
     }
 }
 
+/// @brief Whether a matrix has the size of another and its entries, up to
+///        rounding
+bool agree(const Eigen::MatrixXd& computed, const Eigen::MatrixXd& expected)
+{
+    return computed.rows() == expected.rows()
+           && computed.cols() == expected.cols()
+           && computed.isApprox(expected, 1e-12);
+}
+
+/**
+ * @brief Checks that the values of a basis of one degree more than the bent
+ *        box and of the patch's own basis, held together, are those of each
+ *        basis alone, after reinit(), shift() and differentiate()
+ */
+template<std::size_t d>
+void check_several_bases()
+{
+    using Basis = TensorBSpline<double, d>;
+    using Values = iguana::ElementValues<Basis, d>;
+
+    const iguana::Patch<Basis, d> patch = bent_box<d>();
+    const Basis basis = elevated(patch.basis());
+    const iguana::ValueFlags flags{.physical_hessians = true};
+    const iguana::GaussLegendre<double, d> rule(2);
+
+    // The patch's own basis second, so that the map comes from a field
+    // other than the first
+    Values both(patch, {basis, patch.basis()}, flags);
+    std::array<Values, 2> alone{Values(patch, basis, flags),
+                                Values(patch, flags)};
+
+    Eigen::MatrixXd points;
+    Eigen::VectorXd weights;
+
+    for (const auto& element : patch.basis().grid()) {
+        INFO("element " << element.index());
+
+        rule.fill_to_reference_space(element.start(), element.end(), points,
+                                     weights);
+        iguana::BoxRule<double, d>::map_to_parameter_space(
+            element.start(), element.end(), points, weights);
+
+        both.reinit(element.index(), points);
+
+        for (Values& values : alone)
+            values.reinit(element.index(), points);
+
+        REQUIRE(both.num_fields() == 2);
+        REQUIRE(agree(both.measures(), alone[0].measures()));
+
+        for (std::size_t field = 0; field < 2; ++field) {
+            INFO("field " << field);
+            const Values& single = alone[field];
+
+            REQUIRE(agree(both.values(field), single.values()));
+
+            for (std::size_t c = 0; c < d; ++c)
+                REQUIRE(agree(both.physical_gradients(field)[c],
+                              single.physical_gradients()[c]));
+
+            for (std::size_t pair = 0; pair < d * (d + 1) / 2; ++pair)
+                REQUIRE(agree(both.physical_hessians(field)[pair],
+                              single.physical_hessians()[pair]));
+        }
+
+        // Each field expanded along the same shifts, small and different at
+        // every point, then differentiated to its own degree across each
+        // direction
+        const Eigen::MatrixXd shifts = .01 * points.array().cos().matrix();
+        both.shift(shifts, 2);
+
+        for (Values& values : alone)
+            values.shift(shifts, 2);
+
+        for (std::size_t field = 0; field < 2; ++field)
+            REQUIRE(agree(both.values(field), alone[field].values()));
+
+        for (std::size_t direction = 0; direction < d; ++direction) {
+            INFO("direction " << direction);
+            both.differentiate(direction);
+
+            for (Values& values : alone)
+                values.differentiate(direction);
+
+            for (std::size_t field = 0; field < 2; ++field)
+                REQUIRE(agree(both.values(field), alone[field].values()));
+        }
+    }
+}
+
 } // namespace
 
 TEST_CASE("Element values integrate the energy of a linear field exactly",
@@ -513,10 +604,18 @@ TEST_CASE("Element values take the map from the patch and the functions "
     check_elevated_basis<3>();
 }
 
-TEST_CASE("Element values need a basis on the elements of the patch",
+TEST_CASE("Element values of several bases are those of each basis alone",
+          "[element_values]")
+{
+    check_several_bases<2>();
+    check_several_bases<3>();
+}
+
+TEST_CASE("Element values need bases, all on the elements of the patch",
           "[element_values]")
 {
     using Basis = TensorBSpline<double, 2>;
+    using Bases = std::vector<std::reference_wrapper<const Basis>>;
 
     const iguana::Patch<Basis, 2> patch = bent_box<2>();
     const Basis moved{TensorGrid<double, 2>(
@@ -524,6 +623,11 @@ TEST_CASE("Element values need a basis on the elements of the patch",
          knot_vectors[1]})};
 
     REQUIRE_THROWS_AS((iguana::ElementValues<Basis, 2>(patch, moved, {})),
+                      std::invalid_argument);
+    REQUIRE_THROWS_AS((iguana::ElementValues<Basis, 2>(patch, Bases{}, {})),
+                      std::invalid_argument);
+    REQUIRE_THROWS_AS((iguana::ElementValues<Basis, 2>(
+                          patch, Bases{patch.basis(), moved}, {})),
                       std::invalid_argument);
 }
 
