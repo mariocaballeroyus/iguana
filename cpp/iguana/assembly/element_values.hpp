@@ -9,6 +9,9 @@
 #include <array>
 #include <concepts>
 #include <cstddef>
+#include <functional>
+#include <optional>
+#include <vector>
 
 #include <Eigen/Core>
 
@@ -37,16 +40,18 @@ struct ValueFlags
 };
 
 /**
- * @brief Values of the functions of a basis and of the map of a patch at
- *        points of one element at a time
+ * @brief Values of the functions of one or several bases and of the map of
+ *        a patch at points of one element at a time
  *
- * The functions are those of a basis on the elements of the patch, which
- * maps the points. When the basis is the patch's own, as in isoparametric
- * analysis, one evaluation of it gives both the functions and the Jacobian
- * J of the map. reinit() moves the values to an element and fills them
- * there, reusing the buffers of the previous element. The rows follow
- * active_on_element() of the basis, so that the k-th row pairs with the
- * k-th degree of freedom a space of that basis lists on the element
+ * The functions are those of bases on the elements of the patch, which
+ * maps the points, one basis for each field of a space. The map is
+ * evaluated once for all of them, and when a basis is the patch's own, as
+ * in isoparametric analysis, one evaluation of it gives both its functions
+ * and the Jacobian J of the map. reinit() moves the values to an element
+ * and fills them there, reusing the buffers of the previous element. The
+ * rows of a field follow active_on_element() of its basis, so that the
+ * k-th row pairs with the k-th degree of freedom a space of that basis
+ * lists on the element
  *
  * @tparam Basis Basis of the patch and of the functions, TensorBSpline or
  *         TensorNURBS
@@ -98,6 +103,27 @@ public:
                   ValueFlags flags);
 
     /**
+     * @brief Constructs the values of the functions of several bases on the
+     *        elements of a patch, filled by reinit()
+     *
+     * @param patch Patch that maps the points
+     * @param bases Bases whose functions are evaluated, one per field, each
+     *        of any degrees and continuities on the elements of the patch
+     * @param flags Optional values to compute, for every basis
+     *
+     * @throws std::invalid_argument If there is no basis, if a basis does
+     *         not have the elements of the patch, or if physical gradients
+     *         or Hessians are flagged on a patch with fewer directions than
+     *         its space
+     *
+     * @pre @p patch and the bases outlive the values, which keep references
+     *      to them
+     */
+    ElementValues(const Patch<Basis, n>& patch,
+                  const std::vector<std::reference_wrapper<const Basis>>& bases,
+                  ValueFlags flags);
+
+    /**
      * @brief Moves the values to an element and fills them at points of it
      *
      * The buffers are resized only when the number of points changes
@@ -113,8 +139,9 @@ public:
     void reinit(int element, const Eigen::MatrixX<Scalar>& points);
 
     /**
-     * @brief Replaces the values by their Taylor series from the points of
-     *        the last reinit() along shifts, up to a total order
+     * @brief Replaces the values of every field by their Taylor series from
+     *        the points of the last reinit() along shifts, up to a total
+     *        order
      *
      * This is how the shifted boundary method expands the functions of a
      * surrogate point towards the true boundary. The gradients, tangents,
@@ -132,11 +159,11 @@ public:
         requires std::same_as<Basis, TensorBSpline<Scalar, dim>>;
 
     /**
-     * @brief Replaces the values by their derivatives across the knot lines
-     *        of a direction, of the order of the degree of the basis there,
-     *        in physical space
+     * @brief Replaces the values of every field by their derivatives across
+     *        the knot lines of a direction, of the order of the degree of its
+     *        basis there, in physical space
      *
-     * Across a knot line of maximal continuity of the basis, these are the
+     * Across a knot line of maximal continuity of a basis, these are the
      * only derivatives that jump, as a ghost penalty compares them. The
      * derivative of order p along the direction is scaled by |J^-T e_k|^p,
      * the length of the physical gradient of its parameter. On an affine map
@@ -153,16 +180,34 @@ public:
     void differentiate(std::size_t direction)
         requires std::same_as<Basis, TensorBSpline<Scalar, dim>>;
 
-    /// @brief Values of the active functions, of size
-    ///        (num_active, num_points)
-    constexpr const Eigen::MatrixX<Scalar>& values() const noexcept
-    { return values_; }
+    /// @brief Number of fields, one per basis
+    constexpr std::size_t num_fields() const noexcept
+    { return fields_.size(); }
 
-    /// @brief Derivatives of the active functions along each parametric
-    ///        direction, one matrix per direction of the size of values()
-    constexpr const std::array<Eigen::MatrixX<Scalar>, dim>& gradients()
-        const noexcept
-    { return gradients_; }
+    /**
+     * @brief Values of the active functions of a field, of size
+     *        (num_active, num_points)
+     *
+     * @param field Field index, in the order of the bases
+     *
+     * @pre @p field lies in [0, num_fields())
+     */
+    constexpr const Eigen::MatrixX<Scalar>& values(std::size_t field = 0) const
+        noexcept
+    { return fields_[field].values; }
+
+    /**
+     * @brief Derivatives of the active functions of a field along each
+     *        parametric direction, one matrix per direction of the size of
+     *        values()
+     *
+     * @param field Field index, in the order of the bases
+     *
+     * @pre @p field lies in [0, num_fields())
+     */
+    constexpr const std::array<Eigen::MatrixX<Scalar>, dim>&
+    gradients(std::size_t field = 0) const noexcept
+    { return fields_[field].gradients; }
 
     /// @brief Derivatives of the map along each parametric direction, the
     ///        columns of J, one buffer of size (num_points, n) per direction
@@ -193,62 +238,108 @@ public:
     { return sizes_; }
 
     /**
-     * @brief Gradients of the active functions in physical space, one
-     *        matrix per coordinate of the size of values()
+     * @brief Gradients of the active functions of a field in physical
+     *        space, one matrix per coordinate of the size of values()
      *
-     * @pre Physical gradients or Hessians are flagged. It is not checked
+     * @param field Field index, in the order of the bases
+     *
+     * @pre Physical gradients or Hessians are flagged, which is not
+     *      checked, and @p field lies in [0, num_fields())
      */
     constexpr const std::array<Eigen::MatrixX<Scalar>, n>&
-    physical_gradients() const noexcept requires (dim == n)
-    { return physical_gradients_; }
+    physical_gradients(std::size_t field = 0) const noexcept
+        requires (dim == n)
+    { return fields_[field].physical_gradients; }
 
     /**
-     * @brief Second derivatives of the active functions in physical space,
-     *        one matrix per pair of coordinates of the size of values()
+     * @brief Second derivatives of the active functions of a field in
+     *        physical space, one matrix per pair of coordinates of the size
+     *        of values()
      *
      * @details The pure pairs come first, then the mixed ones in
      *          lexicographic order of their coordinates: xx, yy, xy in the
      *          plane, so that the Laplacian sums the first n
      *
-     * @pre Physical Hessians are flagged. It is not checked
+     * @param field Field index, in the order of the bases
+     *
+     * @pre Physical Hessians are flagged, which is not checked, and
+     *      @p field lies in [0, num_fields())
      */
     constexpr const std::array<Eigen::MatrixX<Scalar>, n * (n + 1) / 2>&
-    physical_hessians() const noexcept requires (dim == n)
-    { return physical_hessians_; }
+    physical_hessians(std::size_t field = 0) const noexcept
+        requires (dim == n)
+    { return fields_[field].physical_hessians; }
 
 private:
+    /// @brief Functions of one basis on the element and their derivatives
+    struct Field
+    {
+        /// @brief Constructs the empty buffers of a basis, filled by
+        ///        evaluate()
+        explicit Field(const Basis& basis) : basis(basis)
+        {
+        }
+
+        /// @brief Basis whose functions are evaluated
+        const Basis& basis;
+
+        /// @brief First active function of the basis along each direction
+        std::array<int, dim> first_active{};
+
+        /// @brief Functions of the basis active on the element
+        Eigen::VectorXi actives;
+
+        /// @brief Values of the active functions
+        Eigen::MatrixX<Scalar> values;
+
+        /// @brief Derivatives of the active functions along each direction
+        std::array<Eigen::MatrixX<Scalar>, dim> gradients;
+
+        /// @brief Second derivatives of the active functions along each pair
+        ///        of directions, empty unless physical Hessians are flagged
+        std::array<Eigen::MatrixX<Scalar>, dim * (dim + 1) / 2> hessians;
+
+        /// @brief Gradients of the active functions in physical space,
+        ///        empty unless flagged
+        std::array<Eigen::MatrixX<Scalar>, n> physical_gradients;
+
+        /// @brief Second derivatives of the active functions in physical
+        ///        space, empty unless flagged
+        std::array<Eigen::MatrixX<Scalar>, n * (n + 1) / 2>
+            physical_hessians;
+    };
+
+    /**
+     * @brief Fills the values and parametric derivatives of a field at
+     *        points of an element, with the second derivatives when
+     *        physical Hessians are flagged
+     *
+     * @param field Field to fill
+     * @param element Element index, in the numbering of the grid
+     * @param points Points in parameter space, with size (num_points, dim)
+     */
+    void evaluate(Field& field, int element,
+                  const Eigen::MatrixX<Scalar>& points);
+
     /// @brief Patch that maps the points
     const Patch<Basis, n>& patch_;
-
-    /// @brief Basis whose functions are evaluated
-    const Basis& basis_;
-
-    /// @brief Whether the basis is the patch's own, whose functions then
-    ///        give the map as well
-    bool isoparametric_;
 
     /// @brief Optional values to compute
     ValueFlags flags_;
 
-    /// @brief First active function of the basis along each direction on
-    ///        the element
-    std::array<int, dim> first_active_{};
-
     /// @brief Points of the element in parameter space
     Eigen::MatrixX<Scalar> points_;
 
-    /// @brief Functions of the basis active on the element
-    Eigen::VectorXi actives_;
+    /// @brief Functions of each basis, in the order of the bases
+    std::vector<Field> fields_;
 
-    /// @brief Values of the active functions
-    Eigen::MatrixX<Scalar> values_;
+    /// @brief First field whose basis is the patch's own, whose functions
+    ///        then give the map as well
+    std::optional<std::size_t> map_field_;
 
-    /// @brief Derivatives of the active functions along each direction
-    std::array<Eigen::MatrixX<Scalar>, dim> gradients_;
-
-    /// @brief Second derivatives of the active functions along each pair of
-    ///        directions, empty unless physical Hessians are flagged
-    std::array<Eigen::MatrixX<Scalar>, dim * (dim + 1) / 2> hessians_;
+    /// @brief Functions of the patch, which give the map when no basis is
+    ///        the patch's
+    Field map_;
 
     /// @brief Derivatives of the map along each direction
     std::array<PointMatrix<Scalar, n>, dim> tangents_;
@@ -257,34 +348,11 @@ private:
     ///        empty unless physical Hessians are flagged
     std::array<PointMatrix<Scalar, n>, dim * (dim + 1) / 2> second_tangents_;
 
-    /// @brief Functions of the patch active on the element, which give the
-    ///        map when the basis is not the patch's
-    Eigen::VectorXi map_actives_;
-
-    /// @brief Values of the functions of the patch, a byproduct of their
-    ///        derivatives
-    Eigen::MatrixX<Scalar> map_values_;
-
-    /// @brief Derivatives of the functions of the patch along each direction
-    std::array<Eigen::MatrixX<Scalar>, dim> map_gradients_;
-
-    /// @brief Second derivatives of the functions of the patch along each
-    ///        pair of directions
-    std::array<Eigen::MatrixX<Scalar>, dim * (dim + 1) / 2> map_hessians_;
-
     /// @brief Measure of the patch at each point
     Eigen::VectorX<Scalar> measures_;
 
     /// @brief Size of the element at each point
     Eigen::VectorX<Scalar> sizes_;
-
-    /// @brief Gradients of the active functions in physical space, empty
-    ///        unless flagged
-    std::array<Eigen::MatrixX<Scalar>, n> physical_gradients_;
-
-    /// @brief Second derivatives of the active functions in physical space,
-    ///        empty unless flagged
-    std::array<Eigen::MatrixX<Scalar>, n * (n + 1) / 2> physical_hessians_;
 };
 
 } // namespace iguana

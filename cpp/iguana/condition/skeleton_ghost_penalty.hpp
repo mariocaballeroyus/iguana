@@ -21,7 +21,7 @@ namespace iguana
  *        interior faces of a grid
  *
  * @details It penalizes the jumps of the derivatives of order p, the degree
- *          of the space across a face, the only ones that jump for splines
+ *          of its field across a face, the only ones that jump for splines
  *          of maximal continuity. They vanish on a field that is one
  *          polynomial across the faces, so the penalty is consistent. Its
  *          sign is that of the block of its field in the system, which it
@@ -48,7 +48,7 @@ public:
      *     β h^(2p − 1 + s)
      *
      * @details The penalty on a face, with h the mean size of its two
-     *          cells, p the degree across it and s the scaling
+     *          cells, p the degree of the field across it and s the scaling
      *
      * @param trace Trace whose jumps are penalized
      * @param penalty Penalty β, of the sign of the block of the field of
@@ -59,9 +59,9 @@ public:
      * @throws std::invalid_argument If the penalty is zero, or if the
      *         scaling is negative
      *
-     * @pre @p trace reads the values alone, as the field of PoissonElement
-     *      does, so that it differentiates with them, and it outlives the
-     *      penalty, which keeps a reference to it
+     * @pre @p trace reads the values of its field alone, as the field of
+     *      PoissonElement does, so that it differentiates with them, and it
+     *      outlives the penalty, which keeps a reference to it
      */
     SkeletonGhostPenalty(const Trace<Basis, n>& trace, Scalar penalty,
                          int scaling = 0);
@@ -77,6 +77,10 @@ public:
     /// @brief Optional values the penalty reads from ElementValues
     ValueFlags flags() const noexcept
     { return trace_.flags(); }
+
+    /// @brief Field the penalty extends, that of its trace
+    std::size_t field() const noexcept
+    { return trace_.field(); }
 
     /**
      * @brief Stiffness matrix of the penalty on one face

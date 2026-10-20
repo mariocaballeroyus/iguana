@@ -22,10 +22,12 @@ namespace iguana
  * @details It reads the values its flags() request, at the points of the
  *          element, and integrates with the physical weights the assembler
  *          maps. Its rows and columns follow the num_dofs degrees of
- *          freedom of the element, as FunctionSpace::dofs_on_element()
- *          orders them: one component of the field after another, each
- *          over the active functions. The number of components is the
- *          block size of the space
+ *          freedom of the element, as MixedFunctionSpace::dofs_on_element()
+ *          orders them: one field after another, each with one component
+ *          after another over the active functions of its basis, as many
+ *          as values(field).rows(). The number of components of a field is
+ *          its block size, and a space of one field orders them as
+ *          FunctionSpace::dofs_on_element()
  *
  * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
  * @tparam n Dimension of the physical space of the patch

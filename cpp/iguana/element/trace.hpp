@@ -41,6 +41,17 @@ public:
     virtual ValueFlags flags() const noexcept = 0;
 
     /**
+     * @brief Field whose values the trace reads, an index into the bases of
+     *        ElementValues
+     *
+     * It is the first, the only one of an element on one basis, unless the
+     * element overrides it. A ghost penalty differentiates the values of
+     * this field and takes the degree of its basis
+     */
+    virtual std::size_t field() const noexcept
+    { return 0; }
+
+    /**
      * @brief Trace of each degree of freedom of the element at the boundary
      *        points in it, the matrix B
      *

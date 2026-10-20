@@ -24,6 +24,7 @@ using iguana::TensorBSpline;
 using iguana::TensorGrid;
 
 using Space = iguana::FunctionSpace<TensorBSpline<double, 2>>;
+using MixedSpace = iguana::MixedFunctionSpace<TensorBSpline<double, 2>>;
 
 /// @brief Basis over uneven knot spans, with three elements along the first
 ///        direction and two along the second
@@ -31,6 +32,15 @@ TensorBSpline<double, 2> uneven()
 {
     return TensorBSpline<double, 2>(TensorGrid<double, 2>(
         {KnotVector<double>(2, {0., 0., 0., 1., 2., 6., 6., 6.}),
+         KnotVector<double>(1, {0., 0., 1., 4., 4.})}));
+}
+
+/// @brief Basis on the elements of uneven(), cubic along the first direction
+///        and linear along the second
+TensorBSpline<double, 2> raised()
+{
+    return TensorBSpline<double, 2>(TensorGrid<double, 2>(
+        {KnotVector<double>(3, {0., 0., 0., 0., 1., 2., 6., 6., 6., 6.}),
          KnotVector<double>(1, {0., 0., 1., 4., 4.})}));
 }
 
@@ -179,4 +189,66 @@ TEST_CASE("A space needs one cell type per element and a positive block "
         std::invalid_argument);
     REQUIRE_THROWS_AS(Space(uneven(), with_last_column(CellType::inside), 0),
                       std::invalid_argument);
+}
+
+TEST_CASE("A mixed space numbers its fields one after another", "[fspace]")
+{
+    // The outside column drops functions of the first two fields, and the
+    // second has two components
+    const Space first(uneven(), with_last_column(CellType::outside));
+    const Space second(raised(), with_last_column(CellType::outside), 2);
+    const Space third(uneven(), with_last_column(CellType::inside));
+    const MixedSpace mixed({first, second, third});
+
+    REQUIRE(mixed.num_fields() == 3);
+    REQUIRE(mixed.num_elements() == 6);
+
+    // 12, 2 x 15 and 15 degrees of freedom, each field in a contiguous
+    // range that starts where the previous one ends
+    REQUIRE(mixed.num_dofs() == 57);
+
+    int end = 0;
+
+    for (std::size_t field = 0; field < mixed.num_fields(); ++field) {
+        REQUIRE(mixed.offset(field) == end);
+        end += mixed.field(field).num_dofs();
+    }
+
+    REQUIRE(end == mixed.num_dofs());
+
+    // On an element, the degrees of freedom of each field in turn, shifted
+    // into its range
+    std::vector<int> dofs;
+    std::vector<int> field_dofs;
+
+    for (int element = 0; element < mixed.num_elements(); ++element) {
+        INFO("element " << element);
+        mixed.dofs_on_element(element, dofs);
+        std::size_t listed = 0;
+
+        for (std::size_t field = 0; field < mixed.num_fields(); ++field) {
+            mixed.field(field).dofs_on_element(element, field_dofs);
+
+            for (const int dof : field_dofs) {
+                REQUIRE(listed < dofs.size());
+                REQUIRE(dofs[listed++] == mixed.offset(field) + dof);
+            }
+        }
+
+        REQUIRE(listed == dofs.size());
+    }
+}
+
+TEST_CASE("A mixed space needs fields on the elements of the first",
+          "[fspace]")
+{
+    const Space space(uneven(), with_last_column(CellType::inside));
+    const Space moved(
+        TensorBSpline<double, 2>(TensorGrid<double, 2>(
+            {KnotVector<double>(2, {0., 0., 0., 1., 3., 6., 6., 6.}),
+             KnotVector<double>(1, {0., 0., 1., 4., 4.})})),
+        with_last_column(CellType::inside));
+
+    REQUIRE_THROWS_AS(MixedSpace({}), std::invalid_argument);
+    REQUIRE_THROWS_AS(MixedSpace({space, moved}), std::invalid_argument);
 }
