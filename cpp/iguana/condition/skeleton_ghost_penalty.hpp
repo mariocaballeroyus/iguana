@@ -78,9 +78,13 @@ public:
     ValueFlags flags() const noexcept
     { return trace_.flags(); }
 
-    /// @brief Field the penalty extends, that of its trace
-    std::size_t field() const noexcept
-    { return trace_.field(); }
+    /**
+     * @brief Field the penalty extends, that of its trace
+     *
+     * @param num_fields Number of fields of the space
+     */
+    std::size_t field(std::size_t num_fields) const noexcept
+    { return trace_.field(num_fields); }
 
     /**
      * @brief Stiffness matrix of the penalty on one face

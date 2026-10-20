@@ -348,6 +348,9 @@ public:
     iguana::ValueFlags flags() const noexcept override
     { return {}; }
 
+    std::size_t field(std::size_t) const noexcept override
+    { return 0; }
+
     void local_trace(const iguana::ElementValues<Basis, 2>& values,
                      Eigen::MatrixXd& trace) const override
     {
@@ -386,7 +389,7 @@ public:
     iguana::ValueFlags flags() const noexcept override
     { return {}; }
 
-    std::size_t field() const noexcept override
+    std::size_t field(std::size_t) const noexcept override
     { return field_; }
 
     void local_trace(const iguana::ElementValues<Basis, 2>& values,

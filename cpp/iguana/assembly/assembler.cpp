@@ -626,12 +626,14 @@ void Assembler<Basis, n>::assemble_stiffness(
                                     "a ghost penalty needs an affine patch");
 
     // The penalty extends one field, whose basis gives the degrees
-    if (penalty.field() >= space_.num_fields())
+    const std::size_t field = penalty.field(space_.num_fields());
+
+    if (field >= space_.num_fields())
         throw std::invalid_argument("Assembler: "
                                     "a ghost penalty must act on a field of "
                                     "the space");
 
-    const Basis& basis = space_.field(penalty.field()).basis();
+    const Basis& basis = space_.field(field).basis();
 
     // A repeated knot of the field would let lower derivatives of its
     // functions jump unpenalized
