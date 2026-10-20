@@ -4,11 +4,14 @@
  */
 
 #include <cstddef>
+#include <functional>
 #include <span>
+#include <vector>
 
 #include <Eigen/Core>
 #include <pybind11/eigen.h>
 #include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
 
 #include "iguana/iguana.hpp"
 
@@ -23,6 +26,7 @@ namespace
 using FunctionSpace2d = FunctionSpace<TensorBSpline<double, 2>>;
 using FunctionSpace3d = FunctionSpace<TensorBSpline<double, 3>>;
 using NURBSFunctionSpace2d = FunctionSpace<TensorNURBS<double, 2>>;
+using MixedFunctionSpace2d = MixedFunctionSpace<TensorBSpline<double, 2>>;
 
 /// @brief Number of degrees of freedom, read from the map of the space
 template<typename Basis>
@@ -92,6 +96,17 @@ void fspace(py::module_& module)
                                &num_dofs<TensorNURBS<double, 2>>)
         .def_property_readonly("functions",
                                &functions<TensorNURBS<double, 2>>);
+
+    // A mixed space keeps references to its fields, which Python keeps alive
+    // with it
+    py::class_<MixedFunctionSpace2d>(module, "MixedFunctionSpace2d")
+        .def(py::init<
+                 std::vector<std::reference_wrapper<const FunctionSpace2d>>>(),
+             py::arg("fields"), py::keep_alive<1, 2>())
+        .def_property_readonly("num_fields",
+                               &MixedFunctionSpace2d::num_fields)
+        .def_property_readonly("num_dofs", &MixedFunctionSpace2d::num_dofs)
+        .def("offset", &MixedFunctionSpace2d::offset, py::arg("field"));
 }
 
 } // namespace iguana::bindings
