@@ -192,10 +192,11 @@ class StokesElement:
         """Trace of the pressure p, which a ghost penalty extends."""
         return StokesElement.P(self)
 
-    def _cpp_element(self) -> _cpp.StokesElement2d:
+    def _cpp_element(self) -> _cpp.StokesStabilizedElement2d:
         """The compiled element, on a planar patch, the only one problems
         lie on so far."""
-        return _cpp.StokesElement2d(self._viscosity, self._stabilization)
+        return _cpp.StokesStabilizedElement2d(self._viscosity,
+                                              self._stabilization)
 
     def __repr__(self) -> str:
         return (f'StokesElement(viscosity={self._viscosity}, '

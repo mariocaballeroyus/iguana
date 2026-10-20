@@ -21,7 +21,7 @@ using Catch::Matchers::WithinRel;
 using Eigen::kroneckerProduct;
 using iguana::BoxRule;
 using Basis = iguana::TensorBSpline<double, 2>;
-using Element = iguana::StokesElement<Basis, 2>;
+using Element = iguana::StokesStabilizedElement<Basis, 2>;
 
 /// @brief Sides of the rectangle, unequal so that physical and parametric
 ///        derivatives differ

@@ -1119,7 +1119,7 @@ TEST_CASE("A shifted Nitsche condition imposes a field of the space "
 TEST_CASE("A Stokes system with Nitsche conditions holds a divergence-free "
           "quadratic flow exactly, up to a constant pressure", "[assembler]")
 {
-    using Element = iguana::StokesElement<Basis, 2>;
+    using Element = iguana::StokesStabilizedElement<Basis, 2>;
 
     const Basis basis = uneven();
     const iguana::Patch<Basis, 2> patch = rectangle(basis);
@@ -1500,7 +1500,7 @@ TEST_CASE("A ghost penalty takes extra powers of the size of the cells and "
 TEST_CASE("The generalized shifted boundary method holds a divergence-free "
           "quadratic flow exactly", "[assembler]")
 {
-    using Element = iguana::StokesElement<Basis, 2>;
+    using Element = iguana::StokesStabilizedElement<Basis, 2>;
 
     const Basis basis = five_by_five();
     const iguana::Patch<Basis, 2> patch = rectangle(basis);

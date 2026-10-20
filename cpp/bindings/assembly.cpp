@@ -24,6 +24,8 @@ using Trace2d = Trace<TensorBSpline<double, 2>, 2>;
 using Flux2d = Flux<TensorBSpline<double, 2>, 2>;
 using PoissonElement2d = PoissonElement<TensorBSpline<double, 2>, 2>;
 using StokesElement2d = StokesElement<TensorBSpline<double, 2>, 2>;
+using StokesStabilizedElement2d =
+    StokesStabilizedElement<TensorBSpline<double, 2>, 2>;
 using PenaltyCondition2d = PenaltyCondition<TensorBSpline<double, 2>, 2>;
 using NeumannCondition2d = NeumannCondition<TensorBSpline<double, 2>, 2>;
 using NitscheCondition2d = NitscheCondition<TensorBSpline<double, 2>, 2>;
@@ -62,9 +64,14 @@ void assembly(py::module_& module)
     py::class_<PoissonElement2d::Q, Flux2d>(poisson_element_2d, "Q")
         .def(py::init<>());
 
+    // The Galerkin element, which no problem builds yet, holds the traces
+    // and fluxes of both
     py::class_<StokesElement2d> stokes_element_2d(module, "StokesElement2d");
-    stokes_element_2d.def(py::init<double, double>(), py::arg("viscosity"),
-                          py::arg("stabilization"));
+
+    py::class_<StokesStabilizedElement2d, StokesElement2d>(
+        module, "StokesStabilizedElement2d")
+        .def(py::init<double, double>(), py::arg("viscosity"),
+             py::arg("stabilization"));
 
     py::class_<StokesElement2d::U, Trace2d>(stokes_element_2d, "U")
         .def(py::init<std::size_t>(), py::arg("component"));
@@ -129,7 +136,7 @@ void assembly(py::module_& module)
              py::keep_alive<1, 3>(), py::keep_alive<1, 4>(),
              py::keep_alive<1, 5>())
         .def("add_domain_integral",
-             &Form2d::add_domain_integral<StokesElement2d>,
+             &Form2d::add_domain_integral<StokesStabilizedElement2d>,
              py::arg("element"), py::arg("quadrature"),
              py::arg("source").noconvert(),
              py::arg("cell_weights").noconvert(), py::keep_alive<1, 2>(),
@@ -141,7 +148,7 @@ void assembly(py::module_& module)
              py::arg("cell_weights").noconvert(), py::keep_alive<1, 2>(),
              py::keep_alive<1, 3>(), py::keep_alive<1, 4>())
         .def("add_mass_integral",
-             &Form2d::add_mass_integral<StokesElement2d>,
+             &Form2d::add_mass_integral<StokesStabilizedElement2d>,
              py::arg("element"), py::arg("quadrature"),
              py::arg("cell_weights").noconvert(), py::keep_alive<1, 2>(),
              py::keep_alive<1, 3>(), py::keep_alive<1, 4>())
