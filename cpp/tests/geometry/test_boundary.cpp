@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <numbers>
 #include <stdexcept>
+#include <tuple>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -355,5 +356,135 @@ TEST_CASE("The distance vectors of a projection lie in the parameters of "
         stretched.basis(), bent);
 
     REQUIRE_THROWS_AS(iguana::project_closest_points(curved, boundary, points),
+                      std::invalid_argument);
+}
+
+TEST_CASE("A circle has the inverse of its radius for curvature, constant "
+          "along it", "[boundary]")
+{
+    using Curves = Boundary<double, 2>;
+
+    // Points inside and outside, some on the radii through the double knots
+    PointMatrix<double, 2> points(16, 2);
+    Eigen::Index row = 0;
+
+    for (const double distance : {1.3, 2.9})
+        for (const double angle : {0., .4, pi / 2., 2.2, pi, 4., 1.5 * pi,
+                                   5.9})
+            points.row(row++) =
+                distance * Eigen::RowVector2d(std::cos(angle),
+                                              std::sin(angle));
+
+    // The disk, and the plane around it with the normals turned in
+    for (const int sign : {1, -1}) {
+        INFO("sign " << sign);
+        const Curves boundary({circle()}, {sign});
+        const iguana::BoundaryProjection<double> projection =
+            iguana::project_closest_points(identity(), boundary, points);
+        const Eigen::MatrixXd curvatures =
+            iguana::curvature_derivs(boundary, projection, 4);
+
+        REQUIRE(curvatures.rows() == points.rows());
+        REQUIRE(curvatures.cols() == 5);
+        REQUIRE((curvatures.col(0).array() - sign / radius).abs().maxCoeff()
+                < 1e-13);
+        REQUIRE(curvatures.rightCols(4).cwiseAbs().maxCoeff() < 1e-12);
+    }
+}
+
+TEST_CASE("The curvature of an ellipse and its derivatives match their "
+          "closed forms, whatever way it is traversed", "[boundary]")
+{
+    using Curves = Boundary<double, 2>;
+
+    // The circle stretched into an ellipse of semi-axes a and b, which is
+    // x = a cos θ, y = b sin θ, and the same ellipse traversed clockwise
+    const double a = 3.;
+    const double b = 1.2;
+    const Curves::Face round = circle();
+
+    PointMatrix<double, 2> stretched = round.coefficients();
+    stretched.col(0) *= a / radius;
+    stretched.col(1) *= b / radius;
+
+    const Curves::Face ellipse(round.basis(), stretched);
+    const Curves::Face reversed(
+        TensorNURBS<double, 1>(round.basis().bspline(),
+                               round.basis().weights().reverse()),
+        stretched.colwise().reverse());
+
+    // Points inside and outside, around the ellipse
+    PointMatrix<double, 2> points(12, 2);
+    Eigen::Index row = 0;
+
+    for (const double scale : {.7, 1.4})
+        for (const double angle : {.3, 1.1, 2., 3.3, 4.4, 5.6})
+            points.row(row++) = scale * Eigen::RowVector2d(
+                                            a * std::cos(angle),
+                                            b * std::sin(angle));
+
+    // The ellipse traversed counterclockwise bounds the domain inside it
+    // with sign 1 and outside it with sign -1, the reversed one inside it
+    // with sign -1
+    for (const auto& [face, sign, inside] :
+         {std::tuple{ellipse, 1, true}, std::tuple{ellipse, -1, false},
+          std::tuple{reversed, -1, true}}) {
+        INFO("sign " << sign << ", inside " << inside);
+        const Curves boundary({face}, {sign});
+        const iguana::BoundaryProjection<double> projection =
+            iguana::project_closest_points(identity(), boundary, points);
+        const Eigen::MatrixXd curvatures =
+            iguana::curvature_derivs(boundary, projection, 2);
+
+        for (Eigen::Index point = 0; point < points.rows(); ++point) {
+            INFO("point " << point);
+            const Eigen::RowVector2d closest = projection.positions.row(point);
+            const double theta = std::atan2(closest(1) / b, closest(0) / a);
+            const double sine = std::sin(theta);
+            const double cosine = std::cos(theta);
+
+            // With w = |c'(θ)|, the closed forms along the counterclockwise
+            // arc length
+            const double w = std::sqrt(a * a * sine * sine
+                                       + b * b * cosine * cosine);
+            const double c = a * b;
+            const double e = a * a - b * b;
+            const double kappa = c / std::pow(w, 3.);
+            const double first =
+                -3. * c * e * sine * cosine / std::pow(w, 6.);
+            const double second =
+                -3. * c * e
+                * (std::cos(2. * theta) / std::pow(w, 7.)
+                   - 6. * e * sine * sine * cosine * cosine / std::pow(w, 9.));
+
+            // Outside the ellipse its normal turns in, which turns the
+            // curvature and the direction of the arc length
+            const double turn = inside ? 1. : -1.;
+
+            REQUIRE(std::abs(curvatures(point, 0) - turn * kappa)
+                    < 1e-12 * kappa);
+            REQUIRE(std::abs(curvatures(point, 1) - first)
+                    < 1e-11 * std::abs(c * e));
+            REQUIRE(std::abs(curvatures(point, 2) - turn * second)
+                    < 1e-10 * std::abs(c * e * e));
+        }
+    }
+}
+
+TEST_CASE("A straight boundary has no curvature", "[boundary]")
+{
+    const Boundary<double, 2> line({segment({-1., .5}, {2., 1.3})}, {1});
+
+    PointMatrix<double, 2> points(3, 2);
+    points << 0., 0.,
+              .5, 2.,
+              1.5, .7;
+
+    const iguana::BoundaryProjection<double> projection =
+        iguana::project_closest_points(identity(), line, points);
+
+    REQUIRE(iguana::curvature_derivs(line, projection, 3).cwiseAbs()
+                .maxCoeff() < 1e-15);
+    REQUIRE_THROWS_AS(iguana::curvature_derivs(line, projection, -1),
                       std::invalid_argument);
 }

@@ -16,6 +16,7 @@
 #include "iguana/geometry/nurbs/bezier_points.hpp"
 #include "iguana/geometry/nurbs/curve_projection.hpp"
 #include "iguana/grid/knot_vector.hpp"
+#include "iguana/utils/taylor_series.hpp"
 
 namespace iguana
 {
@@ -72,6 +73,7 @@ BoundaryProjection<T> project_closest_phys(const Boundary<T, 2>& boundary,
 
     BoundaryProjection<T> projection;
     projection.faces.resize(num_points);
+    projection.elements.resize(num_points);
     projection.parameters.resize(num_points);
     projection.positions.resize(num_points, 2);
     projection.normals.resize(num_points, 2);
@@ -123,6 +125,7 @@ BoundaryProjection<T> project_closest_phys(const Boundary<T, 2>& boundary,
         boundary.normal_on_element(nearest->face, actives, gradients, normal);
 
         projection.faces(point) = nearest->face;
+        projection.elements(point) = nearest->element;
         projection.parameters(point) = parameter(0, 0);
         projection.positions.row(point) = position.row(0);
         projection.normals.row(point) = normal.row(0);
@@ -162,11 +165,92 @@ BoundaryProjection<typename Basis::Scalar> project_closest_points(
     return projection;
 }
 
+template<std::floating_point T>
+Eigen::MatrixX<T> curvature_derivs(const Boundary<T, 2>& boundary,
+                                   const BoundaryProjection<T>& projection,
+                                   int order)
+{
+    using Face = typename Boundary<T, 2>::Face;
+
+    if (order < 0)
+        throw std::invalid_argument("curvature_derivs: "
+                                    "the order must be non-negative");
+
+    const Eigen::Index num_points = projection.faces.size();
+    Eigen::MatrixX<T> curvatures(num_points, order + 1);
+
+    // Buffers reused over the points
+    Eigen::MatrixX<T> parameter(1, 1);
+    std::vector<Eigen::MatrixX<T>> derivs;
+    Eigen::VectorXi actives;
+    PointMatrix<T, 2> curve_deriv;
+    Eigen::VectorX<T> dx(order + 2);
+    Eigen::VectorX<T> dy(order + 2);
+
+    for (Eigen::Index point = 0; point < num_points; ++point) {
+        const int face = projection.faces(point);
+        const int element = projection.elements(point);
+        const Face& curve = boundary.face(face);
+        const BSpline<T>& bspline = curve.basis().bspline().axis(0);
+
+        // Series of x' and y' in the parameter about the closest point,
+        // with coefficients x^(k + 1) / k!
+        parameter(0, 0) = projection.parameters(point);
+        curve.basis().derivs_on_element({bspline.first_active(element)},
+                                        parameter, order + 2, derivs);
+        curve.basis().active_on_element(element, actives);
+
+        T factorial{1};
+
+        for (int k = 0; k < order + 2; ++k) {
+            if (k > 0)
+                factorial *= static_cast<T>(k);
+
+            curve.position_on_element(
+                actives, derivs[static_cast<std::size_t>(k) + 1], curve_deriv);
+            dx(k) = curve_deriv(0, 0) / factorial;
+            dy(k) = curve_deriv(0, 1) / factorial;
+        }
+
+        // κ = (x' y'' − y' x'') / |c'|^3 along the parametrization, whose
+        // arc length gives d / ds = |c'|^(−1) d / du
+        const Eigen::VectorX<T> ddx = series_derivative(dx);
+        const Eigen::VectorX<T> ddy = series_derivative(dy);
+        const Eigen::VectorX<T> cross =
+            series_product(dx, ddy) - series_product(dy, ddx);
+        const Eigen::VectorX<T> speed_squared =
+            series_product(dx, dx) + series_product(dy, dy);
+        const Eigen::VectorX<T> inverse_speed =
+            series_power(speed_squared, T{-0.5});
+        Eigen::VectorX<T> derivative =
+            series_product(cross, series_power(speed_squared, T{-1.5}));
+
+        // τ follows the parametrization where the face sign is 1 and runs
+        // against it otherwise, with ν and κ turning with the sign
+        const T sign = static_cast<T>(boundary.sign(face));
+        T factor = sign;
+
+        for (int j = 0; j <= order; ++j) {
+            curvatures(point, j) = factor * derivative(0);
+
+            if (j < order) {
+                derivative = series_product(inverse_speed,
+                                            series_derivative(derivative));
+                factor *= sign;
+            }
+        }
+    }
+
+    return curvatures;
+}
+
 template BoundaryProjection<double> project_closest_points(
     const Patch<TensorBSpline<double, 2>, 2>&, const Boundary<double, 2>&,
     const PointMatrix<double, 2>&);
 template BoundaryProjection<double> project_closest_points(
     const Patch<TensorNURBS<double, 2>, 2>&, const Boundary<double, 2>&,
     const PointMatrix<double, 2>&);
+template Eigen::MatrixX<double> curvature_derivs(
+    const Boundary<double, 2>&, const BoundaryProjection<double>&, int);
 
 } // namespace iguana
