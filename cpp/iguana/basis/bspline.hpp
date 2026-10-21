@@ -103,7 +103,8 @@ public:
      * @brief Evaluates the derivatives of the non-zero functions on an
      *        element, from order 0 up to a given order
      *
-     * Derivatives above the degree vanish
+     * Derivatives above the degree vanish. At points outside the element
+     * they are those of its polynomial, extended beyond it
      *
      * @param first_active Index of the first function active on the element
      * @param points Parameters at which the functions are evaluated
@@ -114,7 +115,6 @@ public:
      * @pre @p order is non-negative
      * @pre @p first_active is the first active function of an existing,
      *      non-empty knot span
-     * @pre Every point in @p points lies inside that element
      */
     void derivs_on_element(int first_active, std::span<const T> points,
                            int order,
