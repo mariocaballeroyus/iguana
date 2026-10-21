@@ -657,15 +657,22 @@ private:
     void finalize();
 
     /**
-     * @brief Degrees of freedom of the two cells of a face, those of the
-     *        cell before it followed by those of the cell after it, the order
-     *        of the rows of the terms on faces
+     * @brief Degrees of freedom of the two cells of a face, each once, and
+     *        the one of each row of the terms on the face
+     *
+     * The rows of a term on a face are those of the cell before it followed
+     * by those of the cell after it, so that a function active on both cells
+     * has two rows, which share its degree of freedom
      *
      * @param before Cell before the face
      * @param after Cell after the face
-     * @param dofs Output, overwritten
+     * @param dofs Output, overwritten, those of the cell before followed by
+     *        those of the cell after that the cell before does not have
+     * @param positions Output, overwritten, the index in @p dofs of the
+     *        degree of freedom of each row
      */
-    void face_dofs(int before, int after, std::vector<int>& dofs) const;
+    void face_dofs(int before, int after, std::vector<int>& dofs,
+                   std::vector<int>& positions) const;
 
     /// @brief Space whose degrees of freedom number the system, a view of
     ///        its fields
