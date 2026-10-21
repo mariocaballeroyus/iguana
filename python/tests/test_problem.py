@@ -4,16 +4,17 @@
 """Tests of the linear problems on a function space, solved with PETSc"""
 
 import itertools
+import math
 
 import numpy as np
 import pytest
 
 import iguana
-from iguana import (Boundary, CellType, FunctionSpace, GhostPenalty,
-                    HierarchicalGrid, MixedFunctionSpace, NitscheCondition,
-                    PoissonElement, QuadratureBoundary, QuadratureDomain,
-                    SkeletonNitscheCondition, StokesElement,
-                    SurrogateBoundary, classify_cells)
+from iguana import (Boundary, CellType, Derivatives, FunctionSpace,
+                    GhostPenalty, HierarchicalGrid, MixedFunctionSpace,
+                    NitscheCondition, PoissonElement, QuadratureBoundary,
+                    QuadratureDomain, SkeletonNitscheCondition,
+                    StokesElement, SurrogateBoundary, classify_cells)
 
 try:
     from iguana.petsc import LinearProblem
@@ -96,6 +97,21 @@ def ellipse():
         degree=2, knots=[0., 0., 0., .25, .25, .5, .5, .75, .75, 1., 1., 1.],
         control_points=[1., 1.5] + [.6, .9] * directions,
         weights=[1., corner, 1., corner, 1., corner, 1., corner, 1.])])
+
+
+def polynomial_derivatives(terms):
+    """Exact derivatives d_x^a d_y^b of the polynomial sum c x^i y^j of terms
+    (c, i, j), as a condition shifted with the equation takes them."""
+    def derivatives(points, order):
+        x, y = points.T
+
+        return np.column_stack([
+            sum(c * math.perm(i, a) * math.perm(j, b)
+                * x ** max(i - a, 0) * y ** max(j - b, 0)
+                for c, i, j in terms) * np.ones(len(points))
+            for b in range(order + 1) for a in range(order + 1 - b)])
+
+    return Derivatives(derivatives)
 
 
 def cubic_coefficients(space, terms):
@@ -290,18 +306,17 @@ def test_poisson_at_high_degree_by_the_generalized_shifted_boundary_method():
              (2., 0, 1), (1., 0, 0)]
     harmonic = [(1., 3, 0), (-3., 1, 2)]
 
-    def field(terms):
-        return lambda points: sum(c * points[:, 0] ** i * points[:, 1] ** j
-                                  for c, i, j in terms)
+    # f = −Δu = −7 x − 2 y for both
+    linear = [(-7., 1, 0), (-2., 0, 1)]
 
     def source(points):
         x, y = points.T
         return -7. * x - 2. * y
 
     element = PoissonElement()
-    condition = SkeletonNitscheCondition(element.u, patch, cell_types,
-                                         boundary, field(cubic), 320.,
-                                         source=source)
+    condition = SkeletonNitscheCondition(
+        element.u, patch, cell_types, boundary, polynomial_derivatives(cubic),
+        320., source=polynomial_derivatives(linear))
     ghost = GhostPenalty(element.u, patch, cell_types, .5)
     problem = LinearProblem(element, space, quadrature, source,
                             cell_weights=fractions, conditions=[condition],
@@ -311,7 +326,7 @@ def test_poisson_at_high_degree_by_the_generalized_shifted_boundary_method():
     # Exact to round-off, which the conditioning of the cells the penalty
     # alone determines amplifies
     for terms in (cubic, cubic + harmonic):
-        condition.values = field(terms)
+        condition.values = polynomial_derivatives(terms)
         exact = cubic_coefficients(space, terms)
 
         assert (np.abs(problem.solve() - exact).max()

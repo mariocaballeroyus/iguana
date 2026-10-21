@@ -17,7 +17,6 @@ element. Its values can change between solves, as in a time loop.
 
 from __future__ import annotations
 
-import math
 from collections.abc import Callable, Sequence
 
 import numpy as np
@@ -335,6 +334,59 @@ class NeumannCondition:
         return f'NeumannCondition({self._trace!r})'
 
 
+class Derivatives:
+    """Data given by their Cartesian derivatives, such as the exact ones of a
+    formula, for a condition shifted with the Poisson equation."""
+
+    def __init__(
+        self,
+        function: Callable[[npt.NDArray[np.float64], int], npt.ArrayLike],
+    ) -> None:
+        """Initialize the data from a function giving their derivatives.
+
+        Args:
+            function: A function that takes points of shape
+                `(num_points, 2)` and a total order, and returns the
+                derivatives d_x^a d_y^b of the data with a + b up to that
+                order at each point, of shape `(num_points, num_terms)`.
+                The terms run over b and, for each, over a, with a running
+                fastest: (0, 0), (1, 0), ..., (order, 0), (0, 1), ...,
+                (0, order).
+
+        Raises:
+            TypeError: If the function is not callable.
+        """
+        if not callable(function):
+            raise TypeError('the derivatives must be a function of the points '
+                            'and an order')
+
+        self._function = function
+
+    def _at(
+        self,
+        points: npt.NDArray[np.float64],
+        order: int,
+    ) -> npt.NDArray[np.float64]:
+        """The derivatives at points up to an order, checked to give each
+        point one per term, and none below order zero."""
+        num_terms = (order + 1) * (order + 2) // 2 if order >= 0 else 0
+
+        if num_terms == 0:
+            return np.zeros((len(points), 0))
+
+        derivatives = np.asarray(self._function(points, order),
+                                 dtype=np.float64)
+
+        if derivatives.shape != (len(points), num_terms):
+            raise ValueError('the derivatives must give each point one value '
+                             'per term of the order')
+
+        return derivatives
+
+    def __repr__(self) -> str:
+        return f'Derivatives({self._function!r})'
+
+
 class SkeletonNitscheCondition:
     """Values imposed on a trace of an element by Nitsche's method across the
     faces of a patch where the weights of the cells jump, as the
@@ -347,11 +399,12 @@ class SkeletonNitscheCondition:
         cell_types: Sequence[CellType],
         boundary: Boundary,
         values: (npt.ArrayLike
-                 | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
+                 | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]
+                 | Derivatives),
         penalty: float,
         order: int | None = None,
-        source: Callable[[npt.NDArray[np.float64]], npt.ArrayLike]
-        | None = None,
+        source: (Callable[[npt.NDArray[np.float64]], npt.ArrayLike]
+                 | Derivatives | None) = None,
     ) -> None:
         """Initialize the condition imposing values on a trace.
 
@@ -370,9 +423,19 @@ class SkeletonNitscheCondition:
         point, whose normal derivatives from the second on the equation
         gives from the values, the source and the curvature of the
         boundary. It keeps the condition coercive at high degree. The
-        boundary must then be smooth at the closest points, and the values
-        and the source functions of the points around them, on both sides
-        of the boundary.
+        boundary must then be smooth at the closest points.
+
+        The series takes the derivatives of the values and of the source,
+        each given in one of two ways:
+
+        - as `Derivatives`, their Cartesian derivatives at the closest
+          points, such as the exact ones of a formula;
+        - as a function of points whose values are interpolated, the values
+          along the boundary in a spline on each face, as fine as the cells
+          and of the order of the series or the degree of the patch,
+          whichever is higher, and the source in the basis of the patch, so
+          that their derivatives are those of the splines. This suits data
+          known only at points, such as those of a coupled solver.
 
         Only faces between two cells carry it, so the cells of non-zero
         weight must stay off the edge of the patch.
@@ -389,28 +452,33 @@ class SkeletonNitscheCondition:
             values: The values imposed at the closest point of each face
                 point, one per point or two for the velocity, or a function
                 that takes those closest points, of shape `(num_points, 2)`,
-                and returns their values.
+                and returns their values. With a source, their `Derivatives`
+                or a function of points along the boundary returning their
+                values there, to interpolate.
             penalty: The penalty, positive, which the size of the cells
                 scales, as for `NitscheCondition`.
             order: Total order of the Taylor expansion towards the
                 boundary, or of the normal series with a source,
                 nonnegative. Without it, the highest degree of the patch.
-            source: The source f of the Poisson equation −Δu = f, a
-                function of points of shape `(num_points, 2)` returning its
-                values, with which the expansion is the normal series of the
-                solution. Without it, the Taylor series.
+            source: The source f of the Poisson equation −Δu = f, as its
+                `Derivatives` or as a function of points of the patch
+                returning its values, to interpolate, with which the
+                expansion is the normal series of the solution. Without it,
+                the Taylor series.
 
         Raises:
             TypeError: If the trace is not the trace of an element, if the
                 patch is not a planar patch, if the boundary is not a
                 boundary, or, with a source, if the source or the values are
-                not functions of the points.
+                neither `Derivatives` nor functions of the points.
             ValueError: If there is not one cell type per element, if the
                 map of the patch is not affine, if the values are not those
                 of the trace at each point, if the penalty is not positive,
                 if the order is negative, or, with a source, if the trace is
-                not that of a Poisson element or if the boundary is not
-                smooth at a closest point.
+                not that of a Poisson element, if the boundary is not smooth
+                at a closest point, if derivatives do not give each point
+                one per term of their order, or if an interpolated source
+                needs derivatives above the degree of the patch.
         """
         if not isinstance(trace, _TRACES):
             raise TypeError('the trace must be the trace of an element')
@@ -442,12 +510,13 @@ class SkeletonNitscheCondition:
                 raise ValueError('only the trace of a Poisson element takes '
                                  'a source')
 
-            if not callable(source):
-                raise TypeError('the source must be a function of the points')
+            if not _is_data(source):
+                raise TypeError('the source must be derivatives or a function '
+                                'of the points')
 
-            if not callable(values):
-                raise TypeError('the values must be a function of the points '
-                                'with a source')
+            if not _is_data(values):
+                raise TypeError('the values must be derivatives or a function '
+                                'of the points with a source')
 
         # The faces between cells whose weights may jump, with as many
         # points as on those of a ghost penalty, projected onto the boundary
@@ -464,10 +533,10 @@ class SkeletonNitscheCondition:
 
         self._trace = trace
         self._patch = patch
+        self._boundary = boundary
         self._quadrature = quadrature
         self._projection = projection
         self._order = order
-        self._values = _values(positions, values, trace._shape)
         self._penalty = float(penalty)
         self._source = source
 
@@ -476,22 +545,23 @@ class SkeletonNitscheCondition:
         # points are those of the series, from the derivatives of the values
         # and of the source there
         if source is None:
+            self._values = _values(positions, values, trace._shape)
             self._imposed = self._values
         else:
             shift = _cpp.poisson_shift(
                 patch=patch._cpp_object, boundary=boundary._cpp_object,
                 projection=projection, order=order)
             projection.shift_weights = shift.weights
-            distances = np.abs(np.array(shift.distances))
-            radius = distances.max() if distances.max() > 0. else 1.
 
             self._order = shift.order
             self._series = order
-            self._radius = radius
             self._value_weights = np.array(shift.value_weights)
+            self._tangent_weights = np.array(shift.tangent_weights)
+            self._data_degree = max(order, *patch.degrees)
             self._source_part = np.sum(
-                np.array(shift.source_weights)
-                * _derivatives(source, positions, order - 2, radius), axis=1)
+                np.array(shift.source_weights) * self._source_derivatives(),
+                axis=1)
+            self._values = np.empty((1, len(positions)))
             self._imposed = np.empty_like(self._values)
             self._impose(values)
 
@@ -512,47 +582,81 @@ class SkeletonNitscheCondition:
 
     @property
     def values(self) -> npt.NDArray[np.float64]:
-        """Values imposed at the closest point of each face point, of shape
+        """Values at the closest point of each face point, of shape
         `(num_points,)`, or `(num_points, 2)` for the velocity. They are set
         as at initialization, by their values or by a function of the
-        closest points."""
+        closest points, or with a source by their `Derivatives` or a function
+        of points along the boundary, whose interpolant gives them."""
         return _given(self._values, self._trace._shape)
 
     @values.setter
     def values(
         self,
         values: (npt.ArrayLike
-                 | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
+                 | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]
+                 | Derivatives),
     ) -> None:
-        positions = np.array(self._projection.positions)
-
-        if self._source is not None and not callable(values):
-            raise TypeError('the values must be a function of the points '
-                            'with a source')
-
-        self._values[...] = _values(positions, values, self._trace._shape)
-
-        if self._source is not None:
+        if self._source is None:
+            self._values[...] = _values(np.array(self._projection.positions),
+                                        values, self._trace._shape)
+        elif _is_data(values):
             self._impose(values)
+        else:
+            raise TypeError('the values must be derivatives or a function of '
+                            'the points with a source')
 
     @property
     def penalty(self) -> float:
         """The penalty."""
         return self._penalty
 
+    def _source_derivatives(self) -> npt.NDArray[np.float64]:
+        """Cartesian derivatives of the source at the closest points, of the
+        order of the series less two, given or of its interpolant in the
+        basis of the patch."""
+        positions = np.array(self._projection.positions)
+        order = self._series - 2
+
+        if isinstance(self._source, Derivatives):
+            return self._source._at(positions, order)
+
+        # Below order two the series takes no source
+        if order < 0:
+            return np.zeros((len(positions), 0))
+
+        patch = self._patch._cpp_object
+        nodes = np.array(_cpp.interpolation_points(patch=patch))
+
+        return np.array(_cpp.interpolated_derivs(
+            patch=patch, values=_values(nodes, self._source, ())[0],
+            points=positions, order=order))
+
     def _impose(
         self,
-        values: Callable[[npt.NDArray[np.float64]], npt.ArrayLike],
+        values: (Callable[[npt.NDArray[np.float64]], npt.ArrayLike]
+                 | Derivatives),
     ) -> None:
         """Data imposed at the points by the series rewritten with the
         equation, in place, from the derivatives of the values at the
-        closest points, their values themselves taken exactly."""
-        positions = np.array(self._projection.positions)
-        derivatives = _derivatives(values, positions, self._series,
-                                   self._radius)
-        derivatives[:, 0] = self._values[0]
+        closest points: Cartesian ones given, or those along the boundary of
+        their interpolant."""
+        if isinstance(values, Derivatives):
+            derivatives = values._at(np.array(self._projection.positions),
+                                     self._series)
+            weights = self._value_weights
+        else:
+            patch = self._patch._cpp_object
+            boundary = self._boundary._cpp_object
+            nodes = np.array(_cpp.boundary_interpolation_points(
+                patch=patch, boundary=boundary, degree=self._data_degree))
+            derivatives = np.array(_cpp.boundary_interpolated_derivs(
+                patch=patch, boundary=boundary, degree=self._data_degree,
+                values=_values(nodes, values, ())[0],
+                projection=self._projection, order=self._series))
+            weights = self._tangent_weights
 
-        self._imposed[0] = (np.sum(self._value_weights * derivatives, axis=1)
+        self._values[0] = derivatives[:, 0]
+        self._imposed[0] = (np.sum(weights * derivatives, axis=1)
                             + self._source_part)
 
     def _add_to(self, form: _cpp.Form2d,
@@ -615,40 +719,10 @@ def _values(
     return np.ascontiguousarray(values.reshape(len(points), -1).T)
 
 
-def _derivatives(
-    function: Callable[[npt.NDArray[np.float64]], npt.ArrayLike],
-    points: npt.NDArray[np.float64],
-    order: int,
-    radius: float,
-) -> npt.NDArray[np.float64]:
-    """Cartesian derivatives d_x^a d_y^b of a function of points up to a
-    total order at each point, of shape `(num_points, num_terms)` with a
-    running fastest, from a polynomial of two degrees more fitted to its
-    values at Chebyshev points of a square of the radius around each. The fit
-    is exact for polynomials of that degree, and the same for every point."""
-    if order < 0:
-        return np.zeros((len(points), 0))
-
-    degree = order + 2
-    nodes = np.cos(np.pi * (np.arange(degree + 2) + .5) / (degree + 2))
-    stencil = np.stack(np.meshgrid(nodes, nodes), axis=-1).reshape(-1, 2)
-    fitted = [(a, b) for b in range(degree + 1) for a in range(degree + 1 - b)]
-    vandermonde = np.column_stack([stencil[:, 0] ** a * stencil[:, 1] ** b
-                                   for a, b in fitted])
-    inverse = np.linalg.pinv(vandermonde)
-
-    # The values at the stencil of every point at once
-    around = points[:, None, :] + radius * stencil[None, :, :]
-    values = np.asarray(function(around.reshape(-1, 2)), dtype=np.float64)
-    coefficients = values.reshape(len(points), -1) @ inverse.T
-
-    # d^alpha at the center is alpha! c_alpha / radius^|alpha|
-    terms = [(a, b) for b in range(order + 1) for a in range(order + 1 - b)]
-    scales = np.array([math.factorial(a) * math.factorial(b)
-                       / radius ** (a + b) for a, b in terms])
-    columns = [fitted.index(term) for term in terms]
-
-    return coefficients[:, columns] * scales
+def _is_data(data: object) -> bool:
+    """Whether data of a condition shifted with the equation are
+    `Derivatives` or a function of points to interpolate."""
+    return isinstance(data, Derivatives) or callable(data)
 
 
 def _given(
