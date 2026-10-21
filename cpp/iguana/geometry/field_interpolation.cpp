@@ -19,11 +19,6 @@
 namespace iguana
 {
 
-namespace
-{
-
-/// @brief Collocation matrix of a univariate basis at its Greville
-///        abscissae, one row per abscissa and one column per function
 template<std::floating_point T>
 Eigen::MatrixX<T> collocation_matrix(const BSpline<T>& bspline)
 {
@@ -45,8 +40,6 @@ Eigen::MatrixX<T> collocation_matrix(const BSpline<T>& bspline)
 
     return matrix;
 }
-
-} // namespace
 
 template<std::floating_point T>
 PointMatrix<T, 2> interpolation_points(
@@ -164,6 +157,7 @@ Eigen::MatrixX<T> interpolated_derivs(
     return derivs;
 }
 
+template Eigen::MatrixXd collocation_matrix(const BSpline<double>&);
 template PointMatrix<double, 2> interpolation_points(
     const Patch<TensorBSpline<double, 2>, 2>&);
 template Eigen::MatrixXd interpolated_derivs(
