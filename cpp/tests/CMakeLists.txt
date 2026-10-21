@@ -30,7 +30,8 @@ add_executable(iguana_tests
     element/poisson/test_poisson_traces.cpp
     element/stokes/test_stokes_element.cpp
     utils/test_bernstein.cpp
-    utils/test_legendre.cpp)
+    utils/test_legendre.cpp
+    utils/test_taylor_series.cpp)
 
 target_compile_features(iguana_tests PRIVATE cxx_std_20)
 

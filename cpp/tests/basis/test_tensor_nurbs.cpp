@@ -13,6 +13,7 @@
 #include <type_traits>
 #include <utility>
 #include <variant>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -219,6 +220,60 @@ TEST_CASE("NURBS derivatives match finite differences", "[tensor_nurbs]")
                 }
             }
         }, entry);
+    }
+}
+
+TEST_CASE("NURBS curve derivatives of every order sum to zero and match "
+          "the lower ones", "[tensor_nurbs]")
+{
+    const TensorNURBS<double, 1> basis =
+        uneven(TensorBSpline<double, 1>({cubic()}));
+    const double step = 1e-6;
+    const int order = 5;
+
+    std::vector<Eigen::MatrixXd> derivs;
+    std::vector<Eigen::MatrixXd> above;
+    std::vector<Eigen::MatrixXd> below;
+    Eigen::MatrixXd values;
+    std::array<Eigen::MatrixXd, 1> gradients;
+    std::array<Eigen::MatrixXd, 1> hessians;
+
+    for (const auto& element : basis.grid()) {
+        INFO("element " << element.index());
+        const std::array<int, 1>& first = element.first_active();
+        const Eigen::MatrixXd points = points_on(element);
+
+        basis.derivs_on_element(first, points, order, derivs);
+        basis.hess_on_element(first, points, values, gradients, hessians);
+
+        REQUIRE(derivs.size() == static_cast<std::size_t>(order) + 1);
+        REQUIRE(derivs[0].isApprox(values, 1e-14));
+        REQUIRE(derivs[1].isApprox(gradients[0], 1e-14));
+        REQUIRE(derivs[2].isApprox(hessians[0], 1e-13));
+
+        // The functions partition unity, so their derivatives sum to zero
+        REQUIRE((derivs[0].colwise().sum().array() - 1.).abs().maxCoeff()
+                <= 1e-14);
+
+        for (int k = 1; k <= order; ++k) {
+            INFO("order " << k);
+            const double scale = derivs[k].cwiseAbs().maxCoeff();
+
+            REQUIRE(derivs[k].colwise().sum().cwiseAbs().maxCoeff()
+                    <= 1e-12 * scale);
+        }
+
+        // Each order is the derivative of the one below, beyond the Hessian
+        Eigen::MatrixXd shifted = points.array() + step;
+        basis.derivs_on_element(first, shifted, order, above);
+        shifted.array() -= 2. * step;
+        basis.derivs_on_element(first, shifted, order, below);
+
+        for (int k = 3; k <= order; ++k) {
+            INFO("order " << k);
+            REQUIRE(matches_difference(derivs[k], above[k - 1], below[k - 1],
+                                       step));
+        }
     }
 }
 
