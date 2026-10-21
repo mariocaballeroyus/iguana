@@ -33,6 +33,7 @@ add_library(iguana
     assembly/element_values.cpp
     element/poisson/poisson_element.cpp
     element/poisson/poisson_normal_series.cpp
+    element/poisson/poisson_shift.cpp
     element/stokes/stokes_element.cpp
     element/stokes/stokes_stabilized_element.cpp
     condition/penalty_condition.cpp

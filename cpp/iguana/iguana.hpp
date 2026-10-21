@@ -42,6 +42,7 @@
 #include "element/flux.hpp"
 #include "element/poisson/poisson_element.hpp"
 #include "element/poisson/poisson_normal_series.hpp"
+#include "element/poisson/poisson_shift.hpp"
 #include "element/poisson/poisson_traces.hpp"
 #include "element/stokes/stokes_element.hpp"
 #include "element/stokes/stokes_stabilized_element.hpp"
