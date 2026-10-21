@@ -103,6 +103,24 @@ constexpr int simplex_size(int order) noexcept
 }
 
 /**
+ * @brief Index of a multi-index of two directions among those of total
+ *        order at most an order, with the first direction running fastest
+ *
+ *     (0, 0), (1, 0), ..., (order, 0), (0, 1), ..., (0, order)
+ *
+ * @param a Order along the first direction
+ * @param b Order along the second direction
+ * @param order Highest total order
+ * @return Index below simplex_size(order)
+ *
+ * @pre @p a and @p b are non-negative and add up to at most @p order
+ */
+constexpr int simplex_index(int a, int b, int order) noexcept
+{
+    return b * (order + 1) - b * (b - 1) / 2 + a;
+}
+
+/**
  * @brief Index of the second derivative along two directions, the pure ones
  *        first, then the mixed ones in lexicographic order of their
  *        directions: xx, yy, zz, xy, xz, yz
