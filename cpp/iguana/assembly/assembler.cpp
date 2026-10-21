@@ -16,8 +16,6 @@
 #include <string>
 #include <vector>
 
-#include <Eigen/SparseCore>
-
 #include "iguana/assembly/element_values.hpp"
 #include "iguana/basis/tensor_bspline.hpp"
 #include "iguana/basis/tensor_nurbs.hpp"
@@ -168,6 +166,102 @@ bool simple_interior_knots(const KnotVector<T>& knot_vector)
     return true;
 }
 
+/**
+ * @brief Cells around an element of a grid: the element itself and, with
+ *        the faces coupled, its neighbours across each of its faces
+ *
+ * @param element Element index, in the numbering of the grid
+ * @param counts Number of elements of the grid in each direction
+ * @param couple_faces Whether to add the neighbours across the faces
+ * @param cells Output, overwritten
+ */
+template<std::size_t d>
+void cells_around(int element, const std::array<int, d>& counts,
+                  bool couple_faces, std::vector<int>& cells)
+{
+    cells.assign(1, element);
+
+    if (!couple_faces)
+        return;
+
+    const std::array<int, d> index = unflatten(element, counts);
+
+    for (std::size_t direction = 0; direction < d; ++direction) {
+        for (const int step : {-1, 1}) {
+            std::array<int, d> neighbour = index;
+            neighbour[direction] += step;
+
+            if (neighbour[direction] >= 0
+                && neighbour[direction] < counts[direction])
+                cells.push_back(flatten(neighbour, counts));
+        }
+    }
+}
+
+/**
+ * @brief Compressed rows of the sparsity pattern of a space: an entry for
+ *        every pair of degrees of freedom sharing an element and, with the
+ *        faces coupled, for every pair on the two cells of an interior face
+ *
+ * Each row takes the degrees of freedom of the cells around its elements
+ * once, skipping those it already holds, so that building the pattern
+ * takes the memory of the pattern itself
+ *
+ * @param space Space whose degrees of freedom number the rows and columns
+ * @param counts Number of elements of the grid in each direction
+ * @param couple_faces Whether to pair the two cells of every interior face
+ * @param offsets Output, the first entry of each row, followed by the
+ *        number of entries
+ * @param columns Output, the columns of each row in increasing order
+ */
+template<typename Basis>
+void sparsity_pattern(const MixedFunctionSpace<Basis>& space,
+                      const std::array<int, Basis::dimension>& counts,
+                      bool couple_faces, std::vector<PetscInt>& offsets,
+                      std::vector<PetscInt>& columns)
+{
+    const int num_elements = space.num_elements();
+    const int num_dofs = space.num_dofs();
+
+    // The degrees of freedom of each element, and the elements of each
+    // degree of freedom, outside cells listing none
+    std::vector<std::vector<int>> element_dofs(num_elements);
+    std::vector<std::vector<int>> dof_elements(num_dofs);
+
+    for (int element = 0; element < num_elements; ++element) {
+        space.dofs_on_element(element, element_dofs[element]);
+
+        for (const int dof : element_dofs[element])
+            dof_elements[dof].push_back(element);
+    }
+
+    // The last row that took each column, which marks the columns a row
+    // already holds without clearing anything between rows
+    std::vector<int> last_row(num_dofs, -1);
+    std::vector<int> cells;
+    offsets.assign(1, 0);
+    columns.clear();
+
+    for (int row = 0; row < num_dofs; ++row) {
+        for (const int element : dof_elements[row]) {
+            cells_around(element, counts, couple_faces, cells);
+
+            for (const int cell : cells) {
+                for (const int col : element_dofs[cell]) {
+                    if (last_row[col] == row)
+                        continue;
+
+                    last_row[col] = row;
+                    columns.push_back(col);
+                }
+            }
+        }
+
+        std::sort(columns.begin() + offsets.back(), columns.end());
+        offsets.push_back(static_cast<PetscInt>(columns.size()));
+    }
+}
+
 } // namespace
 
 template<typename Basis, std::size_t n>
@@ -193,61 +287,21 @@ Assembler<Basis, n>::Assembler(const MixedFunctionSpace<Basis>& space,
                                     "the space must have the elements of the "
                                     "patch");
 
-    const int num_elements = space.num_elements();
     const int num_dofs = space.num_dofs();
 
     // Sparsity pattern: K_ij can only be non-zero when functions i and j
-    // share an element, so each pair of their components gets an explicit
-    // zero, duplicates merging into one entry
-    std::vector<Eigen::Triplet<Scalar>> entries;
-    std::vector<int> dofs;
+    // share an element, and a term on a face pairs the functions of its two
+    // cells, so with the faces coupled, so do the cells of every interior
+    // face of the grid
+    std::array<int, dim> counts{};
 
-    for (int cell = 0; cell < num_elements; ++cell) {
-        space.dofs_on_element(cell, dofs);
+    for (std::size_t direction = 0; direction < dim; ++direction)
+        counts[direction] =
+            patch.basis().grid().knots(direction).num_elements();
 
-        for (const int row : dofs) {
-            for (const int col : dofs)
-                entries.emplace_back(row, col, Scalar{0});
-        }
-    }
-
-    // A term on a face pairs the functions of its two cells, so with the
-    // faces coupled, every interior face of the grid adds those pairs, each
-    // face found once from the cell before it
-    if (couple_faces) {
-        std::array<int, dim> counts{};
-
-        for (std::size_t direction = 0; direction < dim; ++direction)
-            counts[direction] =
-                patch.basis().grid().knots(direction).num_elements();
-
-        std::vector<int> after;
-
-        for (int cell = 0; cell < num_elements; ++cell) {
-            const std::array<int, dim> index = unflatten(cell, counts);
-            space.dofs_on_element(cell, dofs);
-
-            for (std::size_t direction = 0; direction < dim; ++direction) {
-                std::array<int, dim> next = index;
-                next[direction] += 1;
-
-                if (next[direction] == counts[direction])
-                    continue;
-
-                space.dofs_on_element(flatten(next, counts), after);
-
-                for (const int row : dofs) {
-                    for (const int col : after) {
-                        entries.emplace_back(row, col, Scalar{0});
-                        entries.emplace_back(col, row, Scalar{0});
-                    }
-                }
-            }
-        }
-    }
-
-    Eigen::SparseMatrix<Scalar, Eigen::RowMajor> pattern(num_dofs, num_dofs);
-    pattern.setFromTriplets(entries.begin(), entries.end());
+    std::vector<PetscInt> offsets;
+    std::vector<PetscInt> columns;
+    sparsity_pattern(space, counts, couple_faces, offsets, columns);
 
     // The compressed rows of the pattern preallocate the stiffness, its
     // explicit zeros the only entries a write may reach. The block size
@@ -261,9 +315,8 @@ Assembler<Basis, n>::Assembler(const MixedFunctionSpace<Basis>& space,
                             num_dofs));
     check_petsc(MatSetBlockSize(stiffness_, block_size));
     check_petsc(MatSetType(stiffness_, MATSEQAIJ));
-    check_petsc(MatSeqAIJSetPreallocationCSR(
-        stiffness_, pattern.outerIndexPtr(), pattern.innerIndexPtr(),
-        nullptr));
+    check_petsc(MatSeqAIJSetPreallocationCSR(stiffness_, offsets.data(),
+                                             columns.data(), nullptr));
 
     // The mass shares the pattern, and both read local matrices by columns,
     // as Eigen stores them, and refuse entries outside the pattern
