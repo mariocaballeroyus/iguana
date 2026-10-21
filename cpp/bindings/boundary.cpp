@@ -80,11 +80,28 @@ void boundary(py::module_& module)
         .def_readonly("distances", &PoissonShift2d::distances)
         .def_readonly("weights", &PoissonShift2d::weights)
         .def_readonly("value_weights", &PoissonShift2d::value_weights)
+        .def_readonly("tangent_weights", &PoissonShift2d::tangent_weights)
         .def_readonly("source_weights", &PoissonShift2d::source_weights);
 
     module.def("poisson_shift", &poisson_shift<TensorBSpline<double, 2>>,
                py::arg("patch"), py::arg("boundary"), py::arg("projection"),
                py::arg("order"));
+
+    // Data known at points, interpolated in the basis of a patch or in
+    // splines along the faces of a boundary, with the derivatives of the
+    // interpolants at points
+    module.def("interpolation_points", &interpolation_points<double>,
+               py::arg("patch"));
+    module.def("interpolated_derivs", &interpolated_derivs<double>,
+               py::arg("patch"), py::arg("values"), py::arg("points"),
+               py::arg("order"));
+    module.def("boundary_interpolation_points",
+               &boundary_interpolation_points<TensorBSpline<double, 2>>,
+               py::arg("patch"), py::arg("boundary"), py::arg("degree"));
+    module.def("boundary_interpolated_derivs",
+               &boundary_interpolated_derivs<TensorBSpline<double, 2>>,
+               py::arg("patch"), py::arg("boundary"), py::arg("degree"),
+               py::arg("values"), py::arg("projection"), py::arg("order"));
 
     py::class_<Boundary3d>(module, "Boundary3d")
         .def(py::init<std::vector<Boundary3d::Face>, std::vector<int>>(),
