@@ -128,8 +128,10 @@ class LinearProblem:
                 give each point the values the element takes, if the cell
                 weights are not one per cell, if a skeleton Nitsche
                 condition is given without them, if the time step is not
-                positive, or if a pressure reference is given for an element
-                without a pressure or is not a point of the plane.
+                positive or is given with a skeleton Nitsche condition
+                shifted with the equation, or if a pressure reference is
+                given for an element without a pressure or is not a point of
+                the plane.
         """
         if not isinstance(element, (PoissonElement, StokesElement)):
             raise TypeError('the element must be a Poisson or a Stokes '
@@ -181,6 +183,15 @@ class LinearProblem:
 
         if step is not None and not step > 0.:
             raise ValueError('the time step must be positive')
+
+        # A shift rewritten with the equation holds −Δu = f, which a time
+        # step changes
+        if step is not None and any(
+                isinstance(condition, SkeletonNitscheCondition)
+                and condition._source is not None
+                for condition in conditions):
+            raise ValueError('a condition shifted with the equation needs a '
+                             'steady problem')
 
         self._step = None if step is None else float(step)
         self._pinned = _pinned(element, space, pressure_reference)
