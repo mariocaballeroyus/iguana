@@ -72,6 +72,7 @@ BoundaryProjection<T> project_closest_phys(const Boundary<T, 2>& boundary,
 
     BoundaryProjection<T> projection;
     projection.faces.resize(num_points);
+    projection.elements.resize(num_points);
     projection.parameters.resize(num_points);
     projection.positions.resize(num_points, 2);
     projection.normals.resize(num_points, 2);
@@ -123,6 +124,7 @@ BoundaryProjection<T> project_closest_phys(const Boundary<T, 2>& boundary,
         boundary.normal_on_element(nearest->face, actives, gradients, normal);
 
         projection.faces(point) = nearest->face;
+        projection.elements(point) = nearest->element;
         projection.parameters(point) = parameter(0, 0);
         projection.positions.row(point) = position.row(0);
         projection.normals.row(point) = normal.row(0);

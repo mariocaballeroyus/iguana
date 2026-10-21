@@ -31,6 +31,10 @@ struct BoundaryProjection
     /// @brief Face holding each closest point
     Eigen::VectorXi faces;
 
+    /// @brief Element of the face holding each closest point, on which its
+    ///        position and normal are evaluated, one-sided at a knot
+    Eigen::VectorXi elements;
+
     /// @brief Parameter of the face at each closest point
     Eigen::VectorX<T> parameters;
 
@@ -60,8 +64,8 @@ struct BoundaryProjection
  * @param patch Patch whose parameter space holds the points
  * @param boundary Boundary of curves in the physical space of the patch
  * @param points Points in the parameter space of the patch, one per row
- * @return The closest point to each, with its face, parameter, normal and
- *         distance vector
+ * @return The closest point to each, with its face, element, parameter,
+ *         normal and distance vector
  *
  * @throws std::invalid_argument If the map of the patch is not affine, if
  *         the boundary has no face, or if the knot vector of a face is not
