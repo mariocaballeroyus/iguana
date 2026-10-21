@@ -43,7 +43,8 @@ PoissonShift<typename Basis::Scalar> poisson_shift(
     const Eigen::Index num_points = projection.positions.rows();
 
     PoissonShift<T> shift{
-        r, Eigen::MatrixX<T>::Zero(num_points, simplex_size(r)),
+        r, Eigen::VectorX<T>(num_points),
+        Eigen::MatrixX<T>::Zero(num_points, simplex_size(r)),
         Eigen::MatrixX<T>::Zero(num_points, simplex_size(m)),
         Eigen::MatrixX<T>::Zero(num_points, m >= 2 ? simplex_size(m - 2)
                                                    : 0)};
@@ -75,6 +76,7 @@ PoissonShift<typename Basis::Scalar> poisson_shift(
         const PoissonNormalSeries<T> series =
             poisson_normal_series(curvature, m);
         const T t = offset.dot(normal);
+        shift.distances(point) = t;
 
         Eigen::RowVectorX<T> field =
             Eigen::RowVectorX<T>::Zero(series.field.cols());

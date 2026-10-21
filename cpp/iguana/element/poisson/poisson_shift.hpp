@@ -35,6 +35,10 @@ struct PoissonShift
     ///        weights combine
     int order;
 
+    /// @brief Signed distance t of each point from its closest point, along
+    ///        the outward normal, positive outside the domain
+    Eigen::VectorX<T> distances;
+
     /// @brief Weights of the parametric derivatives of the field at the
     ///        closest points, with size (num_points, simplex_size(order)),
     ///        as BoundaryProjection::shift_weights holds them
