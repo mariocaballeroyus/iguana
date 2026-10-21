@@ -53,3 +53,28 @@ TEST_CASE("Truncated series of exponentials multiply, power and "
     REQUIRE(derivative.size() == a.size() - 1);
     REQUIRE((derivative - .7 * exponential(.7, 8)).norm() < 1e-15);
 }
+
+TEST_CASE("Several truncated series multiply and differentiate as each "
+          "alone", "[taylor_series]")
+{
+    const Eigen::VectorXd a = exponential(.7, 7);
+
+    Eigen::MatrixXd b(9, 3);
+    b << exponential(-1.9, 9), exponential(.4, 9), exponential(2.3, 9);
+
+    const Eigen::MatrixXd product = iguana::series_product(a, b);
+    const Eigen::MatrixXd derivative = iguana::series_derivative(b);
+
+    REQUIRE(product.rows() == 7);
+    REQUIRE(derivative.rows() == 8);
+
+    for (Eigen::Index column = 0; column < b.cols(); ++column) {
+        INFO("column " << column);
+        const Eigen::VectorXd series = b.col(column);
+
+        REQUIRE((product.col(column) - iguana::series_product(a, series))
+                    .norm() < 1e-15);
+        REQUIRE((derivative.col(column) - iguana::series_derivative(series))
+                    .norm() < 1e-15);
+    }
+}

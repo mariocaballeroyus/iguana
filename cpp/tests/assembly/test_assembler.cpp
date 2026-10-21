@@ -1765,6 +1765,23 @@ TEST_CASE("Skeleton conditions need coupled faces, one weight per cell and a "
                                                    fractions),
                       std::invalid_argument);
 
+    // Shift weights for the six multi-indices of order 2, given another
+    // order or one row short of the points
+    iguana::BoundaryProjection<double> weighted = projection;
+    weighted.shift_weights = Eigen::MatrixXd::Zero(faces.num_points(), 6);
+
+    REQUIRE_NOTHROW(assembler.assemble_stiffness(face, faces, weighted, 2,
+                                                 fractions));
+    REQUIRE_THROWS_AS(assembler.assemble_stiffness(face, faces, weighted, 3,
+                                                   fractions),
+                      std::invalid_argument);
+
+    weighted.shift_weights.conservativeResize(faces.num_points() - 1, 6);
+
+    REQUIRE_THROWS_AS(assembler.assemble_stiffness(face, faces, weighted, 2,
+                                                   fractions),
+                      std::invalid_argument);
+
     // A NURBS patch has no Taylor series for a projection
     using Rational = iguana::TensorNURBS<double, 2>;
     const Rational rational(basis,
