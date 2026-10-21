@@ -84,6 +84,32 @@ def blossoms(knots, degree, power):
                      for i in range(count)])
 
 
+def ellipse():
+    """Ellipse of semi-axes .6 and .9 in the middle of the rectangle of
+    sides 2 and 3, as four quadratic NURBS arcs, counterclockwise."""
+    corner = np.sqrt(.5)
+    directions = np.array([[1., 0.], [1., 1.], [0., 1.], [-1., 1.],
+                           [-1., 0.], [-1., -1.], [0., -1.], [1., -1.],
+                           [1., 0.]])
+
+    return Boundary([iguana.create_curve(
+        degree=2, knots=[0., 0., 0., .25, .25, .5, .5, .75, .75, 1., 1., 1.],
+        control_points=[1., 1.5] + [.6, .9] * directions,
+        weights=[1., corner, 1., corner, 1., corner, 1., corner, 1.])])
+
+
+def cubic_coefficients(space, terms):
+    """Coefficients of the polynomial sum c x^i y^j of terms (c, i, j) in a
+    cubic space of a rectangle from the origin, by the blossoms of each
+    power along each side."""
+    width, height = space.patch.control_points.max(axis=0)
+    knots_x, knots_y = space.knots
+
+    return sum(c * np.kron(height ** j * blossoms(knots_y, 3, j),
+                           width ** i * blossoms(knots_x, 3, i))
+               for c, i, j in terms)
+
+
 def stokes():
     """Element of a fluid, its velocity the quadratic flow, and the body
     force that drives it, f = −div(2μ ε(u)) + ∇p = (1 − 2μ, 1)."""
@@ -238,6 +264,86 @@ def test_stokes_flow_by_the_generalized_shifted_boundary_method():
     assert np.abs(u[:, :2] - exact[:, :2]).max() < 1e-9
     assert np.abs((u[:, 2] - u[:, 2].mean())
                   - (exact[:, 2] - exact[:, 2].mean())).max() < 1e-9
+
+
+def test_poisson_at_high_degree_by_the_generalized_shifted_boundary_method():
+    """Inside an ellipse, with the volume fractions weighting the cells of a
+    cubic space that keeps every function, Nitsche's condition on the faces
+    where they jump, shifted with the equation, and a ghost penalty find a
+    cubic field at every degree of freedom, those beyond the ellipse
+    included, and the field with a harmonic one added once its values
+    change."""
+    patch = iguana.create_rectangle(lengths=(2., 3.), elements=(8, 12),
+                                    degrees=(3, 3))
+    boundary = ellipse()
+    cell_types, fractions = classify_cells(patch, boundary)
+    space = FunctionSpace(patch, [CellType.inside] * len(cell_types))
+
+    quadrature = QuadratureDomain(patch, cell_types)
+
+    for cell_type in (CellType.inside, CellType.cut, CellType.outside):
+        quadrature.fill_gauss_legendre(cell_type, 4)
+
+    # u = x^3 − 2 x^2 y + x y^2 / 2 + y^3 − x + 2 y + 1, and the harmonic
+    # x^3 − 3 x y^2
+    cubic = [(1., 3, 0), (-2., 2, 1), (.5, 1, 2), (1., 0, 3), (-1., 1, 0),
+             (2., 0, 1), (1., 0, 0)]
+    harmonic = [(1., 3, 0), (-3., 1, 2)]
+
+    def field(terms):
+        return lambda points: sum(c * points[:, 0] ** i * points[:, 1] ** j
+                                  for c, i, j in terms)
+
+    def source(points):
+        x, y = points.T
+        return -7. * x - 2. * y
+
+    element = PoissonElement()
+    condition = SkeletonNitscheCondition(element.u, patch, cell_types,
+                                         boundary, field(cubic), 320.,
+                                         source=source)
+    ghost = GhostPenalty(element.u, patch, cell_types, .5)
+    problem = LinearProblem(element, space, quadrature, source,
+                            cell_weights=fractions, conditions=[condition],
+                            stabilizations=[ghost],
+                            petsc_options_prefix='poisson_gsbm_')
+
+    # Exact to round-off, which the conditioning of the cells the penalty
+    # alone determines amplifies
+    for terms in (cubic, cubic + harmonic):
+        condition.values = field(terms)
+        exact = cubic_coefficients(space, terms)
+
+        assert (np.abs(problem.solve() - exact).max()
+                < 1e-8 * np.abs(exact).max())
+
+
+def test_invalid_equation_shifts():
+    """A condition shifted with the equation takes values only as functions
+    of the points, and holds the steady equation alone."""
+    patch = iguana.create_rectangle(lengths=(2., 3.), elements=(8, 12),
+                                    degrees=(3, 3))
+    boundary = ellipse()
+    cell_types, fractions = classify_cells(patch, boundary)
+    space = FunctionSpace(patch, [CellType.inside] * len(cell_types))
+    quadrature = QuadratureDomain(patch, cell_types)
+
+    for cell_type in (CellType.inside, CellType.cut, CellType.outside):
+        quadrature.fill_gauss_legendre(cell_type, 4)
+
+    element = PoissonElement()
+    condition = SkeletonNitscheCondition(
+        element.u, patch, cell_types, boundary, lambda x: x[:, 0], 320.,
+        source=lambda x: np.zeros(len(x)))
+
+    with pytest.raises(TypeError):
+        condition.values = np.zeros(len(condition.values))
+
+    with pytest.raises(ValueError):
+        LinearProblem(element, space, quadrature,
+                      np.zeros(quadrature.num_points), cell_weights=fractions,
+                      conditions=[condition], step=.1,
+                      petsc_options_prefix='invalid_shift_')
 
 
 def test_backward_euler_steps_a_field_linear_in_time():
