@@ -107,6 +107,34 @@ private:
 };
 
 /**
+ * @brief Greville abscissae of a knot vector, the averages of the p knots
+ *        inside the support of each function, at which interpolation with
+ *        one point per function is well posed and the control points of
+ *        the identity map lie
+ *
+ * At degree zero each is the midpoint of the support of its function
+ *
+ * @param knot_vector Knot vector
+ * @return One abscissa per function, non-decreasing
+ */
+template<std::floating_point T>
+Eigen::VectorX<T> greville_abscissae(const KnotVector<T>& knot_vector);
+
+/**
+ * @brief Element of a knot vector holding a parameter, the last one that
+ *        starts at or before it, so that the end of the parametric domain
+ *        belongs to the last element
+ *
+ * @param knot_vector Knot vector
+ * @param parameter Parameter to locate
+ * @return Element index in [0, num_elements())
+ *
+ * @pre @p parameter lies in the parametric domain of @p knot_vector
+ */
+template<std::floating_point T>
+int element_holding(const KnotVector<T>& knot_vector, T parameter);
+
+/**
  * @brief Knot vector with knots inserted, which refines its elements
  *
  * Each knot splits the element it falls in, or raises the multiplicity of

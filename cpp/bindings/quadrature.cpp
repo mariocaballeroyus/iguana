@@ -59,27 +59,6 @@ void fill_moment_fitting(QuadratureDomain<double, d>& quadrature,
                     MomentFitting<double, d>(vertices, facets, order));
 }
 
-/// @brief Element of a knot vector holding a parameter, the last one that
-///        starts at or before it
-///
-/// @pre @p parameter lies in the parametric domain of @p knots
-int element_holding(const KnotVector<double>& knots, double parameter)
-{
-    int first = 0;
-    int last = knots.num_elements() - 1;
-
-    while (first < last) {
-        const int middle = (first + last + 1) / 2;
-
-        if (knots.element_start(middle) <= parameter)
-            first = middle;
-        else
-            last = middle - 1;
-    }
-
-    return first;
-}
-
 /**
  * @brief Walks the elements a quadrature holds, giving each the element of
  *        the patch holding it and the range of its points

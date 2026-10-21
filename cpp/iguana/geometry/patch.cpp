@@ -13,6 +13,7 @@
 
 #include <Eigen/LU>
 
+#include "iguana/grid/knot_vector.hpp"
 #include "iguana/utils/multi_index.hpp"
 
 namespace iguana
@@ -68,30 +69,6 @@ bool equal_weights(const TensorNURBS<T, d>& basis, T tolerance)
 
     return (weights.array() - weights(0)).abs().maxCoeff()
            <= tolerance * std::abs(weights(0));
-}
-
-/// @brief Greville abscissae of a knot vector, the averages of the p knots
-///        inside the support of each function, at which the control points
-///        of the identity map lie
-template<std::floating_point T>
-Eigen::VectorX<T> greville_abscissae(const KnotVector<T>& knots)
-{
-    const std::vector<T>& values = knots.values();
-    const int degree = knots.degree();
-    const int count = static_cast<int>(values.size()) - degree - 1;
-
-    Eigen::VectorX<T> result(count);
-
-    for (int function = 0; function < count; ++function) {
-        T sum = 0;
-
-        for (int knot = 1; knot <= degree; ++knot)
-            sum += values[static_cast<std::size_t>(function + knot)];
-
-        result(function) = sum / static_cast<T>(degree);
-    }
-
-    return result;
 }
 
 /**
