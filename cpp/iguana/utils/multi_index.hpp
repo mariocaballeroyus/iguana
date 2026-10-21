@@ -89,6 +89,20 @@ std::array<int, d> unflatten(int flat,
 }
 
 /**
+ * @brief Number of multi-indices of two directions of total order at most
+ *        an order, (order + 1) (order + 2) / 2
+ *
+ * @param order Highest total order
+ * @return Number of pairs (a, b) with a + b at most @p order
+ *
+ * @pre @p order is non-negative
+ */
+constexpr int simplex_size(int order) noexcept
+{
+    return (order + 1) * (order + 2) / 2;
+}
+
+/**
  * @brief Index of the second derivative along two directions, the pure ones
  *        first, then the mixed ones in lexicographic order of their
  *        directions: xx, yy, zz, xy, xz, yz

@@ -56,21 +56,36 @@ void check_petsc(PetscErrorCode code)
 
 /**
  * @brief Expands the values at the points of one element or face towards
- *        the boundary they are projected onto, along their distance vectors
+ *        the boundary they are projected onto, along their distance vectors,
+ *        by the Taylor series or by the shift weights of the projection
+ *
+ * @param values Values at the points, which are shifted
+ * @param projection Projection of the points of a whole quadrature
+ * @param first First point of the element or face in @p projection
+ * @param count Number of points of the element or face
+ * @param order Highest total order of the derivatives
  *
  * @throws std::invalid_argument If the patch is not a B-spline one, whose
- *         basis alone provides the Taylor series
+ *         basis alone provides the derivatives
  */
 template<typename Basis, std::size_t n>
 void shift_values(ElementValues<Basis, n>& values,
-                  const Eigen::MatrixX<typename Basis::Scalar>& distances,
-                  int order)
+                  const BoundaryProjection<typename Basis::Scalar>& projection,
+                  int first, int count, int order)
 {
     using Scalar = typename Basis::Scalar;
     constexpr std::size_t dim = Basis::dimension;
 
     if constexpr (std::same_as<Basis, TensorBSpline<Scalar, dim>>) {
-        values.shift(distances, order);
+        const Eigen::MatrixX<Scalar> distances =
+            projection.distances.middleRows(first, count);
+
+        if (projection.shift_weights.size() == 0)
+            values.shift(distances, order);
+        else
+            values.shift(distances,
+                         projection.shift_weights.middleRows(first, count),
+                         order);
     }
     else if constexpr (std::same_as<Basis, TensorNURBS<Scalar, dim>>) {
         throw std::invalid_argument("Assembler: "
@@ -82,8 +97,10 @@ void shift_values(ElementValues<Basis, n>& values,
  * @brief Checks that a projection and an order can shift the values at the
  *        points of a quadrature
  *
- * @throws std::invalid_argument If the order is negative, or if the
- *         projection does not have one distance vector per point
+ * @throws std::invalid_argument If the order is negative, if the
+ *         projection does not have one distance vector per point, or if it
+ *         has shift weights without one row per point and one column per
+ *         multi-index of the order
  */
 template<std::floating_point T>
 void check_projection(const BoundaryProjection<T>& projection, int order,
@@ -97,6 +114,15 @@ void check_projection(const BoundaryProjection<T>& projection, int order,
         throw std::invalid_argument("Assembler: "
                                     "the projection must have one distance "
                                     "vector per point");
+
+    const Eigen::MatrixX<T>& weights = projection.shift_weights;
+
+    if (weights.size() > 0 && (weights.rows() != num_points
+                               || weights.cols() != simplex_size(order)))
+        throw std::invalid_argument("Assembler: "
+                                    "the shift weights must have one row "
+                                    "per point and one column per "
+                                    "multi-index of the order");
 }
 
 /**
@@ -491,9 +517,7 @@ void Assembler<Basis, n>::add_condition_stiffness(
         // values themselves
         if (projection != nullptr) {
             shifted_values.reinit(cell, points);
-            shift_values(shifted_values,
-                         projection->distances.middleRows(first, count),
-                         order);
+            shift_values(shifted_values, *projection, first, count, order);
         }
 
         const ElementValues<Basis, n>& shifted =
@@ -579,9 +603,7 @@ void Assembler<Basis, n>::add_condition_load(
         // values themselves
         if (projection != nullptr) {
             shifted_values.reinit(cell, points);
-            shift_values(shifted_values,
-                         projection->distances.middleRows(first, count),
-                         order);
+            shift_values(shifted_values, *projection, first, count, order);
         }
 
         const ElementValues<Basis, n>& shifted =
@@ -764,13 +786,10 @@ void Assembler<Basis, n>::add_skeleton_condition_stiffness(
         after.reinit(cell_after, points);
 
         if (projection != nullptr) {
-            const Eigen::MatrixX<Scalar> distances =
-                projection->distances.middleRows(first, count);
-
             shifted_before.reinit(cell_before, points);
             shifted_after.reinit(cell_after, points);
-            shift_values(shifted_before, distances, order);
-            shift_values(shifted_after, distances, order);
+            shift_values(shifted_before, *projection, first, count, order);
+            shift_values(shifted_after, *projection, first, count, order);
         }
 
         const bool shifted = projection != nullptr;
@@ -884,13 +903,10 @@ void Assembler<Basis, n>::add_skeleton_condition_load(
         after.reinit(cell_after, points);
 
         if (projection != nullptr) {
-            const Eigen::MatrixX<Scalar> distances =
-                projection->distances.middleRows(first, count);
-
             shifted_before.reinit(cell_before, points);
             shifted_after.reinit(cell_after, points);
-            shift_values(shifted_before, distances, order);
-            shift_values(shifted_after, distances, order);
+            shift_values(shifted_before, *projection, first, count, order);
+            shift_values(shifted_after, *projection, first, count, order);
         }
 
         const bool shifted = projection != nullptr;

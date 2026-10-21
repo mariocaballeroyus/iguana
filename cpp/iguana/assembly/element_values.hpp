@@ -159,6 +159,28 @@ public:
         requires std::same_as<Basis, TensorBSpline<Scalar, dim>>;
 
     /**
+     * @brief Adds to the values of every field a combination of their
+     *        derivatives at the points of the last reinit() moved by shifts,
+     *        with weights per point, up to a total order
+     *
+     * This is how a shift rewritten with an equation takes the derivatives
+     * at the closest points on the true boundary. The gradients, tangents,
+     * measures and physical gradients and Hessians stay at the points
+     *
+     * @param shifts Shift of each point in parameter space, with size
+     *        (num_points, dim)
+     * @param weights Weight of each multi-index at each shifted point, as
+     *        TensorBSpline::combine_on_element() takes them
+     * @param order Highest total order of the derivatives
+     *
+     * @pre reinit() was called, @p shifts and @p weights have one row per
+     *      point of it, and @p order is non-negative
+     */
+    void shift(const Eigen::MatrixX<Scalar>& shifts,
+               const Eigen::MatrixX<Scalar>& weights, int order)
+        requires std::same_as<Basis, TensorBSpline<Scalar, dim>>;
+
+    /**
      * @brief Replaces the values of every field by their derivatives across
      *        the knot lines of a direction, of the order of the degree of its
      *        basis there, in physical space
