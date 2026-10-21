@@ -333,9 +333,69 @@ def test_poisson_at_high_degree_by_the_generalized_shifted_boundary_method():
                 < 1e-8 * np.abs(exact).max())
 
 
+def test_poisson_with_interpolated_data_at_the_order_of_their_splines():
+    """Shifted with the equation from values and a source known only at
+    points, interpolated in splines of the degree of the patch as fine as its
+    cells, the cubic field converges at the order of the splines, four, on
+    the functions of the cells inside the ellipse."""
+    cubic = [(1., 3, 0), (-2., 2, 1), (.5, 1, 2), (1., 0, 3), (-1., 1, 0),
+             (2., 0, 1), (1., 0, 0)]
+
+    def field(points):
+        return sum(c * points[:, 0] ** i * points[:, 1] ** j
+                   for c, i, j in cubic)
+
+    def source(points):
+        x, y = points.T
+        return -7. * x - 2. * y
+
+    errors = []
+
+    for elements in ((16, 24), (32, 48)):
+        patch = iguana.create_rectangle(lengths=(2., 3.), elements=elements,
+                                        degrees=(3, 3))
+        boundary = ellipse()
+        cell_types, fractions = classify_cells(patch, boundary)
+        space = FunctionSpace(patch, [CellType.inside] * len(cell_types))
+        quadrature = QuadratureDomain(patch, cell_types)
+
+        for cell_type in (CellType.inside, CellType.cut, CellType.outside):
+            quadrature.fill_gauss_legendre(cell_type, 4)
+
+        element = PoissonElement()
+        condition = SkeletonNitscheCondition(element.u, patch, cell_types,
+                                             boundary, field, 320.,
+                                             source=source)
+        ghost = GhostPenalty(element.u, patch, cell_types, .5)
+        problem = LinearProblem(element, space, quadrature, source,
+                                cell_weights=fractions,
+                                conditions=[condition],
+                                stabilizations=[ghost],
+                                petsc_options_prefix='interpolated_')
+
+        # The cubic functions of the cells inside, those of index i along
+        # a direction covering the cells i − 3 to i, the first direction
+        # running fastest
+        columns, rows = elements
+        inside = (np.array(cell_types) == CellType.inside).reshape(rows,
+                                                                   columns)
+        touching = np.array([[inside[max(0, j - 3):j + 1,
+                                     max(0, i - 3):i + 1].any()
+                              for i in range(columns + 3)]
+                             for j in range(rows + 3)]).ravel()
+
+        error = np.abs(problem.solve() - cubic_coefficients(space, cubic))
+        errors.append(error[touching].max())
+
+    assert errors[1] < 1e-3
+    assert errors[0] / errors[1] > 2. ** 3
+
+
 def test_invalid_equation_shifts():
-    """A condition shifted with the equation takes values only as functions
-    of the points, and holds the steady equation alone."""
+    """A condition shifted with the equation takes values and a source only
+    as derivatives of their order or as functions of the points, a source to
+    interpolate only up to the degree of the patch, and holds the steady
+    equation alone."""
     patch = iguana.create_rectangle(lengths=(2., 3.), elements=(8, 12),
                                     degrees=(3, 3))
     boundary = ellipse()
@@ -353,6 +413,19 @@ def test_invalid_equation_shifts():
 
     with pytest.raises(TypeError):
         condition.values = np.zeros(len(condition.values))
+
+    with pytest.raises(TypeError):
+        Derivatives(0.)
+
+    # Derivatives of one term at each point, though the order needs more
+    with pytest.raises(ValueError):
+        condition.values = Derivatives(lambda x, order: np.zeros((len(x), 1)))
+
+    # The cubic patch has no fourth derivatives for a series of order six
+    with pytest.raises(ValueError):
+        SkeletonNitscheCondition(element.u, patch, cell_types, boundary,
+                                 lambda x: x[:, 0], 320., order=6,
+                                 source=lambda x: np.zeros(len(x)))
 
     with pytest.raises(ValueError):
         LinearProblem(element, space, quadrature,

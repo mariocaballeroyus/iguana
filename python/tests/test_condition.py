@@ -386,7 +386,8 @@ def test_invalid_skeleton_nitsche_conditions():
                                  lambda x: x[:, 0], 1., order=-1)
 
     # A source takes the Poisson trace, and with it the source and the
-    # values are functions of the points, on a boundary without corners
+    # values are derivatives or functions of the points, on a boundary
+    # without corners
     def zero(x):
         return np.zeros(len(x))
 
