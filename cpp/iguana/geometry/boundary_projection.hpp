@@ -77,6 +77,36 @@ BoundaryProjection<typename Basis::Scalar> project_closest_points(
     const Boundary<typename Basis::Scalar, 2>& boundary,
     const PointMatrix<typename Basis::Scalar, 2>& points);
 
+/**
+ * @brief Curvature of a boundary at closest points, and its derivatives
+ *        along the boundary up to an order
+ *
+ *     τ' = −κ ν,    ν' = κ τ
+ *
+ * @details Derivatives are in the arc length along the tangent τ, the
+ *          outward normal ν turned a quarter turn counterclockwise, so that
+ *          κ is positive where the domain is convex, 1 / R on a disk of
+ *          radius R. They are taken on the element of each closest point,
+ *          one-sided at a knot
+ *
+ * @tparam T Floating-point type
+ *
+ * @param boundary Boundary of curves that the points are projected onto
+ * @param projection Closest points on @p boundary
+ * @param order Highest order of the derivatives
+ * @return Curvature and its derivatives at each closest point, with size
+ *         (num_points, order + 1), column j holding the derivative of order
+ *         j
+ *
+ * @throws std::invalid_argument If @p order is negative
+ *
+ * @pre @p projection was computed onto @p boundary
+ */
+template<std::floating_point T>
+Eigen::MatrixX<T> curvature_derivs(const Boundary<T, 2>& boundary,
+                                   const BoundaryProjection<T>& projection,
+                                   int order);
+
 } // namespace iguana
 
 #endif // IGUANA_GEOMETRY_BOUNDARY_PROJECTION_HPP
