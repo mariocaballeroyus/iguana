@@ -46,6 +46,7 @@ PoissonShift<typename Basis::Scalar> poisson_shift(
         r, Eigen::VectorX<T>(num_points),
         Eigen::MatrixX<T>::Zero(num_points, simplex_size(r)),
         Eigen::MatrixX<T>::Zero(num_points, simplex_size(m)),
+        Eigen::MatrixX<T>::Zero(num_points, m + 1),
         Eigen::MatrixX<T>::Zero(num_points, m >= 2 ? simplex_size(m - 2)
                                                    : 0)};
 
@@ -105,6 +106,7 @@ PoissonShift<typename Basis::Scalar> poisson_shift(
 
         for (int j = 0; j <= m; ++j) {
             const int along = simplex_index(j, 0, m);
+            shift.tangent_weights(point, j) = field(along);
             shift.value_weights.row(point) +=
                 field(along) * cartesian.row(along);
 

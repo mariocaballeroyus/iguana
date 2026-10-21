@@ -24,7 +24,9 @@ namespace iguana
  * @details The shifted values combine the values at the points with the
  *          weights of parametric derivatives at their closest points, and
  *          the imposed data the weights of the Cartesian derivatives of the
- *          trace g and of the source f there
+ *          trace g and of the source f there. The trace may enter instead
+ *          through its derivatives along the boundary, for data given on it
+ *          alone
  *
  * @tparam T Floating-point type
  */
@@ -47,6 +49,12 @@ struct PoissonShift
     /// @brief Weights of the Cartesian derivatives of g at the closest
     ///        points, with size (num_points, simplex_size(m))
     Eigen::MatrixX<T> value_weights;
+
+    /// @brief Weights of the derivatives ∂_s^j g along the boundary at the
+    ///        closest points, the same combination as value_weights before
+    ///        the Cartesian map, with size (num_points, m + 1) and the arc
+    ///        length s along τ, ν turned by +90°
+    Eigen::MatrixX<T> tangent_weights;
 
     /// @brief Weights of the Cartesian derivatives of f at the closest
     ///        points, with size (num_points, simplex_size(m − 2)), and no
