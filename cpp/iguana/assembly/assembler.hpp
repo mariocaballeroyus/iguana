@@ -335,14 +335,16 @@ public:
      *        basis
      * @param projection Projection of the points of @p quadrature onto the
      *        boundary the condition is shifted from
-     * @param order Highest total order of the Taylor series, as in
-     *        ElementValues::shift()
+     * @param order Highest total order of the Taylor series, or of the
+     *        derivatives that the shift weights of @p projection combine, as
+     *        in ElementValues::shift()
      *
      * @throws std::invalid_argument If @p order is negative, if
      *         @p projection does not have one distance vector per point of
-     *         @p quadrature, if the patch is not a B-spline one, or if the
-     *         local matrices of @p condition do not match the degrees of
-     *         freedom of the space
+     *         @p quadrature, nor shift weights of one row per point and one
+     *         column per multi-index when it has them, if the patch is not a
+     *         B-spline one, or if the local matrices of @p condition do not
+     *         match the degrees of freedom of the space
      *
      * @pre @p quadrature is built as for the stiffness of a condition, and
      *      @p projection was computed from its points through the patch
@@ -365,8 +367,9 @@ public:
      *        basis
      * @param projection Projection of the points of @p quadrature onto the
      *        boundary the condition is shifted from
-     * @param order Highest total order of the Taylor series, as in
-     *        ElementValues::shift()
+     * @param order Highest total order of the Taylor series, or of the
+     *        derivatives that the shift weights of @p projection combine, as
+     *        in ElementValues::shift()
      * @param data Value the condition imposes at the closest point of each
      *        point of the quadrature, in its order
      *
@@ -497,15 +500,17 @@ public:
      *        basis
      * @param projection Projection of the points of @p quadrature onto the
      *        boundary the condition is shifted from
-     * @param order Highest total order of the Taylor series, as in
-     *        ElementValues::shift()
+     * @param order Highest total order of the Taylor series, or of the
+     *        derivatives that the shift weights of @p projection combine, as
+     *        in ElementValues::shift()
      * @param cell_weights Weight of the test functions on each element of
      *        the grid, in its numbering
      *
      * @throws std::invalid_argument As for the stiffness of a skeleton
      *         condition, if @p order is negative, if @p projection does not
-     *         have one distance vector per point of @p quadrature, or if the
-     *         patch is not a B-spline one
+     *         have one distance vector per point of @p quadrature, nor shift
+     *         weights of one row per point and one column per multi-index
+     *         when it has them, or if the patch is not a B-spline one
      *
      * @pre As for the stiffness of a skeleton condition, and @p projection was
      *      computed from the points of @p quadrature through the patch
@@ -532,8 +537,9 @@ public:
      *        basis
      * @param projection Projection of the points of @p quadrature onto the
      *        boundary the condition is shifted from
-     * @param order Highest total order of the Taylor series, as in
-     *        ElementValues::shift()
+     * @param order Highest total order of the Taylor series, or of the
+     *        derivatives that the shift weights of @p projection combine, as
+     *        in ElementValues::shift()
      * @param data Value the condition imposes at the closest point of each
      *        point of the quadrature, in its order
      * @param cell_weights Weight of the test functions on each element of

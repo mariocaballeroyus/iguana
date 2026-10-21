@@ -337,29 +337,59 @@ void TensorBSpline<T, d>::taylor_on_element(
 {
     const Eigen::Index num_points = points.rows();
 
-    // Terms of the univariate series of each direction, the derivatives of
-    // order k scaled at each point by s^k / k!
-    std::array<std::vector<Eigen::MatrixX<T>>, d> axis_terms;
+    // The weight s^alpha / alpha! of each multi-index of total order at most
+    // the order, in the order combine_on_element() visits them
+    std::vector<Eigen::VectorX<T>> terms;
+    std::array<int, d> orders{};
+    std::array<int, d> bounds{};
+    bounds.fill(order + 1);
+
+    do {
+        int total = 0;
+        Eigen::VectorX<T> term = Eigen::VectorX<T>::Ones(num_points);
+
+        for (std::size_t direction = 0; direction < d; ++direction) {
+            total += orders[direction];
+
+            for (int k = 1; k <= orders[direction]; ++k)
+                term = term.cwiseProduct(shifts.col(direction))
+                       / static_cast<T>(k);
+        }
+
+        if (total <= order)
+            terms.push_back(term);
+    } while (next_lexicographic(orders, bounds));
+
+    Eigen::MatrixX<T> weights(num_points,
+                              static_cast<Eigen::Index>(terms.size()));
+
+    for (Eigen::Index column = 0; column < weights.cols(); ++column)
+        weights.col(column) = terms[static_cast<std::size_t>(column)];
+
+    combine_on_element(first_active, points, weights, order, values);
+}
+
+template<std::floating_point T, std::size_t d>
+void TensorBSpline<T, d>::combine_on_element(
+    const std::array<int, d>& first_active, const Eigen::MatrixX<T>& points,
+    const Eigen::MatrixX<T>& weights, int order,
+    Eigen::MatrixX<T>& values) const
+{
+    const Eigen::Index num_points = points.rows();
+
+    // Derivatives of each direction up to the order at the points
+    std::array<std::vector<Eigen::MatrixX<T>>, d> axis_derivs;
 
     for (std::size_t direction = 0; direction < d; ++direction) {
         const std::span<const T> coords(points.col(direction).data(),
                                         num_points);
 
         axes_[direction].derivs_on_element(first_active[direction], coords,
-                                           order, axis_terms[direction]);
-
-        Eigen::RowVectorX<T> scale = Eigen::RowVectorX<T>::Ones(num_points);
-
-        for (int k = 1; k <= order; ++k) {
-            scale = scale.cwiseProduct(shifts.col(direction).transpose())
-                    / static_cast<T>(k);
-            axis_terms[direction][static_cast<std::size_t>(k)] *=
-                scale.asDiagonal();
-        }
+                                           order, axis_derivs[direction]);
     }
 
-    // Products of one term per direction whose orders add up to at most the
-    // order, the terms of the multivariate series
+    // Products of one derivative per direction whose orders add up to at
+    // most the order, each scaled at every point by its weight
     std::array<int, d> orders{};
     std::array<int, d> bounds{};
     bounds.fill(order + 1);
@@ -368,6 +398,7 @@ void TensorBSpline<T, d>::taylor_on_element(
     Eigen::MatrixX<T> term(num_active_, num_points);
     Eigen::MatrixX<T> accumulated;
     Eigen::MatrixX<T> scratch;
+    Eigen::Index column = 0;
 
     values.setZero(num_active_, num_points);
 
@@ -378,7 +409,7 @@ void TensorBSpline<T, d>::taylor_on_element(
             const int k = orders[direction];
 
             factors[direction] =
-                &axis_terms[direction][static_cast<std::size_t>(k)];
+                &axis_derivs[direction][static_cast<std::size_t>(k)];
             total += k;
         }
 
@@ -386,7 +417,7 @@ void TensorBSpline<T, d>::taylor_on_element(
             continue;
 
         khatri_rao_into(factors, accumulated, scratch, term);
-        values += term;
+        values += term * weights.col(column++).asDiagonal();
     } while (next_lexicographic(orders, bounds));
 }
 

@@ -17,6 +17,7 @@ add_executable(iguana_tests
     fspace/test_dof_map.cpp
     fspace/test_function_space.cpp
     geometry/test_boundary.cpp
+    geometry/test_normal_coordinates.cpp
     geometry/test_patch.cpp
     quadrature/gauss_legendre/test_gauss_legendre.cpp
     quadrature/moment_fitting/test_moment_fitting.cpp
@@ -27,6 +28,7 @@ add_executable(iguana_tests
     quadrature/xiao_gimbutas/test_xiao_gimbutas.cpp
     assembly/test_element_values.cpp
     element/poisson/test_poisson_element.cpp
+    element/poisson/test_poisson_shift.cpp
     element/poisson/test_poisson_traces.cpp
     element/stokes/test_stokes_element.cpp
     utils/test_bernstein.cpp

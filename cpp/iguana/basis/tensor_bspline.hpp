@@ -206,9 +206,10 @@ public:
      *
      * Each function becomes the sum, over multi-indices alpha of total order
      * at most @p order, of its derivative of order alpha at the point times
-     * s^alpha / alpha!, with s the shift of the point. A tensor product of
-     * polynomials of degree p is reproduced at the shifted point from the
-     * order d p, and lower orders truncate the series
+     * s^alpha / alpha!, with s the shift of the point: combine_on_element()
+     * with those weights. A tensor product of polynomials of degree p is
+     * reproduced at the shifted point from the order d p, and lower orders
+     * truncate the series
      *
      * @param first_active First active function in each direction
      * @param points Points the series start from, with size
@@ -227,6 +228,34 @@ public:
                            const Eigen::MatrixX<T>& points,
                            const Eigen::MatrixX<T>& shifts, int order,
                            Eigen::MatrixX<T>& values) const;
+
+    /**
+     * @brief Combines the derivatives of the non-zero functions on an
+     *        element at points, with weights per point, up to a total order
+     *
+     *     sum_{|alpha| <= order} w_alpha d^alpha N_i
+     *
+     * @details The polynomial of the element is used at every point, which
+     *          extends it beyond the element at points outside it
+     *
+     * @param first_active First active function in each direction
+     * @param points Points where the derivatives are taken, with size
+     *        (num_points, dimension)
+     * @param weights Weight of each multi-index alpha of total order at most
+     *        @p order at each point, with size (num_points, num_terms), the
+     *        multi-indices with the first direction running fastest
+     * @param order Highest total order of the derivatives
+     * @param values Output of size (num_active(), num_points), with the rows
+     *        of eval_on_element(). It is resized when necessary
+     *
+     * @pre @p first_active belongs to an existing element, @p points has
+     *      dimension columns, @p weights one row per point and one column
+     *      per multi-index, and @p order is non-negative
+     */
+    void combine_on_element(const std::array<int, d>& first_active,
+                            const Eigen::MatrixX<T>& points,
+                            const Eigen::MatrixX<T>& weights, int order,
+                            Eigen::MatrixX<T>& values) const;
 
     /// @brief Whether two bases have the same knot vectors
     bool operator==(const TensorBSpline& other) const = default;

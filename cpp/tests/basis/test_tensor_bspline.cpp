@@ -261,6 +261,63 @@ TEST_CASE("Taylor expansions reach the values at the shifted points",
     }
 }
 
+TEST_CASE("Combinations of derivatives extend the polynomial of an element "
+          "beyond it", "[tensor_bspline]")
+{
+    const std::array<Basis, 3> bases = test_bases();
+
+    for (const Basis& entry : bases) {
+        std::visit([](const auto& basis) {
+            constexpr std::size_t d =
+                std::decay_t<decltype(basis)>::dimension;
+
+            INFO("dimension " << d);
+
+            // A tensor product of degrees p_k has total degree sum p_k, and
+            // as many multi-indices of total order at most it as C(p + d, d)
+            int total_degree = 0;
+
+            for (std::size_t direction = 0; direction < d; ++direction)
+                total_degree += basis.axis(direction).degree();
+
+            int num_terms = 1;
+
+            for (std::size_t k = 1; k <= d; ++k)
+                num_terms = num_terms * (total_degree + static_cast<int>(k))
+                            / static_cast<int>(k);
+
+            Eigen::MatrixXd combined;
+            Eigen::MatrixXd series;
+
+            for (int element = 0; element < basis.grid().num_elements();
+                 ++element) {
+                INFO("element " << element);
+                const std::array<int, d> first =
+                    first_active_of(basis, element);
+                const Eigen::MatrixXd points = points_on(basis, element);
+
+                // Past every element, whose widths are below the shift
+                const Eigen::MatrixXd shifts =
+                    Eigen::MatrixXd::Constant(points.rows(), d, .7);
+
+                // The values alone at the points outside, against the series
+                // from inside, which reaches the polynomial of the element
+                Eigen::MatrixXd weights =
+                    Eigen::MatrixXd::Zero(points.rows(), num_terms);
+                weights.col(0).setOnes();
+
+                basis.combine_on_element(first, points + shifts, weights,
+                                         total_degree, combined);
+                basis.taylor_on_element(first, points, shifts, total_degree,
+                                        series);
+
+                REQUIRE((combined - series).cwiseAbs().maxCoeff()
+                        < 1e-11 * series.cwiseAbs().maxCoeff());
+            }
+        }, entry);
+    }
+}
+
 TEST_CASE("Tensor Hessians match finite differences of the gradients",
           "[tensor_bspline]")
 {

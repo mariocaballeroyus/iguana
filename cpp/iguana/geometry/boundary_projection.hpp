@@ -49,6 +49,12 @@ struct BoundaryProjection
     ///        parameter space of the patch holding the points, with size
     ///        (num_points, 2)
     Eigen::MatrixX<T> distances;
+
+    /// @brief Weights of the parametric derivatives at the closest points
+    ///        that shift the values at the points in place of the Taylor
+    ///        series, empty for it, with one row per point and one column
+    ///        per multi-index, the first direction running fastest
+    Eigen::MatrixX<T> shift_weights;
 };
 
 /**

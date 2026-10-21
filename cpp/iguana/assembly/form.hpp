@@ -158,7 +158,8 @@ public:
      * @param quadrature Quadrature of a boundary in the grid of the basis
      * @param projection Projection of the points of @p quadrature onto the
      *        boundary where the data is given
-     * @param order Total order of the Taylor expansion
+     * @param order Total order of the Taylor expansion, or of the
+     *        derivatives that the shift weights of @p projection combine
      * @param data Data of the condition at the closest point of each point
      *        of @p quadrature
      *
@@ -197,7 +198,8 @@ public:
      *        basis
      * @param projection Projection of the points of @p quadrature onto the
      *        boundary where the data is given
-     * @param order Total order of the Taylor expansion
+     * @param order Total order of the Taylor expansion, or of the
+     *        derivatives that the shift weights of @p projection combine
      * @param data Value the condition imposes at the closest point of each
      *        point of @p quadrature
      * @param cell_weights Weight of the test functions on each element of

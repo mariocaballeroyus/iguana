@@ -23,6 +23,7 @@ namespace
 using Boundary2d = Boundary<double, 2>;
 using Boundary3d = Boundary<double, 3>;
 using BoundaryProjection2d = BoundaryProjection<double>;
+using PoissonShift2d = PoissonShift<double>;
 
 /// @brief Faces of a boundary, copied so that Python never holds an index
 ///        outside them
@@ -62,13 +63,28 @@ void boundary(py::module_& module)
         .def_property_readonly("signs", &signs<2>);
 
     // The projection of the points of a planar patch, which the conditions
-    // of the shifted boundary method pass to the assembly
+    // of the shifted boundary method pass to the assembly, with the shift
+    // weights a condition rewritten with an equation sets
     py::class_<BoundaryProjection2d>(module, "BoundaryProjection2d")
-        .def_readonly("positions", &BoundaryProjection2d::positions);
+        .def_readonly("positions", &BoundaryProjection2d::positions)
+        .def_readwrite("shift_weights", &BoundaryProjection2d::shift_weights);
 
     module.def("project_closest_points",
                &project_closest_points<TensorBSpline<double, 2>>,
                py::arg("patch"), py::arg("boundary"), py::arg("points"));
+
+    // The shift of a Dirichlet condition rewritten with the Poisson
+    // equation, at the points of a projection
+    py::class_<PoissonShift2d>(module, "PoissonShift2d")
+        .def_readonly("order", &PoissonShift2d::order)
+        .def_readonly("distances", &PoissonShift2d::distances)
+        .def_readonly("weights", &PoissonShift2d::weights)
+        .def_readonly("value_weights", &PoissonShift2d::value_weights)
+        .def_readonly("source_weights", &PoissonShift2d::source_weights);
+
+    module.def("poisson_shift", &poisson_shift<TensorBSpline<double, 2>>,
+               py::arg("patch"), py::arg("boundary"), py::arg("projection"),
+               py::arg("order"));
 
     py::class_<Boundary3d>(module, "Boundary3d")
         .def(py::init<std::vector<Boundary3d::Face>, std::vector<int>>(),

@@ -44,6 +44,32 @@ Eigen::VectorX<T> series_product(const Eigen::VectorX<T>& a,
 }
 
 /**
+ * @brief Coefficients of the products of a truncated Taylor series with
+ *        several others
+ *
+ * @details Each column of the result is the product of @p a with that
+ *          column of @p b, as the product of two series is
+ *
+ * @param a Coefficients of one factor
+ * @param b Coefficients of the other factors, one per column
+ * @return Coefficients of the products, one per column, with as many
+ *         orders as the shorter factor has
+ */
+template<std::floating_point T>
+Eigen::MatrixX<T> series_product(const Eigen::VectorX<T>& a,
+                                 const Eigen::MatrixX<T>& b)
+{
+    const Eigen::Index orders = std::min(a.size(), b.rows());
+    Eigen::MatrixX<T> product = Eigen::MatrixX<T>::Zero(orders, b.cols());
+
+    for (Eigen::Index n = 0; n < orders; ++n)
+        for (Eigen::Index k = 0; k <= n; ++k)
+            product.row(n) += a(k) * b.row(n - k);
+
+    return product;
+}
+
+/**
  * @brief Coefficients of a real power of a truncated Taylor series
  *
  * Differentiating b = a^e gives a b' = e a' b, whose orders give each
@@ -94,6 +120,26 @@ Eigen::VectorX<T> series_derivative(const Eigen::VectorX<T>& a)
 
     for (Eigen::Index k = 0; k < derivative.size(); ++k)
         derivative(k) = static_cast<T>(k + 1) * a(k + 1);
+
+    return derivative;
+}
+
+/**
+ * @brief Coefficients of the derivatives of several truncated Taylor series
+ *
+ * @param b Coefficients of the series, one per column
+ * @return Coefficients of their derivatives, one per column, with one order
+ *         fewer than @p b has
+ *
+ * @pre @p b has a row
+ */
+template<std::floating_point T>
+Eigen::MatrixX<T> series_derivative(const Eigen::MatrixX<T>& b)
+{
+    Eigen::MatrixX<T> derivative(b.rows() - 1, b.cols());
+
+    for (Eigen::Index k = 0; k < derivative.rows(); ++k)
+        derivative.row(k) = static_cast<T>(k + 1) * b.row(k + 1);
 
     return derivative;
 }

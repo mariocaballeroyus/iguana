@@ -169,6 +169,22 @@ void ElementValues<Basis, n>::shift(const Eigen::MatrixX<Scalar>& shifts,
 }
 
 template<typename Basis, std::size_t n>
+void ElementValues<Basis, n>::shift(const Eigen::MatrixX<Scalar>& shifts,
+                                    const Eigen::MatrixX<Scalar>& weights,
+                                    int order)
+    requires std::same_as<Basis, TensorBSpline<Scalar, dim>>
+{
+    const Eigen::MatrixX<Scalar> shifted = points_ + shifts;
+    Eigen::MatrixX<Scalar> combination;
+
+    for (Field& field : fields_) {
+        field.basis.combine_on_element(field.first_active, shifted, weights,
+                                       order, combination);
+        field.values += combination;
+    }
+}
+
+template<typename Basis, std::size_t n>
 void ElementValues<Basis, n>::differentiate(std::size_t direction)
     requires std::same_as<Basis, TensorBSpline<Scalar, dim>>
 {
