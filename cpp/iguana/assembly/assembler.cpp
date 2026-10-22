@@ -11,6 +11,8 @@
 #include <cstddef>
 #include <functional>
 #include <initializer_list>
+#include <iterator>
+#include <numeric>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -164,6 +166,68 @@ bool simple_interior_knots(const KnotVector<T>& knot_vector)
     }
 
     return true;
+}
+
+/**
+ * @brief Sums the rows and columns of the local matrix of a face that share
+ *        a degree of freedom, those of a function active on both of its
+ *        cells, so that PETSc adds each entry once
+ *
+ * @param local Local matrix, with a row and a column per row of the face
+ * @param positions Index of the degree of freedom of each row of the face
+ *        among those of the face
+ * @param num_dofs Number of degrees of freedom of the face
+ * @param folded Output, overwritten, with a row and a column per degree of
+ *        freedom of the face
+ *
+ * @throws std::invalid_argument If @p local does not have a row and a
+ *         column per entry of @p positions
+ */
+template<std::floating_point T>
+void fold_face(const Eigen::MatrixX<T>& local,
+               const std::vector<int>& positions, std::ptrdiff_t num_dofs,
+               Eigen::MatrixX<T>& folded)
+{
+    const std::ptrdiff_t count = std::ssize(positions);
+
+    // PETSc would otherwise read past the end of a local matrix of another
+    // block size, and so would the sums
+    if (local.rows() != count || local.cols() != count)
+        throw std::invalid_argument("Assembler: "
+                                    "the local matrix must match the degrees "
+                                    "of freedom of the space");
+
+    folded.setZero(num_dofs, num_dofs);
+
+    for (std::ptrdiff_t col = 0; col < count; ++col) {
+        for (std::ptrdiff_t row = 0; row < count; ++row)
+            folded(positions[row], positions[col]) += local(row, col);
+    }
+}
+
+/**
+ * @brief Sums the entries of the local load of a face that share a degree
+ *        of freedom, as for a local matrix
+ *
+ * @throws std::invalid_argument If @p local does not have an entry per
+ *         entry of @p positions
+ */
+template<std::floating_point T>
+void fold_face(const Eigen::VectorX<T>& local,
+               const std::vector<int>& positions, std::ptrdiff_t num_dofs,
+               Eigen::VectorX<T>& folded)
+{
+    const std::ptrdiff_t count = std::ssize(positions);
+
+    if (local.size() != count)
+        throw std::invalid_argument("Assembler: "
+                                    "the local load must match the degrees "
+                                    "of freedom of the space");
+
+    folded.setZero(num_dofs);
+
+    for (std::ptrdiff_t row = 0; row < count; ++row)
+        folded(positions[row]) += local(row);
 }
 
 /**
@@ -726,7 +790,9 @@ void Assembler<Basis, n>::assemble_stiffness(
     Eigen::VectorX<Scalar> measures;
     Eigen::VectorX<Scalar> weights;
     Eigen::MatrixX<Scalar> local;
+    Eigen::MatrixX<Scalar> folded;
     std::vector<int> dofs;
+    std::vector<int> positions;
 
     for (int face = 0; face < quadrature.num_faces(); ++face) {
         const int first = quadrature.offsets()(face);
@@ -755,8 +821,9 @@ void Assembler<Basis, n>::assemble_stiffness(
 
         penalty.local_stiffness(before, after, weights, degree, local);
 
-        face_dofs(cell_before, cell_after, dofs);
-        add_to_matrix(stiffness_, dofs, local);
+        face_dofs(cell_before, cell_after, dofs, positions);
+        fold_face(local, positions, std::ssize(dofs), folded);
+        add_to_matrix(stiffness_, dofs, folded);
     }
 
     finalize();
@@ -816,7 +883,9 @@ void Assembler<Basis, n>::add_skeleton_condition_stiffness(
     Eigen::VectorX<Scalar> weights;
     PointMatrix<Scalar, n> physical_normals;
     Eigen::MatrixX<Scalar> local;
+    Eigen::MatrixX<Scalar> folded;
     std::vector<int> dofs;
+    std::vector<int> positions;
 
     for (int face = 0; face < quadrature.num_faces(); ++face) {
         const int cell_before = quadrature.cells()(face, 0);
@@ -864,8 +933,9 @@ void Assembler<Basis, n>::add_skeleton_condition_stiffness(
                                   side_weights, weights, physical_normals,
                                   local);
 
-        face_dofs(cell_before, cell_after, dofs);
-        add_to_matrix(stiffness_, dofs, local);
+        face_dofs(cell_before, cell_after, dofs, positions);
+        fold_face(local, positions, std::ssize(dofs), folded);
+        add_to_matrix(stiffness_, dofs, folded);
     }
 
     finalize();
@@ -933,7 +1003,9 @@ void Assembler<Basis, n>::add_skeleton_condition_load(
     PointMatrix<Scalar, n> physical_normals;
     Eigen::VectorX<Scalar> imposed;
     Eigen::VectorX<Scalar> local;
+    Eigen::VectorX<Scalar> folded;
     std::vector<int> dofs;
+    std::vector<int> positions;
 
     for (int face = 0; face < quadrature.num_faces(); ++face) {
         const int cell_before = quadrature.cells()(face, 0);
@@ -981,8 +1053,9 @@ void Assembler<Basis, n>::add_skeleton_condition_load(
                              shifted ? shifted_after : after, side_weights,
                              weights, physical_normals, imposed, local);
 
-        face_dofs(cell_before, cell_after, dofs);
-        add_to_load(dofs, local);
+        face_dofs(cell_before, cell_after, dofs, positions);
+        fold_face(local, positions, std::ssize(dofs), folded);
+        add_to_load(dofs, folded);
     }
 
     finalize();
@@ -1039,13 +1112,33 @@ void Assembler<Basis, n>::finalize()
 
 template<typename Basis, std::size_t n>
 void Assembler<Basis, n>::face_dofs(int before, int after,
-                                    std::vector<int>& dofs) const
+                                    std::vector<int>& dofs,
+                                    std::vector<int>& positions) const
 {
     std::vector<int> after_dofs;
     space_.dofs_on_element(before, dofs);
     space_.dofs_on_element(after, after_dofs);
 
-    dofs.insert(dofs.end(), after_dofs.begin(), after_dofs.end());
+    // The rows of the cell before keep their places, and each row of the
+    // cell after takes that of its degree of freedom in the cell before, or
+    // a new one at the end
+    const std::ptrdiff_t num_before = std::ssize(dofs);
+    positions.resize(dofs.size());
+    std::iota(positions.begin(), positions.end(), 0);
+
+    for (const int dof : after_dofs) {
+        const std::ptrdiff_t shared = std::distance(
+            dofs.begin(), std::find(dofs.begin(), dofs.begin() + num_before,
+                                    dof));
+
+        if (shared < num_before) {
+            positions.push_back(static_cast<int>(shared));
+        }
+        else {
+            positions.push_back(static_cast<int>(dofs.size()));
+            dofs.push_back(dof);
+        }
+    }
 }
 
 template<typename Basis, std::size_t n>
