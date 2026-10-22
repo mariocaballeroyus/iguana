@@ -50,6 +50,50 @@ KnotVector<T>::KnotVector(int degree, std::vector<T> knots)
 }
 
 template<std::floating_point T>
+Eigen::VectorX<T> greville_abscissae(const KnotVector<T>& knot_vector)
+{
+    const std::vector<T>& knots = knot_vector.values();
+    const int degree = knot_vector.degree();
+    const int count = static_cast<int>(knots.size()) - degree - 1;
+
+    // The knots t_{i + 1}, ..., t_{i + p} of function i, or its single span
+    // [t_i, t_{i + 1}] at degree zero
+    const int first = degree > 0 ? 1 : 0;
+    const int last = degree > 0 ? degree : 1;
+
+    Eigen::VectorX<T> abscissae(count);
+
+    for (int function = 0; function < count; ++function) {
+        T sum{0};
+
+        for (int knot = first; knot <= last; ++knot)
+            sum += knots[static_cast<std::size_t>(function + knot)];
+
+        abscissae(function) = sum / static_cast<T>(last - first + 1);
+    }
+
+    return abscissae;
+}
+
+template<std::floating_point T>
+int element_holding(const KnotVector<T>& knot_vector, T parameter)
+{
+    int first = 0;
+    int last = knot_vector.num_elements() - 1;
+
+    while (first < last) {
+        const int middle = (first + last + 1) / 2;
+
+        if (knot_vector.element_start(middle) <= parameter)
+            first = middle;
+        else
+            last = middle - 1;
+    }
+
+    return first;
+}
+
+template<std::floating_point T>
 KnotVector<T> insert_knots(const KnotVector<T>& knot_vector,
                            const std::vector<T>& knots)
 {
@@ -193,6 +237,8 @@ std::vector<Eigen::MatrixX<T>> extraction_operators(
 
 template class KnotVector<double>;
 
+template Eigen::VectorXd greville_abscissae(const KnotVector<double>&);
+template int element_holding(const KnotVector<double>&, double);
 template KnotVector<double> insert_knots(const KnotVector<double>&,
                                          const std::vector<double>&);
 template Eigen::MatrixXd refinement_matrix(const KnotVector<double>&,

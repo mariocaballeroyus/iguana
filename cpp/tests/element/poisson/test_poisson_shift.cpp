@@ -5,8 +5,11 @@
 
 #include <iguana/iguana.hpp>
 #include <iguana/utils/multi_index.hpp>
+#include <iguana/utils/taylor_series.hpp>
 
+#include <algorithm>
 #include <cmath>
+#include <numbers>
 #include <random>
 #include <stdexcept>
 #include <vector>
@@ -23,6 +26,8 @@ using iguana::TensorBSpline;
 using iguana::TensorNURBS;
 using iguana::simplex_index;
 using iguana::simplex_size;
+
+constexpr double pi = std::numbers::pi;
 
 /// @brief Ellipse of semi-axes a and b around a center, counterclockwise,
 ///        as four quadratic arcs joined at double knots
@@ -265,6 +270,120 @@ TEST_CASE("The shift rewritten with the Poisson equation reproduces "
                                    + u.derivative(p, q + 2, closest));
 
                 REQUIRE(std::abs(shifted - data) < 1e-11);
+            }
+        }
+    }
+}
+
+TEST_CASE("The tangential weights of the shift give from the derivatives "
+          "along the boundary the data of the Cartesian ones",
+          "[poisson_shift]")
+{
+    // An ellipse, whose curvature varies so that the odd derivatives along
+    // it enter too
+    const Eigen::RowVector2d sizes(2., 3.);
+    const iguana::Patch<TensorBSpline<double, 2>, 2> patch =
+        box({0., 0.}, sizes);
+    const Eigen::RowVector2d center(1., 1.4);
+    const double a = .7;
+    const double b = .45;
+
+    PointMatrix<double, 2> points(6, 2);
+    Eigen::Index row = 0;
+
+    for (const double angle : {.3, 1.1, 2., 3.3, 4.4, 5.6})
+        points.row(row++) =
+            (center + .8 * Eigen::RowVector2d(a * std::cos(angle),
+                                              b * std::sin(angle)))
+                .cwiseQuotient(sizes);
+
+    std::mt19937 generator(11);
+
+    for (const int sign : {1, -1}) {
+        const Boundary<double, 2> boundary({ellipse(center, a, b)}, {sign});
+        const iguana::BoundaryProjection<double> projection =
+            iguana::project_closest_points(patch, boundary, points);
+
+        for (int m = 1; m <= 6; ++m) {
+            INFO("sign " << sign << ", order " << m);
+            const Polynomial g = random_polynomial(m, generator);
+            const iguana::PoissonShift<double> shift =
+                iguana::poisson_shift(patch, boundary, projection, m);
+
+            REQUIRE(shift.tangent_weights.cols() == m + 1);
+
+            for (Eigen::Index point = 0; point < points.rows(); ++point) {
+                INFO("point " << point);
+                const Eigen::RowVector2d closest =
+                    projection.positions.row(point);
+                const Eigen::RowVector2d offset = closest - center;
+                const double angle = std::atan2(offset(1) / b, offset(0) / a);
+
+                // x = a cos φ and y = b sin φ as series in the angle about
+                // the closest point, with coefficients x^(k) / k!, g composed
+                // with them, and d / ds = |γ'|^(−1) d / dφ, counterclockwise
+                Eigen::VectorXd x(m + 1);
+                Eigen::VectorXd y(m + 1);
+                double factorial = 1.;
+
+                for (int k = 0; k <= m; ++k) {
+                    if (k > 0)
+                        factorial *= k;
+
+                    x(k) = a * std::cos(angle + k * pi / 2.) / factorial;
+                    y(k) = b * std::sin(angle + k * pi / 2.) / factorial;
+                }
+
+                x(0) += center(0);
+                y(0) += center(1);
+
+                Eigen::VectorXd series = Eigen::VectorXd::Zero(m + 1);
+
+                for (int i = 0; i <= m; ++i) {
+                    for (int j = 0; i + j <= m; ++j) {
+                        Eigen::VectorXd term = Eigen::VectorXd::Zero(m + 1);
+                        term(0) = g.coefficients(i, j);
+
+                        for (int k = 0; k < i; ++k)
+                            term = iguana::series_product(term, x);
+
+                        for (int k = 0; k < j; ++k)
+                            term = iguana::series_product(term, y);
+
+                        series += term;
+                    }
+                }
+
+                const Eigen::VectorXd dx = iguana::series_derivative(x);
+                const Eigen::VectorXd dy = iguana::series_derivative(y);
+                const Eigen::VectorXd inverse_speed = iguana::series_power(
+                    Eigen::VectorXd(iguana::series_product(dx, dx)
+                                    + iguana::series_product(dy, dy)),
+                    -.5);
+
+                // ∂_s^j g, with s running backwards where the normals turn
+                // in
+                double tangential = 0.;
+
+                for (int j = 0; j <= m; ++j) {
+                    tangential += shift.tangent_weights(point, j)
+                                  * std::pow(sign, j) * series(0);
+
+                    if (j < m)
+                        series = iguana::series_product(
+                            inverse_speed, iguana::series_derivative(series));
+                }
+
+                double cartesian = 0.;
+
+                for (int q = 0; q <= m; ++q)
+                    for (int p = 0; p + q <= m; ++p)
+                        cartesian += shift.value_weights(
+                                         point, simplex_index(p, q, m))
+                                     * g.derivative(p, q, closest);
+
+                REQUIRE(std::abs(tangential - cartesian)
+                        < 1e-11 * std::max(1., std::abs(cartesian)));
             }
         }
     }

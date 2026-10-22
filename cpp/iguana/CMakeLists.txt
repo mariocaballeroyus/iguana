@@ -18,6 +18,7 @@ add_library(iguana
     fspace/mixed_function_space.cpp
     geometry/boundary.cpp
     geometry/boundary_projection.cpp
+    geometry/field_interpolation.cpp
     geometry/normal_coordinates.cpp
     geometry/patch.cpp
     quadrature/box_rule.cpp

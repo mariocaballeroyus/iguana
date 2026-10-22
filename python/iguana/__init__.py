@@ -10,8 +10,9 @@ with PETSc live in iguana.petsc, which needs a build with PETSc
 
 from iguana import cpp
 from iguana.boundary import Boundary
-from iguana.condition import (NeumannCondition, NitscheCondition,
-                              PenaltyCondition, SkeletonNitscheCondition)
+from iguana.condition import (Derivatives, NeumannCondition,
+                              NitscheCondition, PenaltyCondition,
+                              SkeletonNitscheCondition)
 from iguana.element import PoissonElement, StokesElement
 from iguana.embedding import CellType, SurrogateBoundary, classify_cells
 from iguana.fspace import FunctionSpace, MixedFunctionSpace
@@ -24,11 +25,11 @@ from iguana.stabilization import GhostPenalty
 
 __version__ = cpp.__version__
 
-__all__ = ['Boundary', 'CellType', 'CurvePatch', 'FunctionSpace',
-           'GhostPenalty', 'HierarchicalGrid', 'MixedFunctionSpace',
-           'NeumannCondition', 'NitscheCondition', 'PenaltyCondition',
-           'PlanarPatch', 'PoissonElement', 'QuadratureBoundary',
-           'QuadratureDomain', 'SkeletonNitscheCondition', 'StokesElement',
-           'SurfacePatch', 'SurrogateBoundary', 'VolumePatch',
-           'classify_cells', 'create_box', 'create_curve',
-           'create_rectangle', 'create_surface']
+__all__ = ['Boundary', 'CellType', 'CurvePatch', 'Derivatives',
+           'FunctionSpace', 'GhostPenalty', 'HierarchicalGrid',
+           'MixedFunctionSpace', 'NeumannCondition', 'NitscheCondition',
+           'PenaltyCondition', 'PlanarPatch', 'PoissonElement',
+           'QuadratureBoundary', 'QuadratureDomain',
+           'SkeletonNitscheCondition', 'StokesElement', 'SurfacePatch',
+           'SurrogateBoundary', 'VolumePatch', 'classify_cells', 'create_box',
+           'create_curve', 'create_rectangle', 'create_surface']

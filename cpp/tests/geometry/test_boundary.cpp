@@ -178,6 +178,29 @@ iguana::Patch<TensorBSpline<double, 2>, 2> identity()
     return box({0., 0.}, {1., 1.});
 }
 
+/// @brief Patch of bilinear elements of equal size covering the square
+///        [−3, 3]^2, a background whose cells size the data along a
+///        boundary
+iguana::Patch<TensorBSpline<double, 2>, 2> cells(int count)
+{
+    std::vector<double> knots{0.};
+
+    for (int knot = 0; knot <= count; ++knot)
+        knots.push_back(static_cast<double>(knot) / count);
+
+    knots.push_back(1.);
+
+    const BSpline<double> axis(1, knots);
+    PointMatrix<double, 2> nodes((count + 1) * (count + 1), 2);
+
+    for (int j = 0; j <= count; ++j)
+        for (int i = 0; i <= count; ++i)
+            nodes.row(j * (count + 1) + i) =
+                Eigen::RowVector2d(-3. + 6. * i / count, -3. + 6. * j / count);
+
+    return {TensorBSpline<double, 2>({axis, axis}), nodes};
+}
+
 } // namespace
 
 TEST_CASE("Boundary requires one sign per face, each 1 or -1", "[boundary]")
@@ -486,5 +509,124 @@ TEST_CASE("A straight boundary has no curvature", "[boundary]")
     REQUIRE(iguana::curvature_derivs(line, projection, 3).cwiseAbs()
                 .maxCoeff() < 1e-15);
     REQUIRE_THROWS_AS(iguana::curvature_derivs(line, projection, -1),
+                      std::invalid_argument);
+}
+
+TEST_CASE("Data interpolated along a circle converge to the derivatives of "
+          "their values in its arc length", "[boundary]")
+{
+    using Curves = Boundary<double, 2>;
+
+    const int degree = 4;
+
+    // g = x, whose derivatives along the arc length s = R θ are those of
+    // R cos θ, with s running backwards where the normals are turned in
+    PointMatrix<double, 2> points(8, 2);
+    Eigen::Index row = 0;
+
+    for (const double angle : {.3, 1.2, 2.2, 2.9, 3.6, 4.4, 5.1, 6.})
+        points.row(row++) =
+            2.6 * Eigen::RowVector2d(std::cos(angle), std::sin(angle));
+
+    for (const int sign : {1, -1}) {
+        INFO("sign " << sign);
+        const Curves boundary({circle()}, {sign});
+
+        // The largest error of each order over the points, relative to the
+        // size R^(1 − j) of the derivative, with cells of two sizes
+        std::array<Eigen::VectorXd, 2> errors;
+
+        for (const int count : {8, 32}) {
+            const iguana::Patch<TensorBSpline<double, 2>, 2> patch =
+                cells(count);
+            const PointMatrix<double, 2> nodes =
+                iguana::boundary_interpolation_points(patch, boundary, degree);
+
+            REQUIRE((nodes.rowwise().norm().array() - radius).abs().maxCoeff()
+                    < 1e-13);
+
+            const iguana::BoundaryProjection<double> projection =
+                iguana::project_closest_points(patch, boundary, points);
+            const Eigen::MatrixXd derivs =
+                iguana::boundary_interpolated_derivs(
+                    patch, boundary, degree, Eigen::VectorXd(nodes.col(0)),
+                    projection, degree);
+
+            REQUIRE(derivs.rows() == points.rows());
+            REQUIRE(derivs.cols() == degree + 1);
+
+            Eigen::VectorXd error = Eigen::VectorXd::Zero(degree + 1);
+
+            for (Eigen::Index point = 0; point < points.rows(); ++point) {
+                const Eigen::RowVector2d closest =
+                    projection.positions.row(point);
+                const double angle = std::atan2(closest(1), closest(0));
+
+                for (int j = 0; j <= degree; ++j) {
+                    const double exact = std::pow(sign, j)
+                                         * std::pow(radius, 1. - j)
+                                         * std::cos(angle + j * pi / 2.);
+                    error(j) = std::max(error(j),
+                                        std::abs(derivs(point, j) - exact)
+                                            / std::pow(radius, 1. - j));
+                }
+            }
+
+            errors[count == 8 ? 0 : 1] = error;
+        }
+
+        // The derivative of order j of an interpolant of degree q converges
+        // at order q + 1 − j, so a quarter of the cell size divides its error
+        // by about 4^(q + 1 − j), here asked by a quarter of that. The
+        // highest one is constant on each element and left out
+        INFO("errors " << errors[0].transpose() << " and "
+                       << errors[1].transpose());
+        REQUIRE(errors[1](0) < 1e-7);
+
+        for (int j = 0; j < degree; ++j)
+            REQUIRE(errors[0](j) / errors[1](j)
+                    > std::pow(4., degree - j) / 4.);
+    }
+}
+
+TEST_CASE("Data along a boundary need an affine patch, one value per point "
+          "and an order within the degree", "[boundary]")
+{
+    using Curves = Boundary<double, 2>;
+
+    const Curves boundary({circle()}, {1});
+    const iguana::Patch<TensorBSpline<double, 2>, 2> patch = cells(4);
+    const PointMatrix<double, 2> nodes =
+        iguana::boundary_interpolation_points(patch, boundary, 2);
+    const Eigen::VectorXd values = Eigen::VectorXd::Zero(nodes.rows());
+
+    PointMatrix<double, 2> points(1, 2);
+    points << 2.5, .5;
+    const iguana::BoundaryProjection<double> projection =
+        iguana::project_closest_points(patch, boundary, points);
+
+    REQUIRE_THROWS_AS(iguana::boundary_interpolation_points(patch, boundary,
+                                                            -1),
+                      std::invalid_argument);
+    REQUIRE_THROWS_AS(iguana::boundary_interpolated_derivs(
+                          patch, boundary, 2, values, projection, 3),
+                      std::invalid_argument);
+    REQUIRE_THROWS_AS(iguana::boundary_interpolated_derivs(
+                          patch, boundary, 2, values, projection, -1),
+                      std::invalid_argument);
+    REQUIRE_THROWS_AS(iguana::boundary_interpolated_derivs(
+                          patch, boundary, 2,
+                          Eigen::VectorXd(values.head(values.size() - 1)),
+                          projection, 1),
+                      std::invalid_argument);
+
+    // A control point moved off the affine image of its Greville point
+    PointMatrix<double, 2> moved = patch.coefficients();
+    moved(6, 0) += .1;
+    const iguana::Patch<TensorBSpline<double, 2>, 2> curved(patch.basis(),
+                                                             moved);
+
+    REQUIRE_THROWS_AS(iguana::boundary_interpolation_points(curved, boundary,
+                                                            2),
                       std::invalid_argument);
 }
