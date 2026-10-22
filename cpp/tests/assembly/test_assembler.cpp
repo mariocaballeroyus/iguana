@@ -739,6 +739,77 @@ TEST_CASE("Cell weights weight the test functions of each cell",
                       std::invalid_argument);
 }
 
+TEST_CASE("The pattern pairs the degrees of freedom of each element, and of "
+          "the two cells of each face when coupled", "[assembler]")
+{
+    const iguana::Patch<Basis, 2> patch = rectangle(uneven());
+
+    // A field of two components, cubic by quadratic, then a quadratic one,
+    // with the last column of cells outside, where they have no degrees of
+    // freedom
+    const CellClassification<double, 2> classification =
+        with_last_column(CellType::outside);
+    const iguana::FunctionSpace<Basis> vector(cubic_by_quadratic(),
+                                              classification, 2);
+    const iguana::FunctionSpace<Basis> scalar(uneven(), classification);
+    const iguana::MixedFunctionSpace<Basis> space({vector, scalar});
+    const int num_dofs = space.num_dofs();
+
+    for (const bool couple_faces : {false, true}) {
+        // Every pair on a cell and, with the faces coupled, on the cell and
+        // the next one along each direction, cell = column + 3 row
+        Eigen::MatrixX<bool> expected =
+            Eigen::MatrixX<bool>::Constant(num_dofs, num_dofs, false);
+        std::vector<int> dofs;
+        std::vector<int> next;
+
+        for (int cell = 0; cell < 6; ++cell) {
+            space.dofs_on_element(cell, dofs);
+
+            for (const int row : dofs) {
+                for (const int col : dofs)
+                    expected(row, col) = true;
+            }
+
+            std::vector<int> neighbours;
+
+            if (couple_faces && cell % 3 < 2)
+                neighbours.push_back(cell + 1);
+
+            if (couple_faces && cell < 3)
+                neighbours.push_back(cell + 3);
+
+            for (const int neighbour : neighbours) {
+                space.dofs_on_element(neighbour, next);
+
+                for (const int row : dofs) {
+                    for (const int col : next) {
+                        expected(row, col) = true;
+                        expected(col, row) = true;
+                    }
+                }
+            }
+        }
+
+        // The explicit zeros of the stiffness before any assembly
+        const iguana::Assembler<Basis, 2> assembler(space, patch,
+                                                    couple_faces);
+        const Eigen::SparseMatrix<double, Eigen::RowMajor> stiffness =
+            stiffness_of(assembler);
+        Eigen::MatrixX<bool> pattern =
+            Eigen::MatrixX<bool>::Constant(num_dofs, num_dofs, false);
+
+        for (int row = 0; row < num_dofs; ++row) {
+            for (Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator
+                     entry(stiffness, row);
+                 entry; ++entry)
+                pattern(entry.row(), entry.col()) = true;
+        }
+
+        REQUIRE(pattern == expected);
+    }
+}
+
 TEST_CASE("The mass of an element shares the pattern of the stiffness",
           "[assembler]")
 {
