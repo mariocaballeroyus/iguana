@@ -10,7 +10,6 @@
 
 #include <Eigen/Core>
 
-#include "iguana/geometry/boundary.hpp"
 #include "iguana/geometry/boundary_projection.hpp"
 #include "iguana/geometry/patch.hpp"
 
@@ -21,40 +20,20 @@ namespace iguana
  * @brief Shift of a Dirichlet condition rewritten with the Poisson
  *        equation, at the points of a projection
  *
- * @details The shifted values combine the values at the points with the
- *          weights of parametric derivatives at their closest points, and
- *          the imposed data the weights of the Cartesian derivatives of the
- *          trace g and of the source f there. The trace may enter instead
- *          through its derivatives along the boundary, for data given on it
- *          alone
+ * @details The shifted values add to the values at the points the weights
+ *          of parametric derivatives at their closest points, and the
+ *          imposed data add to the trace g there the weights of the
+ *          Cartesian derivatives of the source f
  *
  * @tparam T Floating-point type
  */
 template<std::floating_point T>
 struct PoissonShift
 {
-    /// @brief Highest total order of the parametric derivatives the
-    ///        weights combine
-    int order;
-
-    /// @brief Signed distance t of each point from its closest point, along
-    ///        the outward normal, positive outside the domain
-    Eigen::VectorX<T> distances;
-
     /// @brief Weights of the parametric derivatives of the field at the
-    ///        closest points, with size (num_points, simplex_size(order)),
-    ///        as BoundaryProjection::shift_weights holds them
+    ///        closest points, with size (num_points, simplex_size(m)), as
+    ///        BoundaryProjection::shift_weights holds them
     Eigen::MatrixX<T> weights;
-
-    /// @brief Weights of the Cartesian derivatives of g at the closest
-    ///        points, with size (num_points, simplex_size(m))
-    Eigen::MatrixX<T> value_weights;
-
-    /// @brief Weights of the derivatives ∂_s^j g along the boundary at the
-    ///        closest points, the same combination as value_weights before
-    ///        the Cartesian map, with size (num_points, m + 1) and the arc
-    ///        length s along τ, ν turned by +90°
-    Eigen::MatrixX<T> tangent_weights;
 
     /// @brief Weights of the Cartesian derivatives of f at the closest
     ///        points, with size (num_points, simplex_size(m − 2)), and no
@@ -64,36 +43,40 @@ struct PoissonShift
 
 /**
  * @brief Shift of a Dirichlet condition rewritten with the Poisson equation,
- *        from the normal series of the solution at the closest points
+ *        from the series of the solution at the closest points along the
+ *        lines to the points
  *
- *     Ŝ u = u(x̃) − Σ_{k=1}^{m} t^k / k! U_k^lin,
- *     G = Σ_{k=0}^{m} t^k / k! U_k^data,    t = (x̃ − x_Γ) · ν
+ *     T^m u + ρ^m(u) = g(x_Γ),    t = |x̃ − x_Γ|,    e = (x̃ − x_Γ) / t
+ *     T^m u = u(x̃) − Σ_{k=1}^{m} t^k / k! ∂_e^k u(x_Γ)
+ *     ρ^m(u) = Σ_{k=2}^{m} t^k / k! D_k (Δu + f)(x_Γ)
+ *     D_k = Σ_{i=0}^{⌊k/2⌋−1} (−1)^i ∂_⊥^{2i} ∂_e^{k−2−2i}
+ *     ∂_e^k − D_k Δ = (−1)^⌊k/2⌋ ∂_⊥^{2⌊k/2⌋} ∂_e^{k−2⌊k/2⌋}
  *
- * @details The condition imposes Ŝ u = G at each point x̃. U_k^lin holds the
- *          normal derivative of u at the closest point x_Γ and its
- *          derivatives along the boundary, and U_k^data the trace g, the
- *          source f and the curvature, as poisson_normal_series() gives
- *          them. The boundary must be smooth at the closest points, where
- *          the distance vectors lie along the normals
+ * @details The condition imposes at each point x̃ the series T^m of the
+ *          solution from its closest point x_Γ, plus the terms ρ^m of the
+ *          residual of −Δu = f there, which vanish on the solution, with
+ *          ∂_⊥ along e turned by +90°. Together they take every derivative
+ *          along e from the second on from the equation: the shifted
+ *          values hold u at the point and the derivatives of u at x_Γ with
+ *          at most one along e, and the data g and the derivatives of f at
+ *          x_Γ. No normal or curvature of the boundary enters, so the
+ *          closest points may lie at corners
  *
  * @tparam Basis Basis type of the patch
  *
  * @param patch Patch whose parameter space holds the points
- * @param boundary Boundary of curves the points are projected onto
- * @param projection Closest points on @p boundary
+ * @param projection Closest points of the points on a boundary
  * @param order Highest order m of the series
  * @return The weights of the shift at each point of @p projection
  *
- * @throws std::invalid_argument If @p order is negative, if the map of
- *         @p patch is not affine, or if a distance vector does not lie
- *         along the normal at its closest point, as at a corner
+ * @throws std::invalid_argument If @p order is negative or if the map of
+ *         @p patch is not affine
  *
- * @pre @p projection was computed onto @p boundary through @p patch
+ * @pre @p projection was computed through @p patch
  */
 template<typename Basis> requires (Basis::dimension == 2)
 PoissonShift<typename Basis::Scalar> poisson_shift(
     const Patch<Basis, 2>& patch,
-    const Boundary<typename Basis::Scalar, 2>& boundary,
     const BoundaryProjection<typename Basis::Scalar>& projection, int order);
 
 } // namespace iguana

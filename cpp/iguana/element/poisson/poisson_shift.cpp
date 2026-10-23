@@ -6,16 +6,13 @@
 #include "poisson_shift.hpp"
 
 #include <algorithm>
-#include <cmath>
 #include <limits>
 #include <stdexcept>
 
 #include <Eigen/LU>
 
 #include "iguana/basis/tensor_bspline.hpp"
-#include "iguana/basis/tensor_nurbs.hpp"
-#include "iguana/element/poisson/poisson_normal_series.hpp"
-#include "iguana/geometry/normal_coordinates.hpp"
+#include "iguana/geometry/directional_derivs.hpp"
 #include "iguana/utils/multi_index.hpp"
 
 namespace iguana
@@ -24,7 +21,6 @@ namespace iguana
 template<typename Basis> requires (Basis::dimension == 2)
 PoissonShift<typename Basis::Scalar> poisson_shift(
     const Patch<Basis, 2>& patch,
-    const Boundary<typename Basis::Scalar, 2>& boundary,
     const BoundaryProjection<typename Basis::Scalar>& projection, int order)
 {
     using T = typename Basis::Scalar;
@@ -37,95 +33,66 @@ PoissonShift<typename Basis::Scalar> poisson_shift(
         throw std::invalid_argument("poisson_shift: "
                                     "the map of the patch must be affine");
 
-    // The field enters through ∂_s^j ∂_t u with j up to 2 ⌊(m − 1) / 2⌋
     const int m = order;
-    const int r = m >= 1 ? 2 * ((m - 1) / 2) + 1 : 0;
     const Eigen::Index num_points = projection.positions.rows();
 
     PoissonShift<T> shift{
-        r, Eigen::VectorX<T>(num_points),
-        Eigen::MatrixX<T>::Zero(num_points, simplex_size(r)),
         Eigen::MatrixX<T>::Zero(num_points, simplex_size(m)),
-        Eigen::MatrixX<T>::Zero(num_points, m + 1),
         Eigen::MatrixX<T>::Zero(num_points, m >= 2 ? simplex_size(m - 2)
                                                    : 0)};
 
-    const Eigen::MatrixX<T> curvatures =
-        curvature_derivs(boundary, projection, std::max(m - 2, 0));
     const Eigen::Matrix2<T> linear = patch.linear_part();
     const Eigen::Matrix2<T> inverse = linear.inverse();
 
     for (Eigen::Index point = 0; point < num_points; ++point) {
-        // The outward normal ν, the tangent τ turned from it, and the
-        // physical vector from the closest point to the point
-        const Eigen::Vector2<T> normal = projection.normals.row(point);
-        const Eigen::Vector2<T> tangent(-normal(1), normal(0));
+        // The physical vector from the closest point to the point, of
+        // length t along e
         const Eigen::Vector2<T> offset =
             -linear * projection.distances.row(point).transpose();
+        const T t = offset.norm();
 
+        // At the closest point itself every term but the value vanishes
         const T scale = std::max(T{1}, projection.positions.row(point)
                                            .cwiseAbs().maxCoeff());
-        const T floor = 64 * std::numeric_limits<T>::epsilon() * scale;
 
-        if (std::abs(offset.dot(tangent)) > T{1e-6} * offset.norm() + floor)
-            throw std::invalid_argument("poisson_shift: "
-                                        "the distance vectors must lie along "
-                                        "the normals of a smooth boundary");
+        if (t <= 64 * std::numeric_limits<T>::epsilon() * scale)
+            continue;
 
-        // L = Σ_k t^k / k! U_k, over the derivatives of u and of f
-        const Eigen::VectorX<T> curvature = curvatures.row(point);
-        const PoissonNormalSeries<T> series =
-            poisson_normal_series(curvature, m);
-        const T t = offset.dot(normal);
-        shift.distances(point) = t;
+        // The directions of ∂_⊥ and ∂_e, mapped into the parameters for the
+        // field, and Cartesian for the source
+        const Eigen::Vector2<T> along = offset / t;
+        const Eigen::Vector2<T> across(-along(1), along(0));
 
-        Eigen::RowVectorX<T> field =
-            Eigen::RowVectorX<T>::Zero(series.field.cols());
-        Eigen::RowVectorX<T> source =
-            Eigen::RowVectorX<T>::Zero(series.source.cols());
-        T power{1};
-
-        for (int k = 0; k <= m; ++k) {
-            if (k > 0)
-                power *= t / static_cast<T>(k);
-
-            field += power * series.field.row(k);
-            source += power * series.source.row(k);
-        }
-
-        // The normal derivative and its derivatives along the boundary from
-        // the parametric ones of the field, through the frame mapped into
-        // the parameters, the trace and the source from Cartesian ones
         Eigen::Matrix2<T> frame;
-        frame << tangent, normal;
+        frame << across, along;
 
         const Eigen::MatrixX<T> parametric =
-            normal_coordinate_derivs<T>(inverse * frame, curvature, m);
+            directional_derivs<T>(inverse * frame, m);
         const Eigen::MatrixX<T> cartesian =
-            normal_coordinate_derivs<T>(frame, curvature, m);
+            directional_derivs<T>(frame, std::max(m - 2, 0));
 
-        for (int j = 0; j <= m; ++j) {
-            const int along = simplex_index(j, 0, m);
-            shift.tangent_weights(point, j) = field(along);
-            shift.value_weights.row(point) +=
-                field(along) * cartesian.row(along);
+        T power{1};
 
-            if (j + 1 > m)
-                continue;
+        for (int k = 1; k <= m; ++k) {
+            power *= t / static_cast<T>(k);
 
-            // The parametric multi-indices of total order up to r
-            const int across = simplex_index(j, 1, m);
+            // The term of order k of the series with those of the residual,
+            // which leave at most one derivative along e
+            const int j = k / 2;
+            const T sign = j % 2 == 0 ? T{1} : T{-1};
 
-            for (int b = 0; b <= r; ++b)
-                for (int a = 0; a + b <= r; ++a)
-                    shift.weights(point, simplex_index(a, b, r)) -=
-                        field(across) * parametric(across,
-                                                   simplex_index(a, b, m));
-        }
+            shift.weights.row(point) -=
+                sign * power
+                * parametric.row(simplex_index(2 * j, k - 2 * j, m));
 
-        if (m >= 2) {
-            shift.source_weights.row(point) =
-                source * normal_coordinate_derivs<T>(frame, curvature, m - 2);
+            // The source of the terms of the residual, D_k f
+            for (int i = 0; 2 * i + 2 <= k; ++i) {
+                const T term = i % 2 == 0 ? power : -power;
+
+                shift.source_weights.row(point) -=
+                    term * cartesian.row(simplex_index(2 * i, k - 2 - 2 * i,
+                                                       m - 2));
+            }
         }
     }
 
@@ -133,10 +100,7 @@ PoissonShift<typename Basis::Scalar> poisson_shift(
 }
 
 template PoissonShift<double> poisson_shift(
-    const Patch<TensorBSpline<double, 2>, 2>&, const Boundary<double, 2>&,
-    const BoundaryProjection<double>&, int);
-template PoissonShift<double> poisson_shift(
-    const Patch<TensorNURBS<double, 2>, 2>&, const Boundary<double, 2>&,
+    const Patch<TensorBSpline<double, 2>, 2>&,
     const BoundaryProjection<double>&, int);
 
 } // namespace iguana

@@ -335,19 +335,19 @@ class NeumannCondition:
 
 
 class Derivatives:
-    """Data given by their Cartesian derivatives, such as the exact ones of a
-    formula, for a condition shifted with the Poisson equation."""
+    """The source of a condition shifted with the Poisson equation, given by
+    its Cartesian derivatives, such as the exact ones of a formula."""
 
     def __init__(
         self,
         function: Callable[[npt.NDArray[np.float64], int], npt.ArrayLike],
     ) -> None:
-        """Initialize the data from a function giving their derivatives.
+        """Initialize the source from a function giving its derivatives.
 
         Args:
             function: A function that takes points of shape
                 `(num_points, 2)` and a total order, and returns the
-                derivatives d_x^a d_y^b of the data with a + b up to that
+                derivatives d_x^a d_y^b of the source with a + b up to that
                 order at each point, of shape `(num_points, num_terms)`.
                 The terms run over b and, for each, over a, with a running
                 fastest: (0, 0), (1, 0), ..., (order, 0), (0, 1), ...,
@@ -399,8 +399,7 @@ class SkeletonNitscheCondition:
         cell_types: Sequence[CellType],
         boundary: Boundary,
         values: (npt.ArrayLike
-                 | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]
-                 | Derivatives),
+                 | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
         penalty: float,
         order: int | None = None,
         source: (Callable[[npt.NDArray[np.float64]], npt.ArrayLike]
@@ -419,23 +418,21 @@ class SkeletonNitscheCondition:
 
         The expansion is a Taylor series of the functions of each cell.
         With the source of the Poisson equation it is instead the series of
-        the solution along the normal of the boundary from the closest
-        point, whose normal derivatives from the second on the equation
-        gives from the values, the source and the curvature of the
-        boundary. It keeps the condition coercive at high degree. The
-        boundary must then be smooth at the closest points.
+        the solution from the closest point along the line to the face
+        point, whose derivatives along that line from the second on the
+        equation gives, through the terms of its residual. It keeps the
+        condition coercive at high degree, and needs neither the normal nor
+        the curvature of the boundary, which may have corners.
 
-        The series takes the derivatives of the values and of the source,
-        each given in one of two ways:
+        The series takes the derivatives of the source, given in one of two
+        ways:
 
-        - as `Derivatives`, their Cartesian derivatives at the closest
-          points, such as the exact ones of a formula;
-        - as a function of points whose values are interpolated, the values
-          along the boundary in a spline on each face, as fine as the cells
-          and of the order of the series or the degree of the patch,
-          whichever is higher, and the source in the basis of the patch, so
-          that their derivatives are those of the splines. This suits data
-          known only at points, such as those of a coupled solver.
+        - as `Derivatives`, its Cartesian derivatives at the closest points,
+          such as the exact ones of a formula;
+        - as a function of points whose values are interpolated in the basis
+          of the patch, so that its derivatives are those of the
+          interpolant. This suits a source known only at points, such as
+          that of a coupled solver.
 
         Only faces between two cells carry it, so the cells of non-zero
         weight must stay off the edge of the patch.
@@ -452,33 +449,32 @@ class SkeletonNitscheCondition:
             values: The values imposed at the closest point of each face
                 point, one per point or two for the velocity, or a function
                 that takes those closest points, of shape `(num_points, 2)`,
-                and returns their values. With a source, their `Derivatives`
-                or a function of points along the boundary returning their
-                values there, to interpolate.
+                and returns their values.
             penalty: The penalty, positive, which the size of the cells
                 scales, as for `NitscheCondition`.
             order: Total order of the Taylor expansion towards the
-                boundary, or of the normal series with a source,
-                nonnegative. Without it, the highest degree of the patch.
+                boundary, or of the series rewritten with the equation with
+                a source, nonnegative. Without it, the highest degree of the
+                patch.
             source: The source f of the Poisson equation −Δu = f, as its
                 `Derivatives` or as a function of points of the patch
                 returning its values, to interpolate, with which the
-                expansion is the normal series of the solution. Without it,
-                the Taylor series.
+                expansion is the series rewritten with the equation. Without
+                it, the Taylor series.
 
         Raises:
             TypeError: If the trace is not the trace of an element, if the
                 patch is not a planar patch, if the boundary is not a
-                boundary, or, with a source, if the source or the values are
-                neither `Derivatives` nor functions of the points.
+                boundary, or if a source is neither `Derivatives` nor a
+                function of the points.
             ValueError: If there is not one cell type per element, if the
                 map of the patch is not affine, if the values are not those
                 of the trace at each point, if the penalty is not positive,
                 if the order is negative, or, with a source, if the trace is
-                not that of a Poisson element, if the boundary is not smooth
-                at a closest point, if derivatives do not give each point
-                one per term of their order, or if an interpolated source
-                needs derivatives above the degree of the patch.
+                not that of a Poisson element, if its derivatives do not
+                give each point one per term of their order, or if an
+                interpolated source needs derivatives above the degree of
+                the patch.
         """
         if not isinstance(trace, _TRACES):
             raise TypeError('the trace must be the trace of an element')
@@ -510,13 +506,9 @@ class SkeletonNitscheCondition:
                 raise ValueError('only the trace of a Poisson element takes '
                                  'a source')
 
-            if not _is_data(source):
+            if not (isinstance(source, Derivatives) or callable(source)):
                 raise TypeError('the source must be derivatives or a function '
                                 'of the points')
-
-            if not _is_data(values):
-                raise TypeError('the values must be derivatives or a function '
-                                'of the points with a source')
 
         # The faces between cells whose weights may jump, with as many
         # points as on those of a ghost penalty, projected onto the boundary
@@ -533,37 +525,27 @@ class SkeletonNitscheCondition:
 
         self._trace = trace
         self._patch = patch
-        self._boundary = boundary
         self._quadrature = quadrature
         self._projection = projection
         self._order = order
         self._penalty = float(penalty)
         self._source = source
+        self._values = _values(positions, values, trace._shape)
 
         # Rewritten with the equation, the assembly combines derivatives of
-        # its own order at the closest points, and the data imposed at the
-        # points are those of the series, from the derivatives of the values
-        # and of the source there
+        # the order of the series at the closest points, and the data imposed
+        # at the points add to the values the terms of the source there
         if source is None:
-            self._values = _values(positions, values, trace._shape)
             self._imposed = self._values
         else:
-            shift = _cpp.poisson_shift(
-                patch=patch._cpp_object, boundary=boundary._cpp_object,
-                projection=projection, order=order)
+            shift = _cpp.poisson_shift(patch=patch._cpp_object,
+                                       projection=projection, order=order)
             projection.shift_weights = shift.weights
 
-            self._order = shift.order
-            self._series = order
-            self._value_weights = np.array(shift.value_weights)
-            self._tangent_weights = np.array(shift.tangent_weights)
-            self._data_degree = max(order, *patch.degrees)
             self._source_part = np.sum(
                 np.array(shift.source_weights) * self._source_derivatives(),
                 axis=1)
-            self._values = np.empty((1, len(positions)))
-            self._imposed = np.empty_like(self._values)
-            self._impose(values)
+            self._imposed = self._values + self._source_part
 
     @property
     def trace(self) -> PoissonElement.U | StokesElement.U:
@@ -585,25 +567,21 @@ class SkeletonNitscheCondition:
         """Values at the closest point of each face point, of shape
         `(num_points,)`, or `(num_points, 2)` for the velocity. They are set
         as at initialization, by their values or by a function of the
-        closest points, or with a source by their `Derivatives` or a function
-        of points along the boundary, whose interpolant gives them."""
+        closest points."""
         return _given(self._values, self._trace._shape)
 
     @values.setter
     def values(
         self,
         values: (npt.ArrayLike
-                 | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]
-                 | Derivatives),
+                 | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
     ) -> None:
-        if self._source is None:
-            self._values[...] = _values(np.array(self._projection.positions),
-                                        values, self._trace._shape)
-        elif _is_data(values):
-            self._impose(values)
-        else:
-            raise TypeError('the values must be derivatives or a function of '
-                            'the points with a source')
+        self._values[...] = _values(np.array(self._projection.positions),
+                                    values, self._trace._shape)
+
+        # The form reads the imposed data where they lie
+        if self._source is not None:
+            self._imposed[...] = self._values + self._source_part
 
     @property
     def penalty(self) -> float:
@@ -615,7 +593,7 @@ class SkeletonNitscheCondition:
         order of the series less two, given or of its interpolant in the
         basis of the patch."""
         positions = np.array(self._projection.positions)
-        order = self._series - 2
+        order = self._order - 2
 
         if isinstance(self._source, Derivatives):
             return self._source._at(positions, order)
@@ -630,34 +608,6 @@ class SkeletonNitscheCondition:
         return np.array(_cpp.interpolated_derivs(
             patch=patch, values=_values(nodes, self._source, ())[0],
             points=positions, order=order))
-
-    def _impose(
-        self,
-        values: (Callable[[npt.NDArray[np.float64]], npt.ArrayLike]
-                 | Derivatives),
-    ) -> None:
-        """Data imposed at the points by the series rewritten with the
-        equation, in place, from the derivatives of the values at the
-        closest points: Cartesian ones given, or those along the boundary of
-        their interpolant."""
-        if isinstance(values, Derivatives):
-            derivatives = values._at(np.array(self._projection.positions),
-                                     self._series)
-            weights = self._value_weights
-        else:
-            patch = self._patch._cpp_object
-            boundary = self._boundary._cpp_object
-            nodes = np.array(_cpp.boundary_interpolation_points(
-                patch=patch, boundary=boundary, degree=self._data_degree))
-            derivatives = np.array(_cpp.boundary_interpolated_derivs(
-                patch=patch, boundary=boundary, degree=self._data_degree,
-                values=_values(nodes, values, ())[0],
-                projection=self._projection, order=self._series))
-            weights = self._tangent_weights
-
-        self._values[0] = derivatives[:, 0]
-        self._imposed[0] = (np.sum(weights * derivatives, axis=1)
-                            + self._source_part)
 
     def _add_to(self, form: _cpp.Form2d,
                 cell_weights: npt.NDArray[np.float64]) -> None:
@@ -717,12 +667,6 @@ def _values(
                          'point')
 
     return np.ascontiguousarray(values.reshape(len(points), -1).T)
-
-
-def _is_data(data: object) -> bool:
-    """Whether data of a condition shifted with the equation are
-    `Derivatives` or a function of points to interpolate."""
-    return isinstance(data, Derivatives) or callable(data)
 
 
 def _given(

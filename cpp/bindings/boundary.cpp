@@ -76,16 +76,11 @@ void boundary(py::module_& module)
     // The shift of a Dirichlet condition rewritten with the Poisson
     // equation, at the points of a projection
     py::class_<PoissonShift2d>(module, "PoissonShift2d")
-        .def_readonly("order", &PoissonShift2d::order)
-        .def_readonly("distances", &PoissonShift2d::distances)
         .def_readonly("weights", &PoissonShift2d::weights)
-        .def_readonly("value_weights", &PoissonShift2d::value_weights)
-        .def_readonly("tangent_weights", &PoissonShift2d::tangent_weights)
         .def_readonly("source_weights", &PoissonShift2d::source_weights);
 
     module.def("poisson_shift", &poisson_shift<TensorBSpline<double, 2>>,
-               py::arg("patch"), py::arg("boundary"), py::arg("projection"),
-               py::arg("order"));
+               py::arg("patch"), py::arg("projection"), py::arg("order"));
 
     // Data known at points, interpolated in the basis of a patch or in
     // splines along the faces of a boundary, with the derivatives of the
