@@ -12,7 +12,7 @@
 
 #include <Eigen/LU>
 
-#include "iguana/geometry/normal_coordinates.hpp"
+#include "iguana/geometry/directional_derivs.hpp"
 #include "iguana/grid/knot_vector.hpp"
 #include "iguana/utils/multi_index.hpp"
 
@@ -112,8 +112,7 @@ Eigen::MatrixX<T> interpolated_derivs(
     // ∂_x and ∂_y are the parametric derivatives along A^−1 e_x and A^−1 e_y,
     // the same at every point of an affine map
     const Eigen::Matrix2<T> inverse = patch.linear_part().inverse();
-    const Eigen::MatrixX<T> cartesian = normal_coordinate_derivs<T>(
-        inverse, Eigen::VectorX<T>::Zero(order), order);
+    const Eigen::MatrixX<T> cartesian = directional_derivs<T>(inverse, order);
 
     PointMatrix<T, 2> parameters;
     patch.invert_points(points, parameters);
