@@ -52,6 +52,19 @@ Boundary<double, 2>::Face ellipse(const Eigen::RowVector2d& center, double a,
     return {TensorNURBS<double, 1>(bspline, weights), points};
 }
 
+/// @brief Straight face from one point to another, a line of degree one
+Boundary<double, 2>::Face segment(const Eigen::RowVector2d& from,
+                                  const Eigen::RowVector2d& to)
+{
+    PointMatrix<double, 2> points(2, 2);
+    points << from, to;
+
+    const TensorBSpline<double, 1> line(
+        {BSpline<double>(1, {0., 0., 1., 1.})});
+
+    return {TensorNURBS<double, 1>(line, Eigen::Vector2d::Ones()), points};
+}
+
 /// @brief Patch of one bilinear element stretching the unit square onto a
 ///        box of the plane, from its lowest corner and with its sizes
 iguana::Patch<TensorBSpline<double, 2>, 2> box(
@@ -117,38 +130,29 @@ Polynomial random_polynomial(int degree, std::mt19937& generator)
 } // namespace
 
 TEST_CASE("The shift rewritten with the Poisson equation reproduces "
-          "polynomials at the surrogate points", "[poisson_shift]")
+          "polynomials at the surrogate points, off corners too",
+          "[poisson_shift]")
 {
-    // An ellipse inside a patch stretched by 2 and 3, whose parametric
-    // derivatives are 2^a 3^b times the Cartesian ones
+    // A patch stretched by 2 and 3, whose parametric derivatives are
+    // 2^a 3^b times the Cartesian ones
     const Eigen::RowVector2d sizes(2., 3.);
     const iguana::Patch<TensorBSpline<double, 2>, 2> patch =
         box({0., 0.}, sizes);
-    const Eigen::RowVector2d center(1., 1.4);
-    const double a = .7;
-    const double b = .45;
-
-    // Points inside and outside, around the ellipse, in parameters
-    PointMatrix<double, 2> points(12, 2);
-    Eigen::Index row = 0;
-
-    for (const double scale : {.8, 1.2})
-        for (const double angle : {.3, 1.1, 2., 3.3, 4.4, 5.6})
-            points.row(row++) =
-                (center + scale * Eigen::RowVector2d(a * std::cos(angle),
-                                                     b * std::sin(angle)))
-                    .cwiseQuotient(sizes);
-
     std::mt19937 generator(7);
 
-    // The domain inside the ellipse, and outside it with the normals in
-    for (const int sign : {1, -1}) {
-        const Boundary<double, 2> boundary({ellipse(center, a, b)}, {sign});
+    // u at each point and the parametric derivatives at its closest point,
+    // against g = u and f = −Δu there, for every order
+    const auto reproduces = [&](const char* shape,
+                                const Boundary<double, 2>& boundary,
+                                const PointMatrix<double, 2>& positions) {
+        INFO(shape);
+        const PointMatrix<double, 2> points =
+            positions.array().rowwise() / sizes.array();
         const iguana::BoundaryProjection<double> projection =
             iguana::project_closest_points(patch, boundary, points);
 
         for (int m = 1; m <= 6; ++m) {
-            INFO("sign " << sign << ", order " << m);
+            INFO("order " << m);
             const Polynomial u = random_polynomial(m, generator);
             const iguana::PoissonShift<double> shift =
                 iguana::poisson_shift(patch, projection, m);
@@ -157,13 +161,10 @@ TEST_CASE("The shift rewritten with the Poisson equation reproduces "
 
             for (Eigen::Index point = 0; point < points.rows(); ++point) {
                 INFO("point " << point);
-                const Eigen::RowVector2d surrogate =
-                    points.row(point).cwiseProduct(sizes);
+                const Eigen::RowVector2d surrogate = positions.row(point);
                 const Eigen::RowVector2d closest =
                     projection.positions.row(point);
 
-                // u at the point and the parametric derivatives at its
-                // closest point, against g = u and f = −Δu there
                 double shifted = u.derivative(0, 0, surrogate);
 
                 for (int q = 0; q <= m; ++q)
@@ -184,7 +185,42 @@ TEST_CASE("The shift rewritten with the Poisson equation reproduces "
                 REQUIRE(std::abs(shifted - data) < 1e-11);
             }
         }
-    }
+    };
+
+    // Points inside and outside an ellipse, around it
+    const Eigen::RowVector2d center(1., 1.4);
+    const double a = .7;
+    const double b = .45;
+    PointMatrix<double, 2> around(12, 2);
+    Eigen::Index row = 0;
+
+    for (const double scale : {.8, 1.2})
+        for (const double angle : {.3, 1.1, 2., 3.3, 4.4, 5.6})
+            around.row(row++) =
+                center + scale * Eigen::RowVector2d(a * std::cos(angle),
+                                                    b * std::sin(angle));
+
+    reproduces("ellipse", Boundary<double, 2>({ellipse(center, a, b)}, {1}),
+               around);
+
+    // Points beside the sides of a square, inside and outside, and the last
+    // four off its corners, whose closest points are the vertices
+    const Boundary<double, 2> square(
+        {segment({.5, 1.}, {1.5, 1.}), segment({1.5, 1.}, {1.5, 2.}),
+         segment({1.5, 2.}, {.5, 2.}), segment({.5, 2.}, {.5, 1.})},
+        {1, 1, 1, 1});
+
+    PointMatrix<double, 2> beside(8, 2);
+    beside << 1., 1.2,
+              1.3, 1.5,
+              1., .8,
+              .3, 1.6,
+              1.7, 2.3,
+              .2, .7,
+              1.8, .6,
+              .3, 2.4;
+
+    reproduces("square", square, beside);
 }
 
 TEST_CASE("The shift rewritten with the equation needs an affine map and "

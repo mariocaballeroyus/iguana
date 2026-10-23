@@ -85,18 +85,17 @@ def blossoms(knots, degree, power):
                      for i in range(count)])
 
 
-def ellipse():
-    """Ellipse of semi-axes .6 and .9 in the middle of the rectangle of
-    sides 2 and 3, as four quadratic NURBS arcs, counterclockwise."""
-    corner = np.sqrt(.5)
-    directions = np.array([[1., 0.], [1., 1.], [0., 1.], [-1., 1.],
-                           [-1., 0.], [-1., -1.], [0., -1.], [1., -1.],
-                           [1., 0.]])
+def parallelogram():
+    """Parallelogram inside the rectangle of sides 2 and 3, of straight
+    sides counterclockwise, with no side along the cells."""
+    corner, first, second = np.array([[.5, .7], [.9, .25], [.15, 1.5]])
+    corners = [corner, corner + first, corner + first + second,
+               corner + second]
 
     return Boundary([iguana.create_curve(
-        degree=2, knots=[0., 0., 0., .25, .25, .5, .5, .75, .75, 1., 1., 1.],
-        control_points=[1., 1.5] + [.6, .9] * directions,
-        weights=[1., corner, 1., corner, 1., corner, 1., corner, 1.])])
+        degree=1, knots=[0., 0., 1., 1.],
+        control_points=[corners[side], corners[(side + 1) % 4]])
+        for side in range(4)])
 
 
 def polynomial_derivatives(terms):
@@ -283,15 +282,16 @@ def test_stokes_flow_by_the_generalized_shifted_boundary_method():
 
 
 def test_poisson_at_high_degree_by_the_generalized_shifted_boundary_method():
-    """Inside an ellipse, with the volume fractions weighting the cells of a
-    cubic space that keeps every function, Nitsche's condition on the faces
-    where they jump, shifted with the equation, and a ghost penalty find a
-    cubic field at every degree of freedom, those beyond the ellipse
-    included, and the field with a harmonic one added once its values
-    change."""
+    """Inside a parallelogram, with the volume fractions weighting the cells
+    of a cubic space that keeps every function, Nitsche's condition on the
+    faces where they jump, shifted with the equation off the corners too,
+    and a ghost penalty find a cubic field at every degree of freedom, those
+    beyond the parallelogram included, and the field with a harmonic one
+    added once its values change, with the source given by its derivatives
+    or interpolated."""
     patch = iguana.create_rectangle(lengths=(2., 3.), elements=(8, 12),
                                     degrees=(3, 3))
-    boundary = ellipse()
+    boundary = parallelogram()
     cell_types, fractions = classify_cells(patch, boundary)
     space = FunctionSpace(patch, [CellType.inside] * len(cell_types))
 
@@ -318,23 +318,26 @@ def test_poisson_at_high_degree_by_the_generalized_shifted_boundary_method():
                                   for c, i, j in terms)
 
     element = PoissonElement()
-    condition = SkeletonNitscheCondition(
-        element.u, patch, cell_types, boundary, polynomial(cubic), 320.,
-        source=polynomial_derivatives(linear))
     ghost = GhostPenalty(element.u, patch, cell_types, .5)
-    problem = LinearProblem(element, space, quadrature, source,
-                            cell_weights=fractions, conditions=[condition],
-                            stabilizations=[ghost],
-                            petsc_options_prefix='poisson_gsbm_')
 
-    # Exact to round-off, which the conditioning of the cells the penalty
-    # alone determines amplifies
-    for terms in (cubic, cubic + harmonic):
-        condition.values = polynomial(terms)
-        exact = cubic_coefficients(space, terms)
+    for given in (polynomial_derivatives(linear), source):
+        condition = SkeletonNitscheCondition(
+            element.u, patch, cell_types, boundary, polynomial(cubic), 320.,
+            source=given)
+        problem = LinearProblem(element, space, quadrature, source,
+                                cell_weights=fractions,
+                                conditions=[condition],
+                                stabilizations=[ghost],
+                                petsc_options_prefix='poisson_gsbm_')
 
-        assert (np.abs(problem.solve() - exact).max()
-                < 1e-8 * np.abs(exact).max())
+        # Exact to round-off, which the conditioning of the cells the
+        # penalty alone determines amplifies
+        for terms in (cubic, cubic + harmonic):
+            condition.values = polynomial(terms)
+            exact = cubic_coefficients(space, terms)
+
+            assert (np.abs(problem.solve() - exact).max()
+                    < 1e-8 * np.abs(exact).max())
 
 
 def test_invalid_equation_shifts():
@@ -344,7 +347,7 @@ def test_invalid_equation_shifts():
     equation alone."""
     patch = iguana.create_rectangle(lengths=(2., 3.), elements=(8, 12),
                                     degrees=(3, 3))
-    boundary = ellipse()
+    boundary = parallelogram()
     cell_types, fractions = classify_cells(patch, boundary)
     space = FunctionSpace(patch, [CellType.inside] * len(cell_types))
     quadrature = QuadratureDomain(patch, cell_types)
