@@ -18,7 +18,6 @@ add_executable(iguana_tests
     fspace/test_function_space.cpp
     geometry/test_boundary.cpp
     geometry/test_field_interpolation.cpp
-    geometry/test_normal_coordinates.cpp
     geometry/test_patch.cpp
     quadrature/gauss_legendre/test_gauss_legendre.cpp
     quadrature/moment_fitting/test_moment_fitting.cpp

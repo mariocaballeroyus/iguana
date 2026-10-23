@@ -20,7 +20,6 @@ add_library(iguana
     geometry/boundary_projection.cpp
     geometry/directional_derivs.cpp
     geometry/field_interpolation.cpp
-    geometry/normal_coordinates.cpp
     geometry/patch.cpp
     quadrature/box_rule.cpp
     quadrature/gauss_legendre/gauss_legendre.cpp
@@ -34,7 +33,6 @@ add_library(iguana
     quadrature/xiao_gimbutas/xiao_gimbutas_tables.cpp
     assembly/element_values.cpp
     element/poisson/poisson_element.cpp
-    element/poisson/poisson_normal_series.cpp
     element/poisson/poisson_shift.cpp
     element/stokes/stokes_element.cpp
     element/stokes/stokes_stabilized_element.cpp
