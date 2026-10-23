@@ -342,9 +342,10 @@ public:
      * @throws std::invalid_argument If @p order is negative, if
      *         @p projection does not have one distance vector per point of
      *         @p quadrature, nor shift weights of one row per point and one
-     *         column per multi-index when it has them, if the patch is not a
-     *         B-spline one, or if the local matrices of @p condition do not
-     *         match the degrees of freedom of the space
+     *         column per multi-index when it has them, with further weights
+     *         of their size alone, if the patch is not a B-spline one, or if
+     *         the local matrices of @p condition do not match the degrees of
+     *         freedom of the space
      *
      * @pre @p quadrature is built as for the stiffness of a condition, and
      *      @p projection was computed from its points through the patch
@@ -510,7 +511,8 @@ public:
      *         condition, if @p order is negative, if @p projection does not
      *         have one distance vector per point of @p quadrature, nor shift
      *         weights of one row per point and one column per multi-index
-     *         when it has them, or if the patch is not a B-spline one
+     *         when it has them, with further weights of their size alone,
+     *         or if the patch is not a B-spline one
      *
      * @pre As for the stiffness of a skeleton condition, and @p projection was
      *      computed from the points of @p quadrature through the patch

@@ -7,6 +7,7 @@
 #define IGUANA_GEOMETRY_BOUNDARY_PROJECTION_HPP
 
 #include <concepts>
+#include <vector>
 
 #include <Eigen/Core>
 
@@ -51,6 +52,13 @@ struct BoundaryProjection
     ///        series, empty for it, with one row per point and one column
     ///        per multi-index, the first direction running fastest
     Eigen::MatrixX<T> shift_weights;
+
+    /// @brief Further sets of weights of the parametric derivatives at the
+    ///        closest points, each of the size of shift_weights, whose
+    ///        combinations the shifted values keep apart for a trace that
+    ///        takes another field, as the velocity shifted with the Stokes
+    ///        equation takes the pressure gradient, one set per component
+    std::vector<Eigen::MatrixX<T>> coupled_weights;
 };
 
 /**
