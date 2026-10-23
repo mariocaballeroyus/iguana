@@ -17,18 +17,6 @@ namespace iguana
 {
 
 /**
- * @brief Collocation matrix of a univariate basis at its Greville
- *        abscissae, whose solve interpolates values given there
- *
- * @tparam T Floating-point type
- *
- * @param bspline Univariate basis
- * @return Matrix with one row per abscissa and one column per function
- */
-template<std::floating_point T>
-Eigen::MatrixX<T> collocation_matrix(const BSpline<T>& bspline);
-
-/**
  * @brief Points at which a field is interpolated in the basis of a planar
  *        patch, the images of its Greville points, one per function in
  *        their order

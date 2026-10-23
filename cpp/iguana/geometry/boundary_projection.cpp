@@ -5,25 +5,17 @@
 
 #include "boundary_projection.hpp"
 
-#include <algorithm>
 #include <array>
-#include <cmath>
 #include <cstddef>
 #include <limits>
-#include <span>
 #include <stdexcept>
-#include <utility>
 #include <vector>
-
-#include <Eigen/LU>
 
 #include "iguana/basis/tensor_bspline.hpp"
 #include "iguana/basis/tensor_nurbs.hpp"
-#include "iguana/geometry/field_interpolation.hpp"
 #include "iguana/geometry/nurbs/bezier_points.hpp"
 #include "iguana/geometry/nurbs/curve_projection.hpp"
 #include "iguana/grid/knot_vector.hpp"
-#include "iguana/quadrature/gauss_legendre/gauss_legendre.hpp"
 #include "iguana/utils/taylor_series.hpp"
 
 namespace iguana
@@ -95,106 +87,6 @@ Eigen::VectorX<T> arc_length_derivs(Eigen::VectorX<T> series,
     }
 
     return derivs;
-}
-
-/// @brief Length of an element of a face, by Gauss quadrature of the speed
-///        of its curve
-template<std::floating_point T>
-T element_length(const Patch<TensorNURBS<T, 1>, 2>& curve, int element)
-{
-    const BSpline<T>& bspline = curve.basis().bspline().axis(0);
-    const KnotVector<T>& knots = bspline.knots();
-    const GaussLegendre<T, 1> rule(2 * (knots.degree() + 1));
-    const std::array<T, 1> start{knots.element_start(element)};
-    const std::array<T, 1> end{knots.element_end(element)};
-    Eigen::MatrixX<T> points;
-    Eigen::VectorX<T> weights;
-    std::vector<Eigen::MatrixX<T>> derivs;
-    Eigen::VectorXi actives;
-    PointMatrix<T, 2> tangents;
-
-    rule.fill_to_reference_space(start, end, points, weights);
-    GaussLegendre<T, 1>::map_to_parameter_space(start, end, points, weights);
-    curve.basis().derivs_on_element({bspline.first_active(element)}, points,
-                                    1, derivs);
-    curve.basis().active_on_element(element, actives);
-    curve.position_on_element(actives, derivs[1], tangents);
-
-    return weights.dot(tangents.rowwise().norm());
-}
-
-/**
- * @brief Knot vector of the data spline of a face, clamped, of a degree,
- *        with each element of the curve split evenly into as many as it is
- *        long in a size, at least one
- *
- * @details The data along a curve are no smoother in its parameter than
- *          the curve is at its knots, C^(p − r) for a knot of multiplicity r
- *          in a curve of degree p, so each knot of the curve is one of the
- *          data spline with the multiplicity that leaves it that smooth
- */
-template<std::floating_point T>
-KnotVector<T> data_knots(const Patch<TensorNURBS<T, 1>, 2>& curve,
-                         int degree, T size)
-{
-    const KnotVector<T>& knots = curve.basis().bspline().axis(0).knots();
-    const int last = knots.num_elements() - 1;
-    std::vector<T> values(static_cast<std::size_t>(degree) + 1,
-                          knots.domain_start());
-
-    for (int element = 0; element <= last; ++element) {
-        const T start = knots.element_start(element);
-        const T end = knots.element_end(element);
-        const int count = std::max(1, static_cast<int>(std::ceil(
-                                          element_length(curve, element)
-                                          / size)));
-
-        for (int knot = 1; knot < count; ++knot)
-            values.push_back(start + (end - start) * static_cast<T>(knot)
-                                         / static_cast<T>(count));
-
-        if (element == last)
-            break;
-
-        const int repeats = static_cast<int>(
-            std::count(knots.values().begin(), knots.values().end(), end));
-        const int continuity = knots.degree() - repeats;
-        const int multiplicity = std::clamp(degree - continuity, 1, degree);
-
-        values.insert(values.end(), static_cast<std::size_t>(multiplicity),
-                      end);
-    }
-
-    values.insert(values.end(), static_cast<std::size_t>(degree) + 1,
-                  knots.domain_end());
-
-    return KnotVector<T>(degree, std::move(values));
-}
-
-/// @brief Smallest edge of the physical cells of a patch with an affine
-///        map, the shortest element of each direction through its column
-///        of the map
-template<typename Basis>
-typename Basis::Scalar smallest_cell_edge(const Patch<Basis, 2>& patch)
-{
-    using T = typename Basis::Scalar;
-
-    T smallest = std::numeric_limits<T>::infinity();
-
-    for (std::size_t direction = 0; direction < 2; ++direction) {
-        const KnotVector<T>& knots =
-            patch.basis().grid().knots(direction);
-        const T scale = patch.linear_part()
-                            .col(static_cast<Eigen::Index>(direction))
-                            .norm();
-
-        for (int element = 0; element < knots.num_elements(); ++element)
-            smallest = std::min(smallest, scale * (knots.element_end(element)
-                                                   - knots.element_start(
-                                                       element)));
-    }
-
-    return smallest;
 }
 
 /**
@@ -386,166 +278,6 @@ Eigen::MatrixX<T> curvature_derivs(const Boundary<T, 2>& boundary,
     return curvatures;
 }
 
-template<typename Basis> requires (Basis::dimension == 2)
-PointMatrix<typename Basis::Scalar, 2> boundary_interpolation_points(
-    const Patch<Basis, 2>& patch,
-    const Boundary<typename Basis::Scalar, 2>& boundary, int degree)
-{
-    using T = typename Basis::Scalar;
-    using Face = typename Boundary<T, 2>::Face;
-
-    if (degree < 0)
-        throw std::invalid_argument("boundary_interpolation_points: "
-                                    "the degree must be non-negative");
-
-    if (!patch.is_affine())
-        throw std::invalid_argument("boundary_interpolation_points: "
-                                    "the map of the patch must be affine");
-
-    const T size = smallest_cell_edge(patch);
-    std::vector<Eigen::RowVector2<T>> points;
-    Eigen::MatrixX<T> parameter(1, 1);
-    std::vector<Eigen::MatrixX<T>> values;
-    Eigen::VectorXi actives;
-    PointMatrix<T, 2> position;
-
-    for (int face = 0; face < boundary.num_faces(); ++face) {
-        const Face& curve = boundary.face(face);
-        const BSpline<T>& bspline = curve.basis().bspline().axis(0);
-        const Eigen::VectorX<T> abscissae =
-            greville_abscissae(data_knots(curve, degree, size));
-
-        // The curve at each abscissa, on the element of its own knot
-        // vector holding it
-        for (const T abscissa : abscissae) {
-            const int element = element_holding(bspline.knots(), abscissa);
-
-            parameter(0, 0) = abscissa;
-            curve.basis().derivs_on_element({bspline.first_active(element)},
-                                            parameter, 0, values);
-            curve.basis().active_on_element(element, actives);
-            curve.position_on_element(actives, values[0], position);
-            points.push_back(position.row(0));
-        }
-    }
-
-    PointMatrix<T, 2> result(static_cast<Eigen::Index>(points.size()), 2);
-
-    for (std::size_t point = 0; point < points.size(); ++point)
-        result.row(static_cast<Eigen::Index>(point)) = points[point];
-
-    return result;
-}
-
-template<typename Basis> requires (Basis::dimension == 2)
-Eigen::MatrixX<typename Basis::Scalar> boundary_interpolated_derivs(
-    const Patch<Basis, 2>& patch,
-    const Boundary<typename Basis::Scalar, 2>& boundary, int degree,
-    const Eigen::VectorX<typename Basis::Scalar>& values,
-    const BoundaryProjection<typename Basis::Scalar>& projection, int order)
-{
-    using T = typename Basis::Scalar;
-    using Face = typename Boundary<T, 2>::Face;
-
-    if (order < 0 || order > degree)
-        throw std::invalid_argument("boundary_interpolated_derivs: "
-                                    "the order must lie between zero and "
-                                    "the degree");
-
-    if (!patch.is_affine())
-        throw std::invalid_argument("boundary_interpolated_derivs: "
-                                    "the map of the patch must be affine");
-
-    // The data spline of each face and its coefficients, from the values at
-    // its Greville abscissae, face after face
-    const T size = smallest_cell_edge(patch);
-    std::vector<BSpline<T>> splines;
-    std::vector<Eigen::VectorX<T>> coefficients;
-    Eigen::Index first = 0;
-
-    for (int face = 0; face < boundary.num_faces(); ++face) {
-        splines.emplace_back(data_knots(boundary.face(face), degree, size));
-        const Eigen::Index count = splines.back().num_functions();
-
-        if (first + count > values.size())
-            break;
-
-        coefficients.push_back(collocation_matrix(splines.back())
-                                   .partialPivLu()
-                                   .solve(values.segment(first, count)));
-        first += count;
-    }
-
-    if (first != values.size()
-        || static_cast<int>(coefficients.size()) != boundary.num_faces())
-        throw std::invalid_argument("boundary_interpolated_derivs: "
-                                    "the values must be one per "
-                                    "interpolation point");
-
-    const Eigen::Index num_points = projection.faces.size();
-    Eigen::MatrixX<T> derivs(num_points, order + 1);
-    std::vector<Eigen::MatrixX<T>> spline_derivs;
-    Eigen::VectorX<T> dx;
-    Eigen::VectorX<T> dy;
-    Eigen::VectorX<T> series(order + 1);
-
-    for (Eigen::Index point = 0; point < num_points; ++point) {
-        const int face = projection.faces(point);
-        const Face& curve = boundary.face(face);
-        const BSpline<T>& spline = splines[static_cast<std::size_t>(face)];
-        const T parameter = projection.parameters(point);
-
-        // Series of g_h in the parameter about the closest point, with
-        // coefficients g^(k) / k!, on the data element holding it inside
-        // its element of the curve, which the knots of the data split, so
-        // that at a knot it is one-sided as the curvature is
-        const KnotVector<T>& curve_knots =
-            curve.basis().bspline().axis(0).knots();
-        const T curve_end =
-            curve_knots.element_end(projection.elements(point));
-        int element = element_holding(spline.knots(), parameter);
-
-        if (element > 0 && spline.knots().element_start(element) >= curve_end)
-            --element;
-
-        const int active = spline.first_active(element);
-        spline.derivs_on_element(active, std::span<const T>(&parameter, 1),
-                                 order, spline_derivs);
-
-        T factorial{1};
-
-        for (int k = 0; k <= order; ++k) {
-            if (k > 0)
-                factorial *= static_cast<T>(k);
-
-            series(k) = spline_derivs[static_cast<std::size_t>(k)].col(0).dot(
-                            coefficients[static_cast<std::size_t>(face)]
-                                .segment(active, spline.degree() + 1))
-                        / factorial;
-        }
-
-        // The arc length of the exact curve, with τ along the
-        // parametrization where the face sign is 1 and against it otherwise
-        tangent_series(curve, projection.elements(point), parameter,
-                       std::max(order, 1), dx, dy);
-        const Eigen::VectorX<T> inverse_speed = series_power(
-            Eigen::VectorX<T>(series_product(dx, dx) + series_product(dy, dy)),
-            T{-0.5});
-        const Eigen::VectorX<T> along =
-            arc_length_derivs(series, inverse_speed, order);
-
-        const T sign = static_cast<T>(boundary.sign(face));
-        T factor{1};
-
-        for (int j = 0; j <= order; ++j) {
-            derivs(point, j) = factor * along(j);
-            factor *= sign;
-        }
-    }
-
-    return derivs;
-}
-
 template BoundaryProjection<double> project_closest_points(
     const Patch<TensorBSpline<double, 2>, 2>&, const Boundary<double, 2>&,
     const PointMatrix<double, 2>&);
@@ -554,19 +286,5 @@ template BoundaryProjection<double> project_closest_points(
     const PointMatrix<double, 2>&);
 template Eigen::MatrixX<double> curvature_derivs(
     const Boundary<double, 2>&, const BoundaryProjection<double>&, int);
-template PointMatrix<double, 2> boundary_interpolation_points(
-    const Patch<TensorBSpline<double, 2>, 2>&, const Boundary<double, 2>&,
-    int);
-template PointMatrix<double, 2> boundary_interpolation_points(
-    const Patch<TensorNURBS<double, 2>, 2>&, const Boundary<double, 2>&,
-    int);
-template Eigen::MatrixX<double> boundary_interpolated_derivs(
-    const Patch<TensorBSpline<double, 2>, 2>&, const Boundary<double, 2>&,
-    int, const Eigen::VectorX<double>&, const BoundaryProjection<double>&,
-    int);
-template Eigen::MatrixX<double> boundary_interpolated_derivs(
-    const Patch<TensorNURBS<double, 2>, 2>&, const Boundary<double, 2>&,
-    int, const Eigen::VectorX<double>&, const BoundaryProjection<double>&,
-    int);
 
 } // namespace iguana
