@@ -17,6 +17,7 @@ element. Its values can change between solves, as in a time loop.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Sequence
 
 import numpy as np
@@ -335,8 +336,8 @@ class NeumannCondition:
 
 
 class Derivatives:
-    """The source of a condition shifted with the Poisson equation, given by
-    its Cartesian derivatives, such as the exact ones of a formula."""
+    """The source of a condition shifted with an equation, given by its
+    Cartesian derivatives, such as the exact ones of a formula."""
 
     def __init__(
         self,
@@ -348,10 +349,11 @@ class Derivatives:
             function: A function that takes points of shape
                 `(num_points, 2)` and a total order, and returns the
                 derivatives d_x^a d_y^b of the source with a + b up to that
-                order at each point, of shape `(num_points, num_terms)`.
-                The terms run over b and, for each, over a, with a running
-                fastest: (0, 0), (1, 0), ..., (order, 0), (0, 1), ...,
-                (0, order).
+                order at each point, of shape `(num_points, num_terms)`, or
+                `(num_points, num_terms, 2)` for the body force of
+                `StokesElement`. The terms run over b and, for each, over a,
+                with a running fastest: (0, 0), (1, 0), ..., (order, 0),
+                (0, 1), ..., (0, order).
 
         Raises:
             TypeError: If the function is not callable.
@@ -366,18 +368,20 @@ class Derivatives:
         self,
         points: npt.NDArray[np.float64],
         order: int,
+        shape: tuple[int, ...] = (),
     ) -> npt.NDArray[np.float64]:
         """The derivatives at points up to an order, checked to give each
-        point one per term, and none below order zero."""
+        point one per term, of the shape of the source, and none below order
+        zero."""
         num_terms = (order + 1) * (order + 2) // 2 if order >= 0 else 0
 
         if num_terms == 0:
-            return np.zeros((len(points), 0))
+            return np.zeros((len(points), 0, *shape))
 
         derivatives = np.asarray(self._function(points, order),
                                  dtype=np.float64)
 
-        if derivatives.shape != (len(points), num_terms):
+        if derivatives.shape != (len(points), num_terms, *shape):
             raise ValueError('the derivatives must give each point one value '
                              'per term of the order')
 
@@ -420,9 +424,12 @@ class SkeletonNitscheCondition:
         With the source of the Poisson equation it is instead the series of
         the solution from the closest point along the line to the face
         point, whose derivatives along that line from the second on the
-        equation gives, through the terms of its residual. It keeps the
-        condition coercive at high degree, and needs neither the normal nor
-        the curvature of the boundary, which may have corners.
+        equation gives, through the terms of its residual. So does the
+        velocity of `StokesElement` with the body force of the Stokes
+        equation, whose momentum equation also takes the pressure gradient.
+        It keeps the condition coercive at high degree, and needs neither
+        the normal nor the curvature of the boundary, which may have
+        corners.
 
         The series takes the derivatives of the source, given in one of two
         ways:
@@ -456,9 +463,11 @@ class SkeletonNitscheCondition:
                 boundary, or of the series rewritten with the equation with
                 a source, nonnegative. Without it, the highest degree of the
                 patch.
-            source: The source f of the Poisson equation −Δu = f, as its
-                `Derivatives` or as a function of points of the patch
-                returning its values, to interpolate, with which the
+            source: The source f of the Poisson equation −Δu = f, or for
+                the velocity the body force f of the Stokes equation
+                −μ Δu + ∇p = f, as its `Derivatives` or as a function of
+                points of the patch returning its values, one per point or
+                two for the body force, to interpolate, with which the
                 expansion is the series rewritten with the equation. Without
                 it, the Taylor series.
 
@@ -470,11 +479,10 @@ class SkeletonNitscheCondition:
             ValueError: If there is not one cell type per element, if the
                 map of the patch is not affine, if the values are not those
                 of the trace at each point, if the penalty is not positive,
-                if the order is negative, or, with a source, if the trace is
-                not that of a Poisson element, if its derivatives do not
-                give each point one per term of their order, or if an
-                interpolated source needs derivatives above the degree of
-                the patch.
+                if the order is negative, or, with a source, if it does not
+                give each point the values of the source, its derivatives
+                one per term of their order, or if an interpolated source
+                needs derivatives above the degree of the patch.
         """
         if not isinstance(trace, _TRACES):
             raise TypeError('the trace must be the trace of an element')
@@ -502,10 +510,6 @@ class SkeletonNitscheCondition:
             raise ValueError('the order must be non-negative')
 
         if source is not None:
-            if not isinstance(trace, PoissonElement.U):
-                raise ValueError('only the trace of a Poisson element takes '
-                                 'a source')
-
             if not (isinstance(source, Derivatives) or callable(source)):
                 raise TypeError('the source must be derivatives or a function '
                                 'of the points')
@@ -533,18 +537,26 @@ class SkeletonNitscheCondition:
         self._values = _values(positions, values, trace._shape)
 
         # Rewritten with the equation, the assembly combines derivatives of
-        # the order of the series at the closest points, and the data imposed
-        # at the points add to the values the terms of the source there
+        # the order of the series at the closest points, of the pressure too
+        # for the velocity, and the data imposed at the points add to the
+        # values the terms of the source there, a component per row
         if source is None:
             self._imposed = self._values
         else:
-            shift = _cpp.poisson_shift(patch=patch._cpp_object,
-                                       projection=projection, order=order)
+            if isinstance(trace, StokesElement.U):
+                shift = _cpp.stokes_shift(
+                    patch=patch._cpp_object, projection=projection,
+                    order=order, viscosity=trace._element.viscosity)
+                projection.coupled_weights = list(shift.pressure_weights)
+            else:
+                shift = _cpp.poisson_shift(patch=patch._cpp_object,
+                                           projection=projection, order=order)
+
             projection.shift_weights = shift.weights
 
+            weights = np.array(shift.source_weights)
             self._source_part = np.sum(
-                np.array(shift.source_weights) * self._source_derivatives(),
-                axis=1)
+                weights[:, :, None] * self._source_derivatives(), axis=1).T
             self._imposed = self._values + self._source_part
 
     @property
@@ -591,23 +603,30 @@ class SkeletonNitscheCondition:
     def _source_derivatives(self) -> npt.NDArray[np.float64]:
         """Cartesian derivatives of the source at the closest points, of the
         order of the series less two, given or of its interpolant in the
-        basis of the patch."""
+        basis of the patch, of shape `(num_points, num_terms,
+        num_components)`."""
         positions = np.array(self._projection.positions)
         order = self._order - 2
+        shape = self._trace._shape
 
         if isinstance(self._source, Derivatives):
-            return self._source._at(positions, order)
+            derivatives = self._source._at(positions, order, shape)
+        elif order < 0:
+            # Below order two the series takes no source
+            derivatives = np.zeros((len(positions), 0, *shape))
+        else:
+            # Each component interpolated on its own
+            patch = self._patch._cpp_object
+            nodes = np.array(_cpp.interpolation_points(patch=patch))
+            derivatives = np.stack(
+                [np.array(_cpp.interpolated_derivs(
+                    patch=patch, values=component, points=positions,
+                    order=order))
+                 for component in _values(nodes, self._source, shape)],
+                axis=2)
 
-        # Below order two the series takes no source
-        if order < 0:
-            return np.zeros((len(positions), 0))
-
-        patch = self._patch._cpp_object
-        nodes = np.array(_cpp.interpolation_points(patch=patch))
-
-        return np.array(_cpp.interpolated_derivs(
-            patch=patch, values=_values(nodes, self._source, ())[0],
-            points=positions, order=order))
+        return derivatives.reshape(len(positions), derivatives.shape[1],
+                                   math.prod(shape))
 
     def _add_to(self, form: _cpp.Form2d,
                 cell_weights: npt.NDArray[np.float64]) -> None:
