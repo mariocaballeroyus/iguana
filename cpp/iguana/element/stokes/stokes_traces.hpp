@@ -27,7 +27,10 @@ namespace iguana
  *
  * @details Its matrix B holds the values of the active functions at the
  *          boundary points in the rows of its component, and zeros in those
- *          of the other components and of the pressure
+ *          of the other components and of the pressure. On values shifted
+ *          with the Stokes equation, whose further combinations hold the
+ *          pressure gradient of each component, the rows of the pressure
+ *          hold that of its component
  *
  * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
  * @tparam n Dimension of the physical space, the number of parametric
@@ -73,6 +76,15 @@ public:
         trace.setZero(first_row(values, n + 1), functions.cols());
         trace.middleRows(first_row(values, component_), functions.rows()) =
             functions;
+
+        // The pressure gradient of the shift of the component, in the rows
+        // of the pressure
+        if (values.num_combinations() > component_) {
+            const Eigen::MatrixX<Scalar>& gradient = values.combination(
+                field_of(values.num_fields(), n), component_);
+            trace.middleRows(first_row(values, n), gradient.rows()) =
+                gradient;
+        }
     }
 
 private:
