@@ -104,7 +104,8 @@ void boundary(py::module_& module)
 
     module.def("stokes_shift", &stokes_shift<TensorBSpline<double, 2>>,
                py::arg("patch"), py::arg("projection"), py::arg("order"),
-               py::arg("viscosity"));
+               py::arg("viscosity"),
+               py::arg("center") = ShiftCenter::boundary);
 
     // Data known at points, interpolated in the basis of a patch, with the
     // derivatives of the interpolant at points

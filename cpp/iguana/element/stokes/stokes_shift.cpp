@@ -21,7 +21,7 @@ template<typename Basis> requires (Basis::dimension == 2)
 StokesShift<typename Basis::Scalar> stokes_shift(
     const Patch<Basis, 2>& patch,
     const BoundaryProjection<typename Basis::Scalar>& projection, int order,
-    typename Basis::Scalar viscosity)
+    typename Basis::Scalar viscosity, ShiftCenter center)
 {
     using T = typename Basis::Scalar;
 
@@ -29,7 +29,8 @@ StokesShift<typename Basis::Scalar> stokes_shift(
         throw std::invalid_argument("stokes_shift: "
                                     "the viscosity must be positive");
 
-    const PoissonShift<T> base = poisson_shift(patch, projection, order);
+    const PoissonShift<T> base =
+        poisson_shift(patch, projection, order, center);
     const int m = order;
     const Eigen::Index num_points = base.weights.rows();
 
@@ -75,6 +76,6 @@ StokesShift<typename Basis::Scalar> stokes_shift(
 
 template StokesShift<double> stokes_shift(
     const Patch<TensorBSpline<double, 2>, 2>&,
-    const BoundaryProjection<double>&, int, double);
+    const BoundaryProjection<double>&, int, double, ShiftCenter);
 
 } // namespace iguana
