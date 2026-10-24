@@ -120,8 +120,10 @@ void ElementValues<Basis, n>::reinit(int element,
     // The points stay for a later shift
     points_ = points;
 
-    for (Field& field : fields_)
+    for (Field& field : fields_) {
         evaluate(field, element, points);
+        field.combinations.clear();
+    }
 
     // The patch's own functions give the map, which are those of a field
     // when its basis is the patch's
@@ -169,9 +171,10 @@ void ElementValues<Basis, n>::shift(const Eigen::MatrixX<Scalar>& shifts,
 }
 
 template<typename Basis, std::size_t n>
-void ElementValues<Basis, n>::shift(const Eigen::MatrixX<Scalar>& shifts,
-                                    const Eigen::MatrixX<Scalar>& weights,
-                                    int order)
+void ElementValues<Basis, n>::shift(
+    const Eigen::MatrixX<Scalar>& shifts,
+    const Eigen::MatrixX<Scalar>& weights,
+    const std::vector<Eigen::MatrixX<Scalar>>& coupled, int order)
     requires std::same_as<Basis, TensorBSpline<Scalar, dim>>
 {
     const Eigen::MatrixX<Scalar> shifted = points_ + shifts;
@@ -181,6 +184,15 @@ void ElementValues<Basis, n>::shift(const Eigen::MatrixX<Scalar>& shifts,
         field.basis.combine_on_element(field.first_active, shifted, weights,
                                        order, combination);
         field.values += combination;
+
+        // The further combinations, apart from the values
+        field.combinations.resize(coupled.size());
+
+        for (std::size_t set = 0; set < coupled.size(); ++set) {
+            field.basis.combine_on_element(field.first_active, shifted,
+                                           coupled[set], order,
+                                           field.combinations[set]);
+        }
     }
 }
 

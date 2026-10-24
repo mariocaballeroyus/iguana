@@ -161,23 +161,31 @@ public:
     /**
      * @brief Adds to the values of every field a combination of their
      *        derivatives at the points of the last reinit() moved by shifts,
-     *        with weights per point, up to a total order
+     *        with weights per point, up to a total order, and keeps apart
+     *        their combinations with further sets of weights
      *
      * This is how a shift rewritten with an equation takes the derivatives
-     * at the closest points on the true boundary. The gradients, tangents,
-     * measures and physical gradients and Hessians stay at the points
+     * at the closest points on the true boundary. A trace that takes another
+     * field reads the further combinations, as the velocity shifted with the
+     * Stokes equation takes the pressure gradient, and reinit() drops them.
+     * The gradients, tangents, measures and physical gradients and Hessians
+     * stay at the points
      *
      * @param shifts Shift of each point in parameter space, with size
      *        (num_points, dim)
      * @param weights Weight of each multi-index at each shifted point, as
      *        TensorBSpline::combine_on_element() takes them
+     * @param coupled Further sets of weights, each of the size of
+     *        @p weights, whose combinations combination() gives
      * @param order Highest total order of the derivatives
      *
-     * @pre reinit() was called, @p shifts and @p weights have one row per
-     *      point of it, and @p order is non-negative
+     * @pre reinit() was called, @p shifts, @p weights and every set of
+     *      @p coupled have one row per point of it, and @p order is
+     *      non-negative
      */
     void shift(const Eigen::MatrixX<Scalar>& shifts,
-               const Eigen::MatrixX<Scalar>& weights, int order)
+               const Eigen::MatrixX<Scalar>& weights,
+               const std::vector<Eigen::MatrixX<Scalar>>& coupled, int order)
         requires std::same_as<Basis, TensorBSpline<Scalar, dim>>;
 
     /**
@@ -205,6 +213,27 @@ public:
     /// @brief Number of fields, one per basis
     constexpr std::size_t num_fields() const noexcept
     { return fields_.size(); }
+
+    /// @brief Number of further combinations the last shift() kept, none
+    ///        after reinit()
+    constexpr std::size_t num_combinations() const noexcept
+    { return fields_.front().combinations.size(); }
+
+    /**
+     * @brief Combination of the derivatives of the active functions of a
+     *        field with one further set of weights of the last shift(), of
+     *        the size of values()
+     *
+     * @param field Field index, in the order of the bases
+     * @param set Index of the set of weights
+     *
+     * @pre @p field lies in [0, num_fields()) and @p set in
+     *      [0, num_combinations())
+     */
+    constexpr const Eigen::MatrixX<Scalar>& combination(std::size_t field,
+                                                        std::size_t set) const
+        noexcept
+    { return fields_[field].combinations[set]; }
 
     /**
      * @brief Values of the active functions of a field, of size
@@ -329,6 +358,10 @@ private:
         ///        space, empty unless flagged
         std::array<Eigen::MatrixX<Scalar>, n * (n + 1) / 2>
             physical_hessians;
+
+        /// @brief Combinations of the derivatives of the active functions
+        ///        with further sets of weights, kept by shift()
+        std::vector<Eigen::MatrixX<Scalar>> combinations;
     };
 
     /**

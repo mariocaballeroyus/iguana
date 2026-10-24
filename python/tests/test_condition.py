@@ -385,9 +385,9 @@ def test_invalid_skeleton_nitsche_conditions():
         SkeletonNitscheCondition(element.u, patch, cell_types, sides,
                                  lambda x: x[:, 0], 1., order=-1)
 
-    # A source takes the Poisson trace, and with it the source and the
-    # values are derivatives or functions of the points, on a boundary
-    # without corners
+    # A source gives the values of the trace at each point, two for the
+    # body force of the velocity, and is derivatives or a function of the
+    # points
     def zero(x):
         return np.zeros(len(x))
 
@@ -398,14 +398,6 @@ def test_invalid_skeleton_nitsche_conditions():
     with pytest.raises(TypeError):
         SkeletonNitscheCondition(element.u, patch, cell_types, sides, zero,
                                  1., source=0.)
-
-    with pytest.raises(TypeError):
-        SkeletonNitscheCondition(element.u, patch, cell_types, sides, 0., 1.,
-                                 source=zero)
-
-    with pytest.raises(ValueError):
-        SkeletonNitscheCondition(element.u, patch, cell_types, sides, zero,
-                                 1., source=zero)
 
     # The map of the patch must be affine
     bent = patch.control_points.copy()

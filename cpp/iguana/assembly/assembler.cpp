@@ -80,12 +80,22 @@ void shift_values(ElementValues<Basis, n>& values,
         const Eigen::MatrixX<Scalar> distances =
             projection.distances.middleRows(first, count);
 
-        if (projection.shift_weights.size() == 0)
+        if (projection.shift_weights.size() == 0) {
             values.shift(distances, order);
-        else
+        }
+        else {
+            // The further sets of weights, at the points of the element or
+            // face alone
+            std::vector<Eigen::MatrixX<Scalar>> coupled;
+
+            for (const Eigen::MatrixX<Scalar>& set
+                 : projection.coupled_weights)
+                coupled.emplace_back(set.middleRows(first, count));
+
             values.shift(distances,
                          projection.shift_weights.middleRows(first, count),
-                         order);
+                         coupled, order);
+        }
     }
     else if constexpr (std::same_as<Basis, TensorNURBS<Scalar, dim>>) {
         throw std::invalid_argument("Assembler: "
@@ -98,9 +108,10 @@ void shift_values(ElementValues<Basis, n>& values,
  *        points of a quadrature
  *
  * @throws std::invalid_argument If the order is negative, if the
- *         projection does not have one distance vector per point, or if it
+ *         projection does not have one distance vector per point, if it
  *         has shift weights without one row per point and one column per
- *         multi-index of the order
+ *         multi-index of the order, or further weights without shift
+ *         weights or of another size
  */
 template<std::floating_point T>
 void check_projection(const BoundaryProjection<T>& projection, int order,
@@ -123,6 +134,14 @@ void check_projection(const BoundaryProjection<T>& projection, int order,
                                     "the shift weights must have one row "
                                     "per point and one column per "
                                     "multi-index of the order");
+
+    for (const Eigen::MatrixX<T>& set : projection.coupled_weights) {
+        if (weights.size() == 0 || set.rows() != weights.rows()
+            || set.cols() != weights.cols())
+            throw std::invalid_argument("Assembler: "
+                                        "the coupled weights must have the "
+                                        "size of the shift weights");
+    }
 }
 
 /**

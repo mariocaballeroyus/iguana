@@ -85,31 +85,40 @@ def blossoms(knots, degree, power):
                      for i in range(count)])
 
 
-def ellipse():
-    """Ellipse of semi-axes .6 and .9 in the middle of the rectangle of
-    sides 2 and 3, as four quadratic NURBS arcs, counterclockwise."""
-    corner = np.sqrt(.5)
-    directions = np.array([[1., 0.], [1., 1.], [0., 1.], [-1., 1.],
-                           [-1., 0.], [-1., -1.], [0., -1.], [1., -1.],
-                           [1., 0.]])
+def parallelogram():
+    """Parallelogram inside the rectangle of sides 2 and 3, of straight
+    sides counterclockwise, with no side along the cells."""
+    corner, first, second = np.array([[.5, .7], [.9, .25], [.15, 1.5]])
+    corners = [corner, corner + first, corner + first + second,
+               corner + second]
 
     return Boundary([iguana.create_curve(
-        degree=2, knots=[0., 0., 0., .25, .25, .5, .5, .75, .75, 1., 1., 1.],
-        control_points=[1., 1.5] + [.6, .9] * directions,
-        weights=[1., corner, 1., corner, 1., corner, 1., corner, 1.])])
+        degree=1, knots=[0., 0., 1., 1.],
+        control_points=[corners[side], corners[(side + 1) % 4]])
+        for side in range(4)])
 
 
-def polynomial_derivatives(terms):
+def polynomial(terms):
+    """The polynomial sum c x^i y^j of terms (c, i, j), as a function of
+    points."""
+    return lambda points: sum(c * points[:, 0] ** i * points[:, 1] ** j
+                              for c, i, j in terms)
+
+
+def polynomial_derivatives(*components):
     """Exact derivatives d_x^a d_y^b of the polynomial sum c x^i y^j of terms
-    (c, i, j), as a condition shifted with the equation takes them."""
+    (c, i, j), as a condition shifted with the equation takes them, or of
+    those of each component of a body force, given their terms."""
     def derivatives(points, order):
         x, y = points.T
-
-        return np.column_stack([
+        each = [np.column_stack([
             sum(c * math.perm(i, a) * math.perm(j, b)
                 * x ** max(i - a, 0) * y ** max(j - b, 0)
                 for c, i, j in terms) * np.ones(len(points))
             for b in range(order + 1) for a in range(order + 1 - b)])
+            for terms in components]
+
+        return each[0] if len(each) == 1 else np.stack(each, axis=2)
 
     return Derivatives(derivatives)
 
@@ -282,16 +291,75 @@ def test_stokes_flow_by_the_generalized_shifted_boundary_method():
                   - (exact[:, 2] - exact[:, 2].mean())).max() < 1e-9
 
 
-def test_poisson_at_high_degree_by_the_generalized_shifted_boundary_method():
-    """Inside an ellipse, with the volume fractions weighting the cells of a
-    cubic space that keeps every function, Nitsche's condition on the faces
-    where they jump, shifted with the equation, and a ghost penalty find a
-    cubic field at every degree of freedom, those beyond the ellipse
-    included, and the field with a harmonic one added once its values
-    change."""
+def test_stokes_at_high_degree_by_the_generalized_shifted_boundary_method():
+    """Inside a parallelogram, with the volume fractions weighting the cells
+    of a cubic space that keeps every function, Nitsche's condition on the
+    faces where they jump, shifted with the Stokes equation off the corners
+    too, and ghost penalties on the velocity and the pressure find a cubic
+    flow and a quadratic pressure at every degree of freedom, with the body
+    force given by its derivatives or interpolated."""
     patch = iguana.create_rectangle(lengths=(2., 3.), elements=(8, 12),
                                     degrees=(3, 3))
-    boundary = ellipse()
+    boundary = parallelogram()
+    cell_types, fractions = classify_cells(patch, boundary)
+    space = FunctionSpace(patch, block_size=3)
+    quadrature = QuadratureDomain(patch, cell_types)
+
+    for cell_type in (CellType.inside, CellType.cut, CellType.outside):
+        quadrature.fill_gauss_legendre(cell_type, 4)
+
+    # u = (2 x^2 y + x^3 / 3, −2 x y^2 − x^2 y), free of divergence, and
+    # p = x^2 − x y + y
+    element = StokesElement(1.5, 3.)
+    mu = element.viscosity
+    flow = [[(2., 2, 1), (1. / 3., 3, 0)], [(-2., 1, 2), (-1., 2, 1)]]
+    pressure = [(1., 2, 0), (-1., 1, 1), (1., 0, 1)]
+
+    # f = −μ Δu + ∇p, linear
+    force = [[(2. - 2. * mu, 1, 0), (-4. * mu - 1., 0, 1)],
+             [(4. * mu - 1., 1, 0), (2. * mu, 0, 1), (1., 0, 0)]]
+
+    def velocity(points):
+        return np.column_stack([polynomial(terms)(points) for terms in flow])
+
+    def body_force(points):
+        return np.column_stack([polynomial(terms)(points)
+                                for terms in force])
+
+    exact = np.column_stack([cubic_coefficients(space, terms)
+                             for terms in flow + [pressure]])
+
+    for given in (polynomial_derivatives(*force), body_force):
+        condition = SkeletonNitscheCondition(
+            element.u, patch, cell_types, boundary, velocity,
+            40. * element.viscosity, source=given)
+        ghosts = [GhostPenalty(trace, patch, cell_types, .1)
+                  for trace in (element.u, element.p)]
+        u = LinearProblem(element, space, quadrature, body_force,
+                          cell_weights=fractions, conditions=[condition],
+                          stabilizations=ghosts, pressure_reference=(1., 1.5),
+                          petsc_options_prefix='stokes_shift_').solve()
+
+        # Exact to round-off, which the conditioning of the cells the
+        # penalties alone determine amplifies, the pressure up to a constant
+        assert (np.abs(u[:, :2] - exact[:, :2]).max()
+                < 1e-8 * np.abs(exact[:, :2]).max())
+        assert (np.abs((u[:, 2] - u[:, 2].mean())
+                       - (exact[:, 2] - exact[:, 2].mean())).max()
+                < 1e-8 * np.abs(exact[:, 2]).max())
+
+
+def test_poisson_at_high_degree_by_the_generalized_shifted_boundary_method():
+    """Inside a parallelogram, with the volume fractions weighting the cells
+    of a cubic space that keeps every function, Nitsche's condition on the
+    faces where they jump, shifted with the equation off the corners too,
+    and a ghost penalty find a cubic field at every degree of freedom, those
+    beyond the parallelogram included, and the field with a harmonic one
+    added once its values change, with the source given by its derivatives
+    or interpolated."""
+    patch = iguana.create_rectangle(lengths=(2., 3.), elements=(8, 12),
+                                    degrees=(3, 3))
+    boundary = parallelogram()
     cell_types, fractions = classify_cells(patch, boundary)
     space = FunctionSpace(patch, [CellType.inside] * len(cell_types))
 
@@ -314,91 +382,36 @@ def test_poisson_at_high_degree_by_the_generalized_shifted_boundary_method():
         return -7. * x - 2. * y
 
     element = PoissonElement()
-    condition = SkeletonNitscheCondition(
-        element.u, patch, cell_types, boundary, polynomial_derivatives(cubic),
-        320., source=polynomial_derivatives(linear))
     ghost = GhostPenalty(element.u, patch, cell_types, .5)
-    problem = LinearProblem(element, space, quadrature, source,
-                            cell_weights=fractions, conditions=[condition],
-                            stabilizations=[ghost],
-                            petsc_options_prefix='poisson_gsbm_')
 
-    # Exact to round-off, which the conditioning of the cells the penalty
-    # alone determines amplifies
-    for terms in (cubic, cubic + harmonic):
-        condition.values = polynomial_derivatives(terms)
-        exact = cubic_coefficients(space, terms)
-
-        assert (np.abs(problem.solve() - exact).max()
-                < 1e-8 * np.abs(exact).max())
-
-
-def test_poisson_with_interpolated_data_at_the_order_of_their_splines():
-    """Shifted with the equation from values and a source known only at
-    points, interpolated in splines of the degree of the patch as fine as its
-    cells, the cubic field converges at the order of the splines, four, on
-    the functions of the cells inside the ellipse."""
-    cubic = [(1., 3, 0), (-2., 2, 1), (.5, 1, 2), (1., 0, 3), (-1., 1, 0),
-             (2., 0, 1), (1., 0, 0)]
-
-    def field(points):
-        return sum(c * points[:, 0] ** i * points[:, 1] ** j
-                   for c, i, j in cubic)
-
-    def source(points):
-        x, y = points.T
-        return -7. * x - 2. * y
-
-    errors = []
-
-    for elements in ((16, 24), (32, 48)):
-        patch = iguana.create_rectangle(lengths=(2., 3.), elements=elements,
-                                        degrees=(3, 3))
-        boundary = ellipse()
-        cell_types, fractions = classify_cells(patch, boundary)
-        space = FunctionSpace(patch, [CellType.inside] * len(cell_types))
-        quadrature = QuadratureDomain(patch, cell_types)
-
-        for cell_type in (CellType.inside, CellType.cut, CellType.outside):
-            quadrature.fill_gauss_legendre(cell_type, 4)
-
-        element = PoissonElement()
-        condition = SkeletonNitscheCondition(element.u, patch, cell_types,
-                                             boundary, field, 320.,
-                                             source=source)
-        ghost = GhostPenalty(element.u, patch, cell_types, .5)
+    for given in (polynomial_derivatives(linear), source):
+        condition = SkeletonNitscheCondition(
+            element.u, patch, cell_types, boundary, polynomial(cubic), 320.,
+            source=given)
         problem = LinearProblem(element, space, quadrature, source,
                                 cell_weights=fractions,
                                 conditions=[condition],
                                 stabilizations=[ghost],
-                                petsc_options_prefix='interpolated_')
+                                petsc_options_prefix='poisson_gsbm_')
 
-        # The cubic functions of the cells inside, those of index i along
-        # a direction covering the cells i − 3 to i, the first direction
-        # running fastest
-        columns, rows = elements
-        inside = (np.array(cell_types) == CellType.inside).reshape(rows,
-                                                                   columns)
-        touching = np.array([[inside[max(0, j - 3):j + 1,
-                                     max(0, i - 3):i + 1].any()
-                              for i in range(columns + 3)]
-                             for j in range(rows + 3)]).ravel()
+        # Exact to round-off, which the conditioning of the cells the
+        # penalty alone determines amplifies
+        for terms in (cubic, cubic + harmonic):
+            condition.values = polynomial(terms)
+            exact = cubic_coefficients(space, terms)
 
-        error = np.abs(problem.solve() - cubic_coefficients(space, cubic))
-        errors.append(error[touching].max())
-
-    assert errors[1] < 1e-3
-    assert errors[0] / errors[1] > 2. ** 3
+            assert (np.abs(problem.solve() - exact).max()
+                    < 1e-8 * np.abs(exact).max())
 
 
 def test_invalid_equation_shifts():
-    """A condition shifted with the equation takes values and a source only
-    as derivatives of their order or as functions of the points, a source to
+    """A condition shifted with the equation takes a source only as
+    derivatives of its order or as a function of the points, a source to
     interpolate only up to the degree of the patch, and holds the steady
     equation alone."""
     patch = iguana.create_rectangle(lengths=(2., 3.), elements=(8, 12),
                                     degrees=(3, 3))
-    boundary = ellipse()
+    boundary = parallelogram()
     cell_types, fractions = classify_cells(patch, boundary)
     space = FunctionSpace(patch, [CellType.inside] * len(cell_types))
     quadrature = QuadratureDomain(patch, cell_types)
@@ -412,14 +425,13 @@ def test_invalid_equation_shifts():
         source=lambda x: np.zeros(len(x)))
 
     with pytest.raises(TypeError):
-        condition.values = np.zeros(len(condition.values))
-
-    with pytest.raises(TypeError):
         Derivatives(0.)
 
     # Derivatives of one term at each point, though the order needs more
     with pytest.raises(ValueError):
-        condition.values = Derivatives(lambda x, order: np.zeros((len(x), 1)))
+        SkeletonNitscheCondition(
+            element.u, patch, cell_types, boundary, lambda x: x[:, 0], 320.,
+            source=Derivatives(lambda x, order: np.zeros((len(x), 1))))
 
     # The cubic patch has no fourth derivatives for a series of order six
     with pytest.raises(ValueError):

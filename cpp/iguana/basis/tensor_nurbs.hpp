@@ -9,7 +9,6 @@
 #include <array>
 #include <concepts>
 #include <cstddef>
-#include <vector>
 
 #include <Eigen/Core>
 
@@ -160,30 +159,6 @@ public:
         const Eigen::MatrixX<T>& points, Eigen::MatrixX<T>& values,
         std::array<Eigen::MatrixX<T>, d>& gradients,
         std::array<Eigen::MatrixX<T>, d * (d + 1) / 2>& hessians) const;
-
-    /**
-     * @brief Evaluates the derivatives of every order up to a given one of
-     *        the non-zero functions on an element of a curve
-     *
-     * Differentiating R_i W = w_i N_i k times gives, from the lower orders,
-     *
-     *     R_i^(k) = (w_i N_i^(k) - sum_{j=1}^{k} C(k, j) W^(j) R_i^(k-j)) / W
-     *
-     * @param first_active First active function
-     * @param points Evaluation points, with size (num_points, 1)
-     * @param order Highest order of the derivatives
-     * @param derivatives Output with one matrix per order from 0 to
-     *        @p order, each of size (num_active(), num_points) with the rows
-     *        of eval_on_element(). They are resized when necessary
-     *
-     * @pre @p first_active belongs to an existing element, @p points has one
-     *      column, every point lies inside that element, and @p order is
-     *      non-negative
-     */
-    void derivs_on_element(const std::array<int, d>& first_active,
-                           const Eigen::MatrixX<T>& points, int order,
-                           std::vector<Eigen::MatrixX<T>>& derivatives) const
-        requires (d == 1);
 
     /// @brief Whether two bases have the same B-splines and weights
     bool operator==(const TensorNURBS& other) const = default;

@@ -17,8 +17,8 @@ add_executable(iguana_tests
     fspace/test_dof_map.cpp
     fspace/test_function_space.cpp
     geometry/test_boundary.cpp
+    geometry/test_directional_derivs.cpp
     geometry/test_field_interpolation.cpp
-    geometry/test_normal_coordinates.cpp
     geometry/test_patch.cpp
     quadrature/gauss_legendre/test_gauss_legendre.cpp
     quadrature/moment_fitting/test_moment_fitting.cpp
@@ -32,9 +32,9 @@ add_executable(iguana_tests
     element/poisson/test_poisson_shift.cpp
     element/poisson/test_poisson_traces.cpp
     element/stokes/test_stokes_element.cpp
+    element/stokes/test_stokes_shift.cpp
     utils/test_bernstein.cpp
-    utils/test_legendre.cpp
-    utils/test_taylor_series.cpp)
+    utils/test_legendre.cpp)
 
 target_compile_features(iguana_tests PRIVATE cxx_std_20)
 

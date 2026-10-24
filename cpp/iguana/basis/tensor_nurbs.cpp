@@ -5,10 +5,8 @@
 
 #include "tensor_nurbs.hpp"
 
-#include <span>
 #include <stdexcept>
 #include <utility>
-#include <vector>
 
 namespace iguana
 {
@@ -162,45 +160,6 @@ void TensorNURBS<T, d>::hess_on_element(
     for (std::size_t first = 0; first < d; ++first) {
         for (std::size_t second = first + 1; second < d; ++second)
             second_derivative(hessians[pair++], first, second);
-    }
-}
-
-template<std::floating_point T, std::size_t d>
-void TensorNURBS<T, d>::derivs_on_element(
-    const std::array<int, d>& first_active, const Eigen::MatrixX<T>& points,
-    int order, std::vector<Eigen::MatrixX<T>>& derivatives) const
-    requires (d == 1)
-{
-    const std::span<const T> coords(points.col(0).data(), points.rows());
-    bspline_.axis(0).derivs_on_element(first_active[0], coords, order,
-                                       derivatives);
-
-    Eigen::VectorXi actives;
-    bspline_.active_on_element(first_active, actives);
-    const Eigen::VectorX<T> active_weights = weights_(actives);
-
-    // Weighted B-splines w N^(k), and the derivatives W^(k) of the weight
-    // function, their sums
-    std::vector<Eigen::RowVectorX<T>> weight_derivs;
-
-    for (Eigen::MatrixX<T>& derivative : derivatives) {
-        derivative.array().colwise() *= active_weights.array();
-        weight_derivs.push_back(derivative.colwise().sum());
-    }
-
-    // R^(k) = (w N^(k) - sum_{j=1}^{k} C(k, j) W^(j) R^(k-j)) / W, from the
-    // lower orders already made rational
-    for (std::size_t k = 0; k < derivatives.size(); ++k) {
-        T binomial{1};
-
-        for (std::size_t j = 1; j <= k; ++j) {
-            binomial = binomial * static_cast<T>(k - j + 1) / static_cast<T>(j);
-            derivatives[k].array() -=
-                binomial * (derivatives[k - j].array().rowwise()
-                            * weight_derivs[j].array());
-        }
-
-        derivatives[k].array().rowwise() /= weight_derivs[0].array();
     }
 }
 

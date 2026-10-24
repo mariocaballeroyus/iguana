@@ -5,14 +5,10 @@
 
 #include <iguana/iguana.hpp>
 #include <iguana/utils/multi_index.hpp>
-#include <iguana/utils/taylor_series.hpp>
 
-#include <algorithm>
 #include <cmath>
-#include <numbers>
 #include <random>
 #include <stdexcept>
-#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -26,8 +22,6 @@ using iguana::TensorBSpline;
 using iguana::TensorNURBS;
 using iguana::simplex_index;
 using iguana::simplex_size;
-
-constexpr double pi = std::numbers::pi;
 
 /// @brief Ellipse of semi-axes a and b around a center, counterclockwise,
 ///        as four quadratic arcs joined at double knots
@@ -56,6 +50,19 @@ Boundary<double, 2>::Face ellipse(const Eigen::RowVector2d& center, double a,
     points.rowwise() += center;
 
     return {TensorNURBS<double, 1>(bspline, weights), points};
+}
+
+/// @brief Straight face from one point to another, a line of degree one
+Boundary<double, 2>::Face segment(const Eigen::RowVector2d& from,
+                                  const Eigen::RowVector2d& to)
+{
+    PointMatrix<double, 2> points(2, 2);
+    points << from, to;
+
+    const TensorBSpline<double, 1> line(
+        {BSpline<double>(1, {0., 0., 1., 1.})});
+
+    return {TensorNURBS<double, 1>(line, Eigen::Vector2d::Ones()), points};
 }
 
 /// @brief Patch of one bilinear element stretching the unit square onto a
@@ -122,145 +129,51 @@ Polynomial random_polynomial(int degree, std::mt19937& generator)
 
 } // namespace
 
-TEST_CASE("The Poisson normal series gives the normal derivatives of the "
-          "solution from its trace, normal derivative and source",
+TEST_CASE("The shift rewritten with the Poisson equation reproduces "
+          "polynomials at the surrogate points, off corners too",
           "[poisson_shift]")
 {
-    const int m = 4;
-    const double k = .7;
-    const double k1 = -.4;
-    const double k2 = 1.3;
-    Eigen::VectorXd curvatures(3);
-    curvatures << k, k1, k2;
-
-    const iguana::PoissonNormalSeries<double> series =
-        iguana::poisson_normal_series(curvatures, m);
-
-    REQUIRE(series.field.rows() == m + 1);
-    REQUIRE(series.field.cols() == simplex_size(m));
-    REQUIRE(series.source.rows() == m + 1);
-    REQUIRE(series.source.cols() == simplex_size(m - 2));
-
-    // With primes along the boundary and g, q = ∂_t u and f there
-    //
-    //     U_2 = −f − κ q − g''
-    //     U_3 = κ f − ∂_t f + 2 κ² q + 3 κ g'' + κ' g' − q''
-    //     U_4 = −3 κ² f + κ ∂_t f − ∂_t² f + f'' − 6 κ³ q + 6 κ q''
-    //           + 4 κ' q' + κ'' q − 11 κ² g'' − 7 κ κ' g' + g''''
-    Eigen::MatrixXd field = Eigen::MatrixXd::Zero(m + 1, simplex_size(m));
-    Eigen::MatrixXd source =
-        Eigen::MatrixXd::Zero(m + 1, simplex_size(m - 2));
-    const auto u = [](int j, int i) { return simplex_index(j, i, 4); };
-    const auto f = [](int j, int i) { return simplex_index(j, i, 2); };
-
-    field(0, u(0, 0)) = 1.;
-    field(1, u(0, 1)) = 1.;
-
-    field(2, u(0, 1)) = -k;
-    field(2, u(2, 0)) = -1.;
-    source(2, f(0, 0)) = -1.;
-
-    field(3, u(0, 1)) = 2. * k * k;
-    field(3, u(2, 0)) = 3. * k;
-    field(3, u(1, 0)) = k1;
-    field(3, u(2, 1)) = -1.;
-    source(3, f(0, 0)) = k;
-    source(3, f(0, 1)) = -1.;
-
-    field(4, u(0, 1)) = -6. * k * k * k + k2;
-    field(4, u(2, 1)) = 6. * k;
-    field(4, u(1, 1)) = 4. * k1;
-    field(4, u(2, 0)) = -11. * k * k;
-    field(4, u(1, 0)) = -7. * k * k1;
-    field(4, u(4, 0)) = 1.;
-    source(4, f(0, 0)) = -3. * k * k;
-    source(4, f(0, 1)) = k;
-    source(4, f(0, 2)) = -1.;
-    source(4, f(2, 0)) = 1.;
-
-    REQUIRE((series.field - field).cwiseAbs().maxCoeff() < 1e-14);
-    REQUIRE((series.source - source).cwiseAbs().maxCoeff() < 1e-14);
-
-    // A negative order, and one curvature short for the order
-    REQUIRE_THROWS_AS(iguana::poisson_normal_series(curvatures, -1),
-                      std::invalid_argument);
-    REQUIRE_THROWS_AS(iguana::poisson_normal_series(curvatures, 5),
-                      std::invalid_argument);
-}
-
-TEST_CASE("The shift rewritten with the Poisson equation reproduces "
-          "polynomials at the surrogate points", "[poisson_shift]")
-{
-    // An ellipse inside a patch stretched by 2 and 3, whose parametric
-    // derivatives are 2^a 3^b times the Cartesian ones
+    // A patch stretched by 2 and 3, whose parametric derivatives are
+    // 2^a 3^b times the Cartesian ones
     const Eigen::RowVector2d sizes(2., 3.);
     const iguana::Patch<TensorBSpline<double, 2>, 2> patch =
         box({0., 0.}, sizes);
-    const Eigen::RowVector2d center(1., 1.4);
-    const double a = .7;
-    const double b = .45;
-
-    // Points inside and outside, around the ellipse, in parameters
-    PointMatrix<double, 2> points(12, 2);
-    Eigen::Index row = 0;
-
-    for (const double scale : {.8, 1.2})
-        for (const double angle : {.3, 1.1, 2., 3.3, 4.4, 5.6})
-            points.row(row++) =
-                (center + scale * Eigen::RowVector2d(a * std::cos(angle),
-                                                     b * std::sin(angle)))
-                    .cwiseQuotient(sizes);
-
     std::mt19937 generator(7);
 
-    // The domain inside the ellipse, and outside it with the normals in
-    for (const int sign : {1, -1}) {
-        const Boundary<double, 2> boundary({ellipse(center, a, b)}, {sign});
+    // u at each point and the parametric derivatives at its closest point,
+    // against g = u and f = −Δu there, for every order
+    const auto reproduces = [&](const char* shape,
+                                const Boundary<double, 2>& boundary,
+                                const PointMatrix<double, 2>& positions) {
+        INFO(shape);
+        const PointMatrix<double, 2> points =
+            positions.array().rowwise() / sizes.array();
         const iguana::BoundaryProjection<double> projection =
             iguana::project_closest_points(patch, boundary, points);
 
         for (int m = 1; m <= 6; ++m) {
-            INFO("sign " << sign << ", order " << m);
+            INFO("order " << m);
             const Polynomial u = random_polynomial(m, generator);
             const iguana::PoissonShift<double> shift =
-                iguana::poisson_shift(patch, boundary, projection, m);
+                iguana::poisson_shift(patch, projection, m);
 
-            REQUIRE(shift.weights.cols() == simplex_size(shift.order));
+            REQUIRE(shift.weights.cols() == simplex_size(m));
 
             for (Eigen::Index point = 0; point < points.rows(); ++point) {
                 INFO("point " << point);
-                const Eigen::RowVector2d surrogate =
-                    points.row(point).cwiseProduct(sizes);
+                const Eigen::RowVector2d surrogate = positions.row(point);
                 const Eigen::RowVector2d closest =
                     projection.positions.row(point);
 
-                // The first six points lie inside the ellipse, outside the
-                // domain of sign -1, where the signed distance is positive
-                const double side = point < 6 ? -sign : sign;
-
-                REQUIRE(std::abs(std::abs(shift.distances(point))
-                                 - (surrogate - closest).norm()) < 1e-12);
-                REQUIRE(side * shift.distances(point) > 0.);
-
-                // u at the point and the parametric derivatives at its
-                // closest point, against g = u and f = −Δu there
                 double shifted = u.derivative(0, 0, surrogate);
-
-                for (int q = 0; q <= shift.order; ++q)
-                    for (int p = 0; p + q <= shift.order; ++p)
-                        shifted += shift.weights(point,
-                                                 simplex_index(p, q,
-                                                               shift.order))
-                                   * std::pow(2., p) * std::pow(3., q)
-                                   * u.derivative(p, q, closest);
-
-                double data = 0.;
 
                 for (int q = 0; q <= m; ++q)
                     for (int p = 0; p + q <= m; ++p)
-                        data += shift.value_weights(point,
-                                                    simplex_index(p, q, m))
-                                * u.derivative(p, q, closest);
+                        shifted += shift.weights(point, simplex_index(p, q, m))
+                                   * std::pow(2., p) * std::pow(3., q)
+                                   * u.derivative(p, q, closest);
+
+                double data = u.derivative(0, 0, closest);
 
                 for (int q = 0; q + 2 <= m; ++q)
                     for (int p = 0; p + q + 2 <= m; ++p)
@@ -272,162 +185,53 @@ TEST_CASE("The shift rewritten with the Poisson equation reproduces "
                 REQUIRE(std::abs(shifted - data) < 1e-11);
             }
         }
-    }
-}
+    };
 
-TEST_CASE("The tangential weights of the shift give from the derivatives "
-          "along the boundary the data of the Cartesian ones",
-          "[poisson_shift]")
-{
-    // An ellipse, whose curvature varies so that the odd derivatives along
-    // it enter too
-    const Eigen::RowVector2d sizes(2., 3.);
-    const iguana::Patch<TensorBSpline<double, 2>, 2> patch =
-        box({0., 0.}, sizes);
+    // Points inside and outside an ellipse, around it
     const Eigen::RowVector2d center(1., 1.4);
     const double a = .7;
     const double b = .45;
-
-    PointMatrix<double, 2> points(6, 2);
+    PointMatrix<double, 2> around(12, 2);
     Eigen::Index row = 0;
 
-    for (const double angle : {.3, 1.1, 2., 3.3, 4.4, 5.6})
-        points.row(row++) =
-            (center + .8 * Eigen::RowVector2d(a * std::cos(angle),
-                                              b * std::sin(angle)))
-                .cwiseQuotient(sizes);
+    for (const double scale : {.8, 1.2})
+        for (const double angle : {.3, 1.1, 2., 3.3, 4.4, 5.6})
+            around.row(row++) =
+                center + scale * Eigen::RowVector2d(a * std::cos(angle),
+                                                    b * std::sin(angle));
 
-    std::mt19937 generator(11);
+    reproduces("ellipse", Boundary<double, 2>({ellipse(center, a, b)}, {1}),
+               around);
 
-    for (const int sign : {1, -1}) {
-        const Boundary<double, 2> boundary({ellipse(center, a, b)}, {sign});
-        const iguana::BoundaryProjection<double> projection =
-            iguana::project_closest_points(patch, boundary, points);
+    // Points beside the sides of a square, inside and outside, and the last
+    // four off its corners, whose closest points are the vertices
+    const Boundary<double, 2> square(
+        {segment({.5, 1.}, {1.5, 1.}), segment({1.5, 1.}, {1.5, 2.}),
+         segment({1.5, 2.}, {.5, 2.}), segment({.5, 2.}, {.5, 1.})},
+        {1, 1, 1, 1});
 
-        for (int m = 1; m <= 6; ++m) {
-            INFO("sign " << sign << ", order " << m);
-            const Polynomial g = random_polynomial(m, generator);
-            const iguana::PoissonShift<double> shift =
-                iguana::poisson_shift(patch, boundary, projection, m);
+    PointMatrix<double, 2> beside(8, 2);
+    beside << 1., 1.2,
+              1.3, 1.5,
+              1., .8,
+              .3, 1.6,
+              1.7, 2.3,
+              .2, .7,
+              1.8, .6,
+              .3, 2.4;
 
-            REQUIRE(shift.tangent_weights.cols() == m + 1);
-
-            for (Eigen::Index point = 0; point < points.rows(); ++point) {
-                INFO("point " << point);
-                const Eigen::RowVector2d closest =
-                    projection.positions.row(point);
-                const Eigen::RowVector2d offset = closest - center;
-                const double angle = std::atan2(offset(1) / b, offset(0) / a);
-
-                // x = a cos φ and y = b sin φ as series in the angle about
-                // the closest point, with coefficients x^(k) / k!, g composed
-                // with them, and d / ds = |γ'|^(−1) d / dφ, counterclockwise
-                Eigen::VectorXd x(m + 1);
-                Eigen::VectorXd y(m + 1);
-                double factorial = 1.;
-
-                for (int k = 0; k <= m; ++k) {
-                    if (k > 0)
-                        factorial *= k;
-
-                    x(k) = a * std::cos(angle + k * pi / 2.) / factorial;
-                    y(k) = b * std::sin(angle + k * pi / 2.) / factorial;
-                }
-
-                x(0) += center(0);
-                y(0) += center(1);
-
-                Eigen::VectorXd series = Eigen::VectorXd::Zero(m + 1);
-
-                for (int i = 0; i <= m; ++i) {
-                    for (int j = 0; i + j <= m; ++j) {
-                        Eigen::VectorXd term = Eigen::VectorXd::Zero(m + 1);
-                        term(0) = g.coefficients(i, j);
-
-                        for (int k = 0; k < i; ++k)
-                            term = iguana::series_product(term, x);
-
-                        for (int k = 0; k < j; ++k)
-                            term = iguana::series_product(term, y);
-
-                        series += term;
-                    }
-                }
-
-                const Eigen::VectorXd dx = iguana::series_derivative(x);
-                const Eigen::VectorXd dy = iguana::series_derivative(y);
-                const Eigen::VectorXd inverse_speed = iguana::series_power(
-                    Eigen::VectorXd(iguana::series_product(dx, dx)
-                                    + iguana::series_product(dy, dy)),
-                    -.5);
-
-                // ∂_s^j g, with s running backwards where the normals turn
-                // in
-                double tangential = 0.;
-
-                for (int j = 0; j <= m; ++j) {
-                    tangential += shift.tangent_weights(point, j)
-                                  * std::pow(sign, j) * series(0);
-
-                    if (j < m)
-                        series = iguana::series_product(
-                            inverse_speed, iguana::series_derivative(series));
-                }
-
-                double cartesian = 0.;
-
-                for (int q = 0; q <= m; ++q)
-                    for (int p = 0; p + q <= m; ++p)
-                        cartesian += shift.value_weights(
-                                         point, simplex_index(p, q, m))
-                                     * g.derivative(p, q, closest);
-
-                REQUIRE(std::abs(tangential - cartesian)
-                        < 1e-11 * std::max(1., std::abs(cartesian)));
-            }
-        }
-    }
+    reproduces("square", square, beside);
 }
 
-TEST_CASE("The shift rewritten with the equation needs a smooth boundary, "
-          "an affine map and a non-negative order", "[poisson_shift]")
+TEST_CASE("The shift rewritten with the equation needs an affine map and "
+          "a non-negative order", "[poisson_shift]")
 {
     const iguana::Patch<TensorBSpline<double, 2>, 2> patch =
         box({0., 0.}, {1., 1.});
+    const iguana::BoundaryProjection<double> projection;
 
-    // A unit square of straight sides, and a point off one of its corners,
-    // whose distance vector lies along neither side's normal
-    const auto side = [](const Eigen::RowVector2d& from,
-                         const Eigen::RowVector2d& to) {
-        PointMatrix<double, 2> ends(2, 2);
-        ends << from, to;
-        return Boundary<double, 2>::Face(
-            TensorNURBS<double, 1>(
-                TensorBSpline<double, 1>(
-                    {BSpline<double>(1, {0., 0., 1., 1.})}),
-                Eigen::Vector2d::Ones()),
-            ends);
-    };
-    const Boundary<double, 2> square(
-        {side({.2, .2}, {.8, .2}), side({.8, .2}, {.8, .8}),
-         side({.8, .8}, {.2, .8}), side({.2, .8}, {.2, .2})},
-        {1, 1, 1, 1});
-
-    PointMatrix<double, 2> points(2, 2);
-    points << .5, .1,
-              .9, .9;
-    const iguana::BoundaryProjection<double> projection =
-        iguana::project_closest_points(patch, square, points);
-
-    REQUIRE_THROWS_AS(iguana::poisson_shift(patch, square, projection, 2),
-                      std::invalid_argument);
-
-    // Off the side only, a negative order and a map that is not affine
-    const iguana::BoundaryProjection<double> beside =
-        iguana::project_closest_points(patch, square, points.topRows(1));
-
-    REQUIRE_NOTHROW(iguana::poisson_shift(patch, square, beside, 2));
-    REQUIRE_THROWS_AS(iguana::poisson_shift(patch, square, beside, -1),
+    REQUIRE_NOTHROW(iguana::poisson_shift(patch, projection, 2));
+    REQUIRE_THROWS_AS(iguana::poisson_shift(patch, projection, -1),
                       std::invalid_argument);
 
     PointMatrix<double, 2> bent = patch.coefficients();
@@ -435,6 +239,6 @@ TEST_CASE("The shift rewritten with the equation needs a smooth boundary, "
     const iguana::Patch<TensorBSpline<double, 2>, 2> curved(patch.basis(),
                                                             bent);
 
-    REQUIRE_THROWS_AS(iguana::poisson_shift(curved, square, beside, 2),
+    REQUIRE_THROWS_AS(iguana::poisson_shift(curved, projection, 2),
                       std::invalid_argument);
 }

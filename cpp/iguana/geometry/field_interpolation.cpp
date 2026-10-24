@@ -12,13 +12,25 @@
 
 #include <Eigen/LU>
 
-#include "iguana/geometry/normal_coordinates.hpp"
+#include "iguana/geometry/directional_derivs.hpp"
 #include "iguana/grid/knot_vector.hpp"
 #include "iguana/utils/multi_index.hpp"
 
 namespace iguana
 {
 
+namespace
+{
+
+/**
+ * @brief Collocation matrix of a univariate basis at its Greville
+ *        abscissae, whose solve interpolates values given there
+ *
+ * @tparam T Floating-point type
+ *
+ * @param bspline Univariate basis
+ * @return Matrix with one row per abscissa and one column per function
+ */
 template<std::floating_point T>
 Eigen::MatrixX<T> collocation_matrix(const BSpline<T>& bspline)
 {
@@ -40,6 +52,8 @@ Eigen::MatrixX<T> collocation_matrix(const BSpline<T>& bspline)
 
     return matrix;
 }
+
+} // namespace
 
 template<std::floating_point T>
 PointMatrix<T, 2> interpolation_points(
@@ -112,8 +126,7 @@ Eigen::MatrixX<T> interpolated_derivs(
     // ∂_x and ∂_y are the parametric derivatives along A^−1 e_x and A^−1 e_y,
     // the same at every point of an affine map
     const Eigen::Matrix2<T> inverse = patch.linear_part().inverse();
-    const Eigen::MatrixX<T> cartesian = normal_coordinate_derivs<T>(
-        inverse, Eigen::VectorX<T>::Zero(order), order);
+    const Eigen::MatrixX<T> cartesian = directional_derivs<T>(inverse, order);
 
     PointMatrix<T, 2> parameters;
     patch.invert_points(points, parameters);
@@ -157,7 +170,6 @@ Eigen::MatrixX<T> interpolated_derivs(
     return derivs;
 }
 
-template Eigen::MatrixXd collocation_matrix(const BSpline<double>&);
 template PointMatrix<double, 2> interpolation_points(
     const Patch<TensorBSpline<double, 2>, 2>&);
 template Eigen::MatrixXd interpolated_derivs(
