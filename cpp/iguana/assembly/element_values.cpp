@@ -174,22 +174,31 @@ template<typename Basis, std::size_t n>
 void ElementValues<Basis, n>::shift(
     const Eigen::MatrixX<Scalar>& shifts,
     const Eigen::MatrixX<Scalar>& weights,
-    const std::vector<Eigen::MatrixX<Scalar>>& coupled, int order)
+    const std::vector<Eigen::MatrixX<Scalar>>& coupled, int order,
+    ShiftCenter center)
     requires std::same_as<Basis, TensorBSpline<Scalar, dim>>
 {
-    const Eigen::MatrixX<Scalar> shifted = points_ + shifts;
+    // From the surrogate, the combinations add to the Taylor series of the
+    // values and take the derivatives at the points themselves
+    if (center == ShiftCenter::surrogate)
+        shift(shifts, order);
+
+    const Eigen::MatrixX<Scalar> at =
+        center == ShiftCenter::surrogate
+            ? points_
+            : Eigen::MatrixX<Scalar>(points_ + shifts);
     Eigen::MatrixX<Scalar> combination;
 
     for (Field& field : fields_) {
-        field.basis.combine_on_element(field.first_active, shifted, weights,
-                                       order, combination);
+        field.basis.combine_on_element(field.first_active, at, weights, order,
+                                       combination);
         field.values += combination;
 
         // The further combinations, apart from the values
         field.combinations.resize(coupled.size());
 
         for (std::size_t set = 0; set < coupled.size(); ++set) {
-            field.basis.combine_on_element(field.first_active, shifted,
+            field.basis.combine_on_element(field.first_active, at,
                                            coupled[set], order,
                                            field.combinations[set]);
         }
