@@ -21,7 +21,8 @@ namespace iguana
 template<typename Basis> requires (Basis::dimension == 2)
 PoissonShift<typename Basis::Scalar> poisson_shift(
     const Patch<Basis, 2>& patch,
-    const BoundaryProjection<typename Basis::Scalar>& projection, int order)
+    const BoundaryProjection<typename Basis::Scalar>& projection, int order,
+    ShiftCenter center)
 {
     using T = typename Basis::Scalar;
 
@@ -58,9 +59,12 @@ PoissonShift<typename Basis::Scalar> poisson_shift(
         if (t <= 64 * std::numeric_limits<T>::epsilon() * scale)
             continue;
 
-        // The directions of ∂_⊥ and ∂_e, mapped into the parameters for the
-        // field, and Cartesian for the source
-        const Eigen::Vector2<T> along = offset / t;
+        // The directions of ∂_⊥ and of ∂_e from the closest point, or of d
+        // from the point, mapped into the parameters for the field, and
+        // Cartesian for the source
+        const Eigen::Vector2<T> along =
+            center == ShiftCenter::boundary ? Eigen::Vector2<T>(offset / t)
+                                            : Eigen::Vector2<T>(-offset / t);
         const Eigen::Vector2<T> across(-along(1), along(0));
 
         Eigen::Matrix2<T> frame;
@@ -76,22 +80,41 @@ PoissonShift<typename Basis::Scalar> poisson_shift(
         for (int k = 1; k <= m; ++k) {
             power *= t / static_cast<T>(k);
 
-            // The term of order k of the series with those of the residual,
-            // which leave at most one derivative along e
-            const int j = k / 2;
-            const T sign = j % 2 == 0 ? T{1} : T{-1};
+            if (center == ShiftCenter::boundary) {
+                // The term of order k of the series with those of the
+                // residual, which leave at most one derivative along e
+                const int j = k / 2;
+                const T sign = j % 2 == 0 ? T{1} : T{-1};
 
-            shift.weights.row(point) -=
-                sign * power
-                * parametric.row(simplex_index(2 * j, k - 2 * j, m));
+                shift.weights.row(point) -=
+                    sign * power
+                    * parametric.row(simplex_index(2 * j, k - 2 * j, m));
 
-            // The source of the terms of the residual, D_k f
-            for (int i = 0; 2 * i + 2 <= k; ++i) {
-                const T term = i % 2 == 0 ? power : -power;
+                // The source of the terms of the residual, D_k f
+                for (int i = 0; 2 * i + 2 <= k; ++i) {
+                    const T term = i % 2 == 0 ? power : -power;
 
-                shift.source_weights.row(point) -=
-                    term * cartesian.row(simplex_index(2 * i, k - 2 - 2 * i,
-                                                       m - 2));
+                    shift.source_weights.row(point) -=
+                        term * cartesian.row(simplex_index(
+                                   2 * i, k - 2 - 2 * i, m - 2));
+                }
+            }
+            else if (center == ShiftCenter::surrogate) {
+                // The terms of the residual at the point, along d, the
+                // Laplacian of the field in the frame and the source apart,
+                // while the values take the Taylor series
+                for (int i = 0; 2 * i + 2 <= k; ++i) {
+                    const T term = i % 2 == 0 ? power : -power;
+
+                    shift.weights.row(point) -=
+                        term * (parametric.row(simplex_index(
+                                    2 * i + 2, k - 2 - 2 * i, m))
+                                + parametric.row(simplex_index(
+                                    2 * i, k - 2 * i, m)));
+                    shift.source_weights.row(point) +=
+                        term * cartesian.row(simplex_index(
+                                   2 * i, k - 2 - 2 * i, m - 2));
+                }
             }
         }
     }
@@ -101,6 +124,6 @@ PoissonShift<typename Basis::Scalar> poisson_shift(
 
 template PoissonShift<double> poisson_shift(
     const Patch<TensorBSpline<double, 2>, 2>&,
-    const BoundaryProjection<double>&, int);
+    const BoundaryProjection<double>&, int, ShiftCenter);
 
 } // namespace iguana
