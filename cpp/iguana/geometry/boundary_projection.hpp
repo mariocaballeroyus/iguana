@@ -53,6 +53,9 @@ struct BoundaryProjection
     /// @brief Parameter of the face at each closest point
     Eigen::VectorX<T> parameters;
 
+    /// @brief Points in physical space, with size (num_points, 2)
+    PointMatrix<T, 2> points;
+
     /// @brief Closest points in physical space, with size (num_points, 2)
     PointMatrix<T, 2> positions;
 
@@ -97,7 +100,7 @@ struct BoundaryProjection
  * @param boundary Boundary of curves in the physical space of the patch
  * @param points Points in the parameter space of the patch, one per row
  * @return The closest point to each, with its face, parameter, normal and
- *         distance vector
+ *         distance vector, and the point in physical space
  *
  * @throws std::invalid_argument If the map of the patch is not affine, if
  *         the boundary has no face, or if the knot vector of a face is not

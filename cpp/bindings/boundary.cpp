@@ -75,6 +75,7 @@ void boundary(py::module_& module)
     // center, and the further weights, set as a whole list, of a trace that
     // takes another field
     py::class_<BoundaryProjection2d>(module, "BoundaryProjection2d")
+        .def_readonly("points", &BoundaryProjection2d::points)
         .def_readonly("positions", &BoundaryProjection2d::positions)
         .def_readwrite("shift_weights", &BoundaryProjection2d::shift_weights)
         .def_readwrite("coupled_weights",

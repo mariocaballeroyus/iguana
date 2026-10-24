@@ -152,6 +152,7 @@ BoundaryProjection<typename Basis::Scalar> project_closest_points(
     // Closest points on the boundary in physical space
     BoundaryProjection<T> projection =
         project_closest_phys(boundary, positions);
+    projection.points = positions;
 
     // Pulled back into parameter space
     PointMatrix<T, 2> closest;
