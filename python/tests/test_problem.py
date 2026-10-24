@@ -98,17 +98,27 @@ def parallelogram():
         for side in range(4)])
 
 
-def polynomial_derivatives(terms):
+def polynomial(terms):
+    """The polynomial sum c x^i y^j of terms (c, i, j), as a function of
+    points."""
+    return lambda points: sum(c * points[:, 0] ** i * points[:, 1] ** j
+                              for c, i, j in terms)
+
+
+def polynomial_derivatives(*components):
     """Exact derivatives d_x^a d_y^b of the polynomial sum c x^i y^j of terms
-    (c, i, j), as a condition shifted with the equation takes them."""
+    (c, i, j), as a condition shifted with the equation takes them, or of
+    those of each component of a body force, given their terms."""
     def derivatives(points, order):
         x, y = points.T
-
-        return np.column_stack([
+        each = [np.column_stack([
             sum(c * math.perm(i, a) * math.perm(j, b)
                 * x ** max(i - a, 0) * y ** max(j - b, 0)
                 for c, i, j in terms) * np.ones(len(points))
             for b in range(order + 1) for a in range(order + 1 - b)])
+            for terms in components]
+
+        return each[0] if len(each) == 1 else np.stack(each, axis=2)
 
     return Derivatives(derivatives)
 
@@ -281,6 +291,64 @@ def test_stokes_flow_by_the_generalized_shifted_boundary_method():
                   - (exact[:, 2] - exact[:, 2].mean())).max() < 1e-9
 
 
+def test_stokes_at_high_degree_by_the_generalized_shifted_boundary_method():
+    """Inside a parallelogram, with the volume fractions weighting the cells
+    of a cubic space that keeps every function, Nitsche's condition on the
+    faces where they jump, shifted with the Stokes equation off the corners
+    too, and ghost penalties on the velocity and the pressure find a cubic
+    flow and a quadratic pressure at every degree of freedom, with the body
+    force given by its derivatives or interpolated."""
+    patch = iguana.create_rectangle(lengths=(2., 3.), elements=(8, 12),
+                                    degrees=(3, 3))
+    boundary = parallelogram()
+    cell_types, fractions = classify_cells(patch, boundary)
+    space = FunctionSpace(patch, block_size=3)
+    quadrature = QuadratureDomain(patch, cell_types)
+
+    for cell_type in (CellType.inside, CellType.cut, CellType.outside):
+        quadrature.fill_gauss_legendre(cell_type, 4)
+
+    # u = (2 x^2 y + x^3 / 3, −2 x y^2 − x^2 y), free of divergence, and
+    # p = x^2 − x y + y
+    element = StokesElement(1.5, 3.)
+    mu = element.viscosity
+    flow = [[(2., 2, 1), (1. / 3., 3, 0)], [(-2., 1, 2), (-1., 2, 1)]]
+    pressure = [(1., 2, 0), (-1., 1, 1), (1., 0, 1)]
+
+    # f = −μ Δu + ∇p, linear
+    force = [[(2. - 2. * mu, 1, 0), (-4. * mu - 1., 0, 1)],
+             [(4. * mu - 1., 1, 0), (2. * mu, 0, 1), (1., 0, 0)]]
+
+    def velocity(points):
+        return np.column_stack([polynomial(terms)(points) for terms in flow])
+
+    def body_force(points):
+        return np.column_stack([polynomial(terms)(points)
+                                for terms in force])
+
+    exact = np.column_stack([cubic_coefficients(space, terms)
+                             for terms in flow + [pressure]])
+
+    for given in (polynomial_derivatives(*force), body_force):
+        condition = SkeletonNitscheCondition(
+            element.u, patch, cell_types, boundary, velocity,
+            40. * element.viscosity, source=given)
+        ghosts = [GhostPenalty(trace, patch, cell_types, .1)
+                  for trace in (element.u, element.p)]
+        u = LinearProblem(element, space, quadrature, body_force,
+                          cell_weights=fractions, conditions=[condition],
+                          stabilizations=ghosts, pressure_reference=(1., 1.5),
+                          petsc_options_prefix='stokes_shift_').solve()
+
+        # Exact to round-off, which the conditioning of the cells the
+        # penalties alone determine amplifies, the pressure up to a constant
+        assert (np.abs(u[:, :2] - exact[:, :2]).max()
+                < 1e-8 * np.abs(exact[:, :2]).max())
+        assert (np.abs((u[:, 2] - u[:, 2].mean())
+                       - (exact[:, 2] - exact[:, 2].mean())).max()
+                < 1e-8 * np.abs(exact[:, 2]).max())
+
+
 def test_poisson_at_high_degree_by_the_generalized_shifted_boundary_method():
     """Inside a parallelogram, with the volume fractions weighting the cells
     of a cubic space that keeps every function, Nitsche's condition on the
@@ -312,10 +380,6 @@ def test_poisson_at_high_degree_by_the_generalized_shifted_boundary_method():
     def source(points):
         x, y = points.T
         return -7. * x - 2. * y
-
-    def polynomial(terms):
-        return lambda points: sum(c * points[:, 0] ** i * points[:, 1] ** j
-                                  for c, i, j in terms)
 
     element = PoissonElement()
     ghost = GhostPenalty(element.u, patch, cell_types, .5)
