@@ -35,6 +35,7 @@ add_library(iguana
     element/poisson/poisson_element.cpp
     element/poisson/poisson_shift.cpp
     element/stokes/stokes_element.cpp
+    element/stokes/stokes_shift.cpp
     element/stokes/stokes_stabilized_element.cpp
     condition/penalty_condition.cpp
     condition/nitsche_condition.cpp
