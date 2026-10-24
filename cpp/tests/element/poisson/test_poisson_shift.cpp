@@ -18,6 +18,7 @@ namespace
 using iguana::BSpline;
 using iguana::Boundary;
 using iguana::PointMatrix;
+using iguana::ShiftCenter;
 using iguana::TensorBSpline;
 using iguana::TensorNURBS;
 using iguana::simplex_index;
@@ -140,8 +141,11 @@ TEST_CASE("The shift rewritten with the Poisson equation reproduces "
         box({0., 0.}, sizes);
     std::mt19937 generator(7);
 
-    // u at each point and the parametric derivatives at its closest point,
-    // against g = u and f = −Δu there, for every order
+    // From the boundary, u at each point and the parametric derivatives at
+    // its closest point; from the surrogate, the Taylor series of u, which
+    // is exact and so u at the closest point, and the derivatives at the
+    // point. Against g = u at the closest point and f = −Δu where the
+    // derivatives are taken, for every order
     const auto reproduces = [&](const char* shape,
                                 const Boundary<double, 2>& boundary,
                                 const PointMatrix<double, 2>& positions) {
@@ -151,38 +155,50 @@ TEST_CASE("The shift rewritten with the Poisson equation reproduces "
         const iguana::BoundaryProjection<double> projection =
             iguana::project_closest_points(patch, boundary, points);
 
-        for (int m = 1; m <= 6; ++m) {
-            INFO("order " << m);
-            const Polynomial u = random_polynomial(m, generator);
-            const iguana::PoissonShift<double> shift =
-                iguana::poisson_shift(patch, projection, m);
+        for (const ShiftCenter center :
+             {ShiftCenter::boundary, ShiftCenter::surrogate}) {
+            const bool from_boundary = center == ShiftCenter::boundary;
 
-            REQUIRE(shift.weights.cols() == simplex_size(m));
+            for (int m = 1; m <= 6; ++m) {
+                INFO("from the boundary " << from_boundary << ", order "
+                                          << m);
+                const Polynomial u = random_polynomial(m, generator);
+                const iguana::PoissonShift<double> shift =
+                    iguana::poisson_shift(patch, projection, m, center);
 
-            for (Eigen::Index point = 0; point < points.rows(); ++point) {
-                INFO("point " << point);
-                const Eigen::RowVector2d surrogate = positions.row(point);
-                const Eigen::RowVector2d closest =
-                    projection.positions.row(point);
+                REQUIRE(shift.weights.cols() == simplex_size(m));
 
-                double shifted = u.derivative(0, 0, surrogate);
+                for (Eigen::Index point = 0; point < points.rows();
+                     ++point) {
+                    INFO("point " << point);
+                    const Eigen::RowVector2d surrogate = positions.row(point);
+                    const Eigen::RowVector2d closest =
+                        projection.positions.row(point);
+                    const Eigen::RowVector2d at =
+                        from_boundary ? closest : surrogate;
 
-                for (int q = 0; q <= m; ++q)
-                    for (int p = 0; p + q <= m; ++p)
-                        shifted += shift.weights(point, simplex_index(p, q, m))
-                                   * std::pow(2., p) * std::pow(3., q)
-                                   * u.derivative(p, q, closest);
+                    double shifted =
+                        u.derivative(0, 0, from_boundary ? surrogate
+                                                         : closest);
 
-                double data = u.derivative(0, 0, closest);
+                    for (int q = 0; q <= m; ++q)
+                        for (int p = 0; p + q <= m; ++p)
+                            shifted += shift.weights(point,
+                                                     simplex_index(p, q, m))
+                                       * std::pow(2., p) * std::pow(3., q)
+                                       * u.derivative(p, q, at);
 
-                for (int q = 0; q + 2 <= m; ++q)
-                    for (int p = 0; p + q + 2 <= m; ++p)
-                        data -= shift.source_weights(
-                                    point, simplex_index(p, q, m - 2))
-                                * (u.derivative(p + 2, q, closest)
-                                   + u.derivative(p, q + 2, closest));
+                    double data = u.derivative(0, 0, closest);
 
-                REQUIRE(std::abs(shifted - data) < 1e-11);
+                    for (int q = 0; q + 2 <= m; ++q)
+                        for (int p = 0; p + q + 2 <= m; ++p)
+                            data -= shift.source_weights(
+                                        point, simplex_index(p, q, m - 2))
+                                    * (u.derivative(p + 2, q, at)
+                                       + u.derivative(p, q + 2, at));
+
+                    REQUIRE(std::abs(shifted - data) < 1e-11);
+                }
             }
         }
     };
@@ -221,6 +237,56 @@ TEST_CASE("The shift rewritten with the Poisson equation reproduces "
               .3, 2.4;
 
     reproduces("square", square, beside);
+}
+
+TEST_CASE("The shift from the surrogate takes every derivative along the "
+          "line from the second on from the equation", "[poisson_shift]")
+{
+    const Eigen::RowVector2d sizes(2., 3.);
+    const iguana::Patch<TensorBSpline<double, 2>, 2> patch =
+        box({0., 0.}, sizes);
+    const Eigen::RowVector2d center(1., 1.4);
+    const Boundary<double, 2> boundary({ellipse(center, .7, .45)}, {1});
+
+    PointMatrix<double, 2> points(4, 2);
+    points << .6, 1.1,
+              1.5, 1.6,
+              .9, 2.,
+              1.2, .9;
+    const iguana::BoundaryProjection<double> projection =
+        iguana::project_closest_points(
+            patch, boundary, points.array().rowwise() / sizes.array());
+
+    // v = (d̂ · (x − x̃))^k with k from 2 has no derivative but along d at
+    // the point, all of order k, so the shift is 0 while its Taylor series
+    // alone, exact, is v at the closest point, t^k
+    for (int m = 2; m <= 6; ++m) {
+        const iguana::PoissonShift<double> shift = iguana::poisson_shift(
+            patch, projection, m, ShiftCenter::surrogate);
+
+        for (Eigen::Index point = 0; point < points.rows(); ++point) {
+            const Eigen::RowVector2d d =
+                projection.positions.row(point) - points.row(point);
+            const double t = d.norm();
+            const Eigen::RowVector2d unit = d / t;
+
+            for (int k = 2; k <= m; ++k) {
+                INFO("order " << m << ", point " << point << ", power "
+                              << k);
+                double shifted = std::pow(t, k);
+
+                // d_x^a d_y^b v = k! d̂_x^a d̂_y^b for a + b = k
+                for (int b = 0; b <= k; ++b)
+                    shifted += shift.weights(point, simplex_index(k - b, b, m))
+                               * std::pow(2., k - b) * std::pow(3., b)
+                               * std::tgamma(k + 1.)
+                               * std::pow(unit(0), k - b)
+                               * std::pow(unit(1), b);
+
+                REQUIRE(std::abs(shifted) < 1e-12);
+            }
+        }
+    }
 }
 
 TEST_CASE("The shift rewritten with the equation needs an affine map and "

@@ -333,8 +333,9 @@ TEST_CASE("The distance vectors of a projection lie in the parameters of "
     const iguana::BoundaryProjection<double> projection =
         iguana::project_closest_points(stretched, boundary, points);
 
-    // The closest points lie on the circle along the radii, and the map
-    // carries each point moved by its distance vector onto its closest point
+    // The points keep their place in the plane, the closest points lie on
+    // the circle along the radii, and the map carries each point moved by
+    // its distance vector onto its closest point
     for (Eigen::Index point = 0; point < points.rows(); ++point) {
         const Eigen::RowVector2d position =
             corner + points.row(point).cwiseProduct(sizes);
@@ -342,6 +343,7 @@ TEST_CASE("The distance vectors of a projection lie in the parameters of "
         const Eigen::RowVector2d closest =
             points.row(point) + projection.distances.row(point);
 
+        REQUIRE((projection.points.row(point) - position).norm() < 1e-14);
         REQUIRE((projection.positions.row(point) - (center + radius * radial))
                     .norm() < 1e-12);
         REQUIRE((corner + closest.cwiseProduct(sizes)

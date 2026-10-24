@@ -385,6 +385,10 @@ def test_invalid_skeleton_nitsche_conditions():
         SkeletonNitscheCondition(element.u, patch, cell_types, sides,
                                  lambda x: x[:, 0], 1., order=-1)
 
+    with pytest.raises(ValueError):
+        SkeletonNitscheCondition(element.u, patch, cell_types, sides,
+                                 lambda x: x[:, 0], 1., center='inside')
+
     # A source gives the values of the trace at each point, two for the
     # body force of the velocity, and is derivatives or a function of the
     # points
