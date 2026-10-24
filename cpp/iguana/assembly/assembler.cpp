@@ -57,7 +57,8 @@ void check_petsc(PetscErrorCode code)
 /**
  * @brief Expands the values at the points of one element or face towards
  *        the boundary they are projected onto, along their distance vectors,
- *        by the Taylor series or by the shift weights of the projection
+ *        by the Taylor series or by the shift weights of the projection,
+ *        about its shift center
  *
  * @param values Values at the points, which are shifted
  * @param projection Projection of the points of a whole quadrature
@@ -94,7 +95,7 @@ void shift_values(ElementValues<Basis, n>& values,
 
             values.shift(distances,
                          projection.shift_weights.middleRows(first, count),
-                         coupled, order);
+                         coupled, order, projection.shift_center);
         }
     }
     else if constexpr (std::same_as<Basis, TensorNURBS<Scalar, dim>>) {

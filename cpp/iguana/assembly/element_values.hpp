@@ -16,6 +16,7 @@
 #include <Eigen/Core>
 
 #include "iguana/basis/tensor_bspline.hpp"
+#include "iguana/geometry/boundary_projection.hpp"
 #include "iguana/geometry/patch.hpp"
 
 namespace iguana
@@ -160,24 +161,28 @@ public:
 
     /**
      * @brief Adds to the values of every field a combination of their
-     *        derivatives at the points of the last reinit() moved by shifts,
-     *        with weights per point, up to a total order, and keeps apart
-     *        their combinations with further sets of weights
+     *        derivatives with weights per point, up to a total order, and
+     *        keeps apart their combinations with further sets of weights
      *
-     * This is how a shift rewritten with an equation takes the derivatives
-     * at the closest points on the true boundary. A trace that takes another
-     * field reads the further combinations, as the velocity shifted with the
-     * Stokes equation takes the pressure gradient, and reinit() drops them.
-     * The gradients, tangents, measures and physical gradients and Hessians
-     * stay at the points
+     * This is how a shift rewritten with an equation takes the derivatives.
+     * From the boundary, the combinations take them at the points of the
+     * last reinit() moved by shifts, the closest points on the true
+     * boundary. From the surrogate, they take them at the points themselves,
+     * and the values become their Taylor series along the shifts first. A
+     * trace that takes another field reads the further combinations, as the
+     * velocity shifted with the Stokes equation takes the pressure gradient,
+     * and reinit() drops them. The gradients, tangents, measures and
+     * physical gradients and Hessians stay at the points
      *
      * @param shifts Shift of each point in parameter space, with size
      *        (num_points, dim)
-     * @param weights Weight of each multi-index at each shifted point, as
+     * @param weights Weight of each multi-index at each point, as
      *        TensorBSpline::combine_on_element() takes them
      * @param coupled Further sets of weights, each of the size of
      *        @p weights, whose combinations combination() gives
-     * @param order Highest total order of the derivatives
+     * @param order Highest total order of the derivatives, and of the
+     *        Taylor series
+     * @param center Point the series expands about
      *
      * @pre reinit() was called, @p shifts, @p weights and every set of
      *      @p coupled have one row per point of it, and @p order is
@@ -185,7 +190,8 @@ public:
      */
     void shift(const Eigen::MatrixX<Scalar>& shifts,
                const Eigen::MatrixX<Scalar>& weights,
-               const std::vector<Eigen::MatrixX<Scalar>>& coupled, int order)
+               const std::vector<Eigen::MatrixX<Scalar>>& coupled, int order,
+               ShiftCenter center)
         requires std::same_as<Basis, TensorBSpline<Scalar, dim>>;
 
     /**

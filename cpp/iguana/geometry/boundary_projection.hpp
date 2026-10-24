@@ -18,6 +18,24 @@ namespace iguana
 {
 
 /**
+ * @brief Point the series of a shift rewritten with an equation expands
+ *        about
+ *
+ * @details From the boundary, the shift weights take the derivatives at
+ *          the closest points, added to the values at the points. From the
+ *          surrogate, they take the derivatives at the points, added to the
+ *          Taylor series of the values towards the closest points
+ */
+enum class ShiftCenter
+{
+    /// @brief The closest points on the true boundary
+    boundary,
+
+    /// @brief The points on the surrogate boundary
+    surrogate
+};
+
+/**
  * @brief Projection of points onto their closest points on a boundary
  *
  * @details Used in the Shifted Boundary Method to shift the conditions
@@ -35,6 +53,9 @@ struct BoundaryProjection
     /// @brief Parameter of the face at each closest point
     Eigen::VectorX<T> parameters;
 
+    /// @brief Points in physical space, with size (num_points, 2)
+    PointMatrix<T, 2> points;
+
     /// @brief Closest points in physical space, with size (num_points, 2)
     PointMatrix<T, 2> positions;
 
@@ -47,18 +68,22 @@ struct BoundaryProjection
     ///        (num_points, 2)
     Eigen::MatrixX<T> distances;
 
-    /// @brief Weights of the parametric derivatives at the closest points
-    ///        that shift the values at the points in place of the Taylor
-    ///        series, empty for it, with one row per point and one column
-    ///        per multi-index, the first direction running fastest
+    /// @brief Weights of the parametric derivatives at the points the shift
+    ///        center gives, which shift the values at the points rewritten
+    ///        with an equation, empty for the Taylor series, with one row per
+    ///        point and one column per multi-index, the first direction
+    ///        running fastest
     Eigen::MatrixX<T> shift_weights;
 
-    /// @brief Further sets of weights of the parametric derivatives at the
-    ///        closest points, each of the size of shift_weights, whose
+    /// @brief Further sets of weights of the parametric derivatives, at the
+    ///        points of shift_weights and each of its size, whose
     ///        combinations the shifted values keep apart for a trace that
     ///        takes another field, as the velocity shifted with the Stokes
     ///        equation takes the pressure gradient, one set per component
     std::vector<Eigen::MatrixX<T>> coupled_weights;
+
+    /// @brief Point the series of the shift weights expands about
+    ShiftCenter shift_center = ShiftCenter::boundary;
 };
 
 /**
@@ -75,7 +100,7 @@ struct BoundaryProjection
  * @param boundary Boundary of curves in the physical space of the patch
  * @param points Points in the parameter space of the patch, one per row
  * @return The closest point to each, with its face, parameter, normal and
- *         distance vector
+ *         distance vector, and the point in physical space
  *
  * @throws std::invalid_argument If the map of the patch is not affine, if
  *         the boundary has no face, or if the knot vector of a face is not

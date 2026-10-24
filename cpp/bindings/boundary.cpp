@@ -63,15 +63,24 @@ void boundary(py::module_& module)
         .def_property_readonly("faces", &faces<2>)
         .def_property_readonly("signs", &signs<2>);
 
+    // The point the series of a shift rewritten with an equation expands
+    // about
+    py::enum_<ShiftCenter>(module, "ShiftCenter")
+        .value("boundary", ShiftCenter::boundary)
+        .value("surrogate", ShiftCenter::surrogate);
+
     // The projection of the points of a planar patch, which the conditions
     // of the shifted boundary method pass to the assembly, with the shift
-    // weights a condition rewritten with an equation sets, and the further
-    // weights, set as a whole list, of a trace that takes another field
+    // weights a condition rewritten with an equation sets, about their
+    // center, and the further weights, set as a whole list, of a trace that
+    // takes another field
     py::class_<BoundaryProjection2d>(module, "BoundaryProjection2d")
+        .def_readonly("points", &BoundaryProjection2d::points)
         .def_readonly("positions", &BoundaryProjection2d::positions)
         .def_readwrite("shift_weights", &BoundaryProjection2d::shift_weights)
         .def_readwrite("coupled_weights",
-                       &BoundaryProjection2d::coupled_weights);
+                       &BoundaryProjection2d::coupled_weights)
+        .def_readwrite("shift_center", &BoundaryProjection2d::shift_center);
 
     module.def("project_closest_points",
                &project_closest_points<TensorBSpline<double, 2>>,
@@ -84,7 +93,8 @@ void boundary(py::module_& module)
         .def_readonly("source_weights", &PoissonShift2d::source_weights);
 
     module.def("poisson_shift", &poisson_shift<TensorBSpline<double, 2>>,
-               py::arg("patch"), py::arg("projection"), py::arg("order"));
+               py::arg("patch"), py::arg("projection"), py::arg("order"),
+               py::arg("center") = ShiftCenter::boundary);
 
     // The shift of the velocity of a Dirichlet condition rewritten with the
     // Stokes equation, at the points of a projection
@@ -95,7 +105,8 @@ void boundary(py::module_& module)
 
     module.def("stokes_shift", &stokes_shift<TensorBSpline<double, 2>>,
                py::arg("patch"), py::arg("projection"), py::arg("order"),
-               py::arg("viscosity"));
+               py::arg("viscosity"),
+               py::arg("center") = ShiftCenter::boundary);
 
     // Data known at points, interpolated in the basis of a patch, with the
     // derivatives of the interpolant at points

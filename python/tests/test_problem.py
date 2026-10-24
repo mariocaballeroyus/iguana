@@ -297,7 +297,8 @@ def test_stokes_at_high_degree_by_the_generalized_shifted_boundary_method():
     faces where they jump, shifted with the Stokes equation off the corners
     too, and ghost penalties on the velocity and the pressure find a cubic
     flow and a quadratic pressure at every degree of freedom, with the body
-    force given by its derivatives or interpolated."""
+    force given by its derivatives or interpolated, and the series from the
+    boundary or the surrogate."""
     patch = iguana.create_rectangle(lengths=(2., 3.), elements=(8, 12),
                                     degrees=(3, 3))
     boundary = parallelogram()
@@ -329,10 +330,12 @@ def test_stokes_at_high_degree_by_the_generalized_shifted_boundary_method():
     exact = np.column_stack([cubic_coefficients(space, terms)
                              for terms in flow + [pressure]])
 
-    for given in (polynomial_derivatives(*force), body_force):
+    for given, center in itertools.product(
+            (polynomial_derivatives(*force), body_force),
+            ('boundary', 'surrogate')):
         condition = SkeletonNitscheCondition(
             element.u, patch, cell_types, boundary, velocity,
-            40. * element.viscosity, source=given)
+            40. * element.viscosity, source=given, center=center)
         ghosts = [GhostPenalty(trace, patch, cell_types, .1)
                   for trace in (element.u, element.p)]
         u = LinearProblem(element, space, quadrature, body_force,
@@ -356,7 +359,7 @@ def test_poisson_at_high_degree_by_the_generalized_shifted_boundary_method():
     and a ghost penalty find a cubic field at every degree of freedom, those
     beyond the parallelogram included, and the field with a harmonic one
     added once its values change, with the source given by its derivatives
-    or interpolated."""
+    or interpolated, and the series from the boundary or the surrogate."""
     patch = iguana.create_rectangle(lengths=(2., 3.), elements=(8, 12),
                                     degrees=(3, 3))
     boundary = parallelogram()
@@ -384,10 +387,12 @@ def test_poisson_at_high_degree_by_the_generalized_shifted_boundary_method():
     element = PoissonElement()
     ghost = GhostPenalty(element.u, patch, cell_types, .5)
 
-    for given in (polynomial_derivatives(linear), source):
+    for given, center in itertools.product(
+            (polynomial_derivatives(linear), source),
+            ('boundary', 'surrogate')):
         condition = SkeletonNitscheCondition(
             element.u, patch, cell_types, boundary, polynomial(cubic), 320.,
-            source=given)
+            source=given, center=center)
         problem = LinearProblem(element, space, quadrature, source,
                                 cell_weights=fractions,
                                 conditions=[condition],

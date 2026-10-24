@@ -18,6 +18,7 @@ namespace
 using iguana::BSpline;
 using iguana::Boundary;
 using iguana::PointMatrix;
+using iguana::ShiftCenter;
 using iguana::TensorBSpline;
 using iguana::TensorNURBS;
 using iguana::simplex_index;
@@ -142,76 +143,87 @@ TEST_CASE("The shift rewritten with the Stokes equation reproduces flows "
     const double viscosity = 1.7;
     std::mt19937 generator(3);
 
-    for (int m = 1; m <= 6; ++m) {
-        INFO("order " << m);
+    for (const ShiftCenter center :
+         {ShiftCenter::boundary, ShiftCenter::surrogate}) {
+        const bool from_boundary = center == ShiftCenter::boundary;
 
-        // u = (∂_y ψ, −∂_x ψ) of a stream function ψ of degree m + 1, and
-        // a pressure of degree m − 1
-        const Eigen::MatrixXd psi = random_coefficients(m + 1, generator);
-        Eigen::MatrixXd first = Eigen::MatrixXd::Zero(m + 1, m + 1);
-        Eigen::MatrixXd second = Eigen::MatrixXd::Zero(m + 1, m + 1);
+        for (int m = 1; m <= 6; ++m) {
+            INFO("from the boundary " << from_boundary << ", order " << m);
 
-        for (int i = 0; i <= m + 1; ++i) {
-            for (int j = 0; i + j <= m + 1; ++j) {
-                if (j > 0)
-                    first(i, j - 1) += j * psi(i, j);
+            // u = (∂_y ψ, −∂_x ψ) of a stream function ψ of degree m + 1, and
+            // a pressure of degree m − 1
+            const Eigen::MatrixXd psi = random_coefficients(m + 1, generator);
+            Eigen::MatrixXd first = Eigen::MatrixXd::Zero(m + 1, m + 1);
+            Eigen::MatrixXd second = Eigen::MatrixXd::Zero(m + 1, m + 1);
 
-                if (i > 0)
-                    second(i - 1, j) -= i * psi(i, j);
+            for (int i = 0; i <= m + 1; ++i) {
+                for (int j = 0; i + j <= m + 1; ++j) {
+                    if (j > 0)
+                        first(i, j - 1) += j * psi(i, j);
+
+                    if (i > 0)
+                        second(i - 1, j) -= i * psi(i, j);
+                }
             }
-        }
 
-        const Polynomial u[2] = {{m, first}, {m, second}};
-        const Polynomial p{m - 1, random_coefficients(m - 1, generator)};
-        const iguana::StokesShift<double> shift =
-            iguana::stokes_shift(patch, projection, m, viscosity);
+            const Polynomial u[2] = {{m, first}, {m, second}};
+            const Polynomial p{m - 1, random_coefficients(m - 1, generator)};
+            const iguana::StokesShift<double> shift = iguana::stokes_shift(
+                patch, projection, m, viscosity, center);
 
-        for (Eigen::Index point = 0; point < points.rows(); ++point) {
-            const Eigen::RowVector2d surrogate =
-                points.row(point).cwiseProduct(sizes);
-            const Eigen::RowVector2d closest =
-                projection.positions.row(point);
+            for (Eigen::Index point = 0; point < points.rows(); ++point) {
+                const Eigen::RowVector2d surrogate =
+                    points.row(point).cwiseProduct(sizes);
+                const Eigen::RowVector2d closest =
+                    projection.positions.row(point);
+                const Eigen::RowVector2d at =
+                    from_boundary ? closest : surrogate;
 
-            for (int c = 0; c < 2; ++c) {
-                INFO("point " << point << ", component " << c);
+                for (int c = 0; c < 2; ++c) {
+                    INFO("point " << point << ", component " << c);
 
-                // u_c at the point and the parametric derivatives of u_c and
-                // of p at its closest point, against g = u and
-                // f = −μ Δu + ∇p there
-                double shifted = u[c].derivative(0, 0, surrogate);
+                    // From the boundary, u_c at the point and the
+                    // parametric derivatives of u_c and of p at its closest
+                    // point; from the surrogate, the Taylor series of u_c,
+                    // exact, and the derivatives at the point. Against g = u
+                    // at the closest point and f = −μ Δu + ∇p where the
+                    // derivatives are taken
+                    double shifted = u[c].derivative(
+                        0, 0, from_boundary ? surrogate : closest);
 
-                for (int q = 0; q <= m; ++q) {
-                    for (int s = 0; s + q <= m; ++s) {
-                        const double scale =
-                            std::pow(2., s) * std::pow(3., q);
-                        const int column = simplex_index(s, q, m);
+                    for (int q = 0; q <= m; ++q) {
+                        for (int s = 0; s + q <= m; ++s) {
+                            const double scale =
+                                std::pow(2., s) * std::pow(3., q);
+                            const int column = simplex_index(s, q, m);
 
-                        shifted += scale
-                                   * (shift.weights(point, column)
-                                      * u[c].derivative(s, q, closest)
-                                      + shift.pressure_weights[c](point,
-                                                                  column)
-                                            * p.derivative(s, q, closest));
+                            shifted += scale
+                                       * (shift.weights(point, column)
+                                          * u[c].derivative(s, q, at)
+                                          + shift.pressure_weights[c](point,
+                                                                      column)
+                                                * p.derivative(s, q, at));
+                        }
                     }
-                }
 
-                double data = u[c].derivative(0, 0, closest);
+                    double data = u[c].derivative(0, 0, closest);
 
-                for (int q = 0; q + 2 <= m; ++q) {
-                    for (int s = 0; s + q + 2 <= m; ++s) {
-                        const double force =
-                            -viscosity * (u[c].derivative(s + 2, q, closest)
-                                          + u[c].derivative(s, q + 2, closest))
-                            + p.derivative(s + (c == 0 ? 1 : 0),
-                                           q + (c == 1 ? 1 : 0), closest);
+                    for (int q = 0; q + 2 <= m; ++q) {
+                        for (int s = 0; s + q + 2 <= m; ++s) {
+                            const double force =
+                                -viscosity * (u[c].derivative(s + 2, q, at)
+                                              + u[c].derivative(s, q + 2, at))
+                                + p.derivative(s + (c == 0 ? 1 : 0),
+                                               q + (c == 1 ? 1 : 0), at);
 
-                        data += shift.source_weights(
-                                    point, simplex_index(s, q, m - 2))
-                                * force;
+                            data += shift.source_weights(
+                                        point, simplex_index(s, q, m - 2))
+                                    * force;
+                        }
                     }
-                }
 
-                REQUIRE(std::abs(shifted - data) < 1e-11);
+                    REQUIRE(std::abs(shifted - data) < 1e-11);
+                }
             }
         }
     }
