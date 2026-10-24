@@ -408,6 +408,7 @@ class SkeletonNitscheCondition:
         order: int | None = None,
         source: (Callable[[npt.NDArray[np.float64]], npt.ArrayLike]
                  | Derivatives | None) = None,
+        center: str = 'boundary',
     ) -> None:
         """Initialize the condition imposing values on a trace.
 
@@ -429,13 +430,18 @@ class SkeletonNitscheCondition:
         equation, whose momentum equation also takes the pressure gradient.
         It keeps the condition coercive at high degree, and needs neither
         the normal nor the curvature of the boundary, which may have
-        corners.
+        corners. The series may instead expand from the face point: the
+        Taylor series of the functions of each cell less the terms of the
+        residual there, which take the source at the face point. The source
+        must then extend smoothly beyond the domain, to the face points
+        outside it.
 
         The series takes the derivatives of the source, given in one of two
         ways:
 
         - as `Derivatives`, its Cartesian derivatives at the closest points,
-          such as the exact ones of a formula;
+          or at the face points from the surrogate, such as the exact ones
+          of a formula;
         - as a function of points whose values are interpolated in the basis
           of the patch, so that its derivatives are those of the
           interpolant. This suits a source known only at points, such as
@@ -470,6 +476,9 @@ class SkeletonNitscheCondition:
                 two for the body force, to interpolate, with which the
                 expansion is the series rewritten with the equation. Without
                 it, the Taylor series.
+            center: Where the series rewritten with the equation expands
+                from: `'boundary'`, the closest points, or `'surrogate'`,
+                the face points.
 
         Raises:
             TypeError: If the trace is not the trace of an element, if the
@@ -479,7 +488,8 @@ class SkeletonNitscheCondition:
             ValueError: If there is not one cell type per element, if the
                 map of the patch is not affine, if the values are not those
                 of the trace at each point, if the penalty is not positive,
-                if the order is negative, or, with a source, if it does not
+                if the order is negative, if the center is neither the
+                boundary nor the surrogate, or, with a source, if it does not
                 give each point the values of the source, its derivatives
                 one per term of their order, or if an interpolated source
                 needs derivatives above the degree of the patch.
@@ -509,6 +519,10 @@ class SkeletonNitscheCondition:
         if order < 0:
             raise ValueError('the order must be non-negative')
 
+        if center not in ('boundary', 'surrogate'):
+            raise ValueError('the center must be the boundary or the '
+                             'surrogate')
+
         if source is not None:
             if not (isinstance(source, Derivatives) or callable(source)):
                 raise TypeError('the source must be derivatives or a function '
@@ -534,25 +548,30 @@ class SkeletonNitscheCondition:
         self._order = order
         self._penalty = float(penalty)
         self._source = source
+        self._center = (_cpp.ShiftCenter.surrogate if center == 'surrogate'
+                        else _cpp.ShiftCenter.boundary)
         self._values = _values(positions, values, trace._shape)
 
         # Rewritten with the equation, the assembly combines derivatives of
-        # the order of the series at the closest points, of the pressure too
-        # for the velocity, and the data imposed at the points add to the
-        # values the terms of the source there, a component per row
+        # the order of the series about the center, of the pressure too for
+        # the velocity, and the data imposed at the points add to the values
+        # the terms of the source there, a component per row
         if source is None:
             self._imposed = self._values
         else:
             if isinstance(trace, StokesElement.U):
                 shift = _cpp.stokes_shift(
                     patch=patch._cpp_object, projection=projection,
-                    order=order, viscosity=trace._element.viscosity)
+                    order=order, viscosity=trace._element.viscosity,
+                    center=self._center)
                 projection.coupled_weights = list(shift.pressure_weights)
             else:
-                shift = _cpp.poisson_shift(patch=patch._cpp_object,
-                                           projection=projection, order=order)
+                shift = _cpp.poisson_shift(
+                    patch=patch._cpp_object, projection=projection,
+                    order=order, center=self._center)
 
             projection.shift_weights = shift.weights
+            projection.shift_center = self._center
 
             weights = np.array(shift.source_weights)
             self._source_part = np.sum(
@@ -601,11 +620,13 @@ class SkeletonNitscheCondition:
         return self._penalty
 
     def _source_derivatives(self) -> npt.NDArray[np.float64]:
-        """Cartesian derivatives of the source at the closest points, of the
-        order of the series less two, given or of its interpolant in the
-        basis of the patch, of shape `(num_points, num_terms,
-        num_components)`."""
-        positions = np.array(self._projection.positions)
+        """Cartesian derivatives of the source at the closest points, or at
+        the face points from the surrogate, of the order of the series less
+        two, given or of its interpolant in the basis of the patch, of shape
+        `(num_points, num_terms, num_components)`."""
+        positions = np.array(self._projection.positions
+                             if self._center == _cpp.ShiftCenter.boundary
+                             else self._projection.points)
         order = self._order - 2
         shape = self._trace._shape
 
