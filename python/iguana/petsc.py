@@ -6,11 +6,11 @@
 A problem compiles the element, quadrature, conditions and stabilizations
 of a problem on a space into one form, assembles the form into PETSc
 matrices and vectors, each pass over its integrals in one compiled call,
-and solves the system with a PETSc solver set up from options. Its data,
-the source, the values of its conditions and the previous solution of a
-transient problem, change in place between solves, where the form reads
-them, so that a time loop keeps one problem. It needs a build of iguana
-with PETSc.
+and solves the system with a PETSc solver set up from options, linear or
+nonlinear. Its data, the source, the values of its conditions and the
+previous solution of a transient problem, change in place between solves,
+where the form reads them, so that a time loop keeps one problem. It needs
+a build of iguana with PETSc.
 """
 
 from __future__ import annotations
@@ -393,6 +393,198 @@ class LinearProblem(_Problem):
         return _coefficients(self._space, self._x.getArray())
 
 
+class NonlinearProblem(_Problem):
+    """Nonlinear problem of an element on a space, assembled into PETSc and
+    solved by Newton's method in a PETSc nonlinear solver."""
+
+    def __init__(
+        self,
+        element: PoissonElement | StokesElement,
+        space: FunctionSpace | MixedFunctionSpace,
+        quadrature: QuadratureDomain,
+        source: (npt.ArrayLike
+                 | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
+        *,
+        petsc_options_prefix: str,
+        cell_weights: npt.ArrayLike | None = None,
+        conditions: Sequence[PenaltyCondition | NitscheCondition
+                             | NeumannCondition
+                             | SkeletonNitscheCondition] = (),
+        stabilizations: Sequence[GhostPenalty] = (),
+        pressure_reference: npt.ArrayLike | None = None,
+        petsc_options: dict[str, object] | None = None,
+    ) -> None:
+        """Initialize the problem of an element on a space.
+
+        The solution solves R(u) = 0, with the residual R assembled over the
+        quadrature, along the boundaries of the conditions and across the
+        faces of the stabilizations. Each Newton step solves J du = -R(u)
+        with the tangent J, the derivative of R, both taken at the current
+        coefficients. A linear problem has the residual K u - F, which one
+        step solves.
+
+        A pressure reference fixes the constant pressure as for a linear
+        problem: the pinned pressure stays zero, its row and column of the
+        tangent those of the identity.
+
+        Args:
+            element: The element stating the problem, a Poisson or a Stokes
+                element.
+            space: The space of the solution, on a planar patch, as for a
+                linear problem.
+            quadrature: A quadrature over the elements of the patch of the
+                space, not over a refined grid.
+            source: The source at each point of the quadrature, in its
+                order, one value per point for the Poisson element and the
+                two components of the body force for the Stokes element, or
+                a function that takes their positions, of shape
+                `(num_points, 2)`, and returns those values.
+            petsc_options_prefix: The prefix of the options of the PETSc
+                solver, unique to the problem, such as `'navier_stokes_'`.
+            cell_weights: The weight of the test functions of the element on
+                each cell, in the order of the elements of the patch, as for
+                a linear problem. Without them, every cell weighs one.
+            conditions: Conditions on traces of the element along
+                boundaries in the patch of the space, or on the faces where
+                the cell weights jump, as for a linear problem.
+            stabilizations: Ghost penalties on traces of the element across
+                the faces of the cells of the patch of the space, as for a
+                linear problem.
+            pressure_reference: The point near which the pressure is zero,
+                of shape `(2,)`, for an element with a pressure. Without it,
+                nothing fixes the constant pressure.
+            petsc_options: Options of the PETSc nonlinear solver and of its
+                linear solver, such as `{'snes_rtol': 1e-10, 'ksp_type':
+                'gmres', 'pc_type': 'ilu'}`. Without them, Newton's method
+                with a backtracking line search factorizes each tangent,
+                with MUMPS when PETSc has it.
+
+        Raises:
+            TypeError: If the element is neither a Poisson nor a Stokes
+                element, if the space is neither a function space nor a
+                mixed space on a planar patch, if the quadrature is not a
+                domain quadrature, if a condition is neither a penalty, a
+                Nitsche, a Neumann nor a skeleton Nitsche condition, or if a
+                stabilization is not a ghost penalty.
+            ValueError: If the space does not give each unknown of the
+                element a component of one field or a field of its own, if
+                the quadrature, the boundary of a condition or the cells of
+                a stabilization do not lie on the elements of the patch of
+                the space, if a condition or a stabilization acts on a
+                trace of another element, if the source does not give each
+                point the values the element takes, if the cell weights are
+                not one per cell, if a skeleton Nitsche condition is given
+                without them, or if a pressure reference is given for an
+                element without a pressure or is not a point of the plane.
+        """
+        super().__init__(element, space, quadrature, source,
+                         cell_weights=cell_weights, conditions=conditions,
+                         stabilizations=stabilizations,
+                         pressure_reference=pressure_reference)
+
+        # The first solve starts from zero, and each later one from the
+        # solution before, so that a parameter may be continued
+        self._x.zeroEntries()
+        self._b = self._residual.duplicate()
+        self._solver = _nonlinear_solver(self, petsc_options_prefix,
+                                         petsc_options)
+
+    @property
+    def A(self) -> PETSc.Mat:
+        """The tangent of the residual, at the last coefficients at which
+        the solver took it."""
+        return self._tangent
+
+    @property
+    def b(self) -> PETSc.Vec:
+        """The residual of the solver, at the last coefficients at which it
+        took it."""
+        return self._b
+
+    @property
+    def solver(self) -> PETSc.SNES:
+        """The PETSc nonlinear solver of the problem."""
+        return self._solver
+
+    @property
+    def guess(
+        self,
+    ) -> npt.NDArray[np.float64] | tuple[npt.NDArray[np.float64], ...]:
+        """Coefficients of each degree of freedom from which the next solve
+        starts, shaped as the solution: zero at first, then the last
+        solution, or the last iterate of a solve that did not converge. The
+        pinned pressure starts from zero whatever its guess."""
+        return _coefficients(self._space, self._x.getArray())
+
+    @guess.setter
+    def guess(
+        self,
+        guess: npt.ArrayLike | Sequence[npt.ArrayLike],
+    ) -> None:
+        self._x.setArray(_entries(self._space, guess))
+
+    def solve(
+        self,
+    ) -> npt.NDArray[np.float64] | tuple[npt.NDArray[np.float64], ...]:
+        """Solve the problem with the current data, from the guess.
+
+        Returns:
+            The coefficients of each degree of freedom, shaped as those of
+            a linear problem.
+
+        Raises:
+            ValueError: If a stabilization is given on a patch whose map is
+                not affine, or that repeats an interior knot.
+            RuntimeError: If the nonlinear solver does not converge.
+        """
+        # Zero from the start, so that the steps keep it there, the row and
+        # column of the tangent leaving it out of the other equations
+        if self._pinned is not None:
+            self._x.setValue(self._pinned, 0.)
+            self._x.assemble()
+
+        self._solver.solve(None, self._x)
+
+        if self._solver.getConvergedReason() < 0:
+            raise RuntimeError('the nonlinear solver did not converge')
+
+        return _coefficients(self._space, self._x.getArray())
+
+    def _evaluate_residual(
+        self,
+        solver: PETSc.SNES,
+        x: PETSc.Vec,
+        residual: PETSc.Vec,
+    ) -> None:
+        """Assemble the residual at coefficients into the vector the solver
+        gives, which its line search may change for one of its own."""
+        self._residual.zeroEntries()
+        self._form.assemble_residual(self._assembler, x)
+        self._residual.copy(residual)
+
+        # The equation of the pinned pressure keeps it at zero
+        if self._pinned is not None:
+            residual.setValue(self._pinned, x.getValue(self._pinned))
+            residual.assemble()
+
+    def _evaluate_tangent(
+        self,
+        solver: PETSc.SNES,
+        x: PETSc.Vec,
+        tangent: PETSc.Mat,
+        preconditioner: PETSc.Mat,
+    ) -> None:
+        """Assemble the tangent at coefficients, the matrix the solver was
+        given."""
+        self._tangent.zeroEntries()
+        self._form.assemble_tangent(self._assembler, x)
+
+        # Rows and columns rather than rows, whose structure PETSc would
+        # drop for the next assembly
+        if self._pinned is not None:
+            self._tangent.zeroRowsColumns([self._pinned], diag=1.)
+
+
 def _check_terms(
     element: PoissonElement | StokesElement,
     patch: PlanarPatch,
@@ -493,8 +685,8 @@ def _entries(
         field.shape != _shape(each) for field, each in zip(fields, spaces))
 
     if mismatched:
-        raise ValueError('the previous solution must give the '
-                         'coefficients of every degree of freedom')
+        raise ValueError('the coefficients must give every degree of '
+                         'freedom of the space')
 
     return np.concatenate([field.ravel() for field in fields])
 
@@ -567,22 +759,46 @@ def _linear_solver(
 ) -> PETSc.KSP:
     """PETSc linear solver of an operator, set up from options under a
     prefix."""
-    if options is None:
-        options = {'ksp_type': 'preonly', 'pc_type': 'lu'}
-
-        # MUMPS also factorizes the indefinite systems of mixed problems
-        if PETSc.Sys.hasExternalPackage('mumps'):
-            options['pc_factor_mat_solver_type'] = 'mumps'
-
     solver = PETSc.KSP().create(PETSc.COMM_SELF)
     solver.setOperators(operator)
-    _set_from_options(solver, prefix, options)
+    _set_from_options(solver, prefix,
+                      _direct_options() if options is None else options)
 
     return solver
 
 
+def _nonlinear_solver(
+    problem: NonlinearProblem,
+    prefix: str,
+    options: dict[str, object] | None,
+) -> PETSc.SNES:
+    """PETSc nonlinear solver of a problem, set up from options under a
+    prefix, which reach its linear solver too. Without them, the Newton's
+    method of PETSc, with its line search, factorizes each tangent."""
+    solver = PETSc.SNES().create(PETSc.COMM_SELF)
+    solver.setFunction(problem._evaluate_residual, problem._b)
+    solver.setJacobian(problem._evaluate_tangent, problem._tangent)
+
+    # After the function and the tangent, which the options may act on
+    _set_from_options(solver, prefix,
+                      _direct_options() if options is None else options)
+
+    return solver
+
+
+def _direct_options() -> dict[str, object]:
+    """Options of a linear solver that factorizes its operator."""
+    options = {'ksp_type': 'preonly', 'pc_type': 'lu'}
+
+    # MUMPS also factorizes the indefinite systems of mixed problems
+    if PETSc.Sys.hasExternalPackage('mumps'):
+        options['pc_factor_mat_solver_type'] = 'mumps'
+
+    return options
+
+
 def _set_from_options(
-    solver: PETSc.KSP,
+    solver: PETSc.KSP | PETSc.SNES,
     prefix: str,
     options: dict[str, object],
 ) -> None:
