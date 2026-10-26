@@ -825,16 +825,21 @@ void Assembler<Basis, n>::add_condition_stiffness(
     if (projection != nullptr)
         check_projection(*projection, order, quadrature.num_points());
 
+    Eigen::VectorX<Scalar> nodata;
+    Eigen::VectorX<Scalar> zero;
     Eigen::MatrixX<Scalar> local;
     std::vector<int> dofs;
 
+    // The tangent at zero coefficients, the stiffness of a linear condition
     visit_boundary_cells(
         patch_, space_, condition.flags(), quadrature, projection, order,
-        [&](int cell, int, int, const auto& values, const auto& shifted,
-            const auto& weights, const auto& normals) {
-            condition.local_stiffness(values, shifted, weights, normals,
-                                      local);
+        [&](int cell, int, int count, const auto& values,
+            const auto& shifted, const auto& weights, const auto& normals) {
             space_.dofs_on_element(cell, dofs);
+            nodata.setZero(count);
+            zero.setZero(std::ssize(dofs));
+            condition.local_tangent(values, shifted, weights, normals, nodata,
+                                    zero, local);
             add_to_matrix(stiffness_, dofs, local);
         });
 
@@ -875,18 +880,21 @@ void Assembler<Basis, n>::add_condition_load(
         check_projection(*projection, order, quadrature.num_points());
 
     Eigen::VectorX<Scalar> imposed;
+    Eigen::VectorX<Scalar> zero;
     Eigen::VectorX<Scalar> local;
     std::vector<int> dofs;
 
+    // The residual at zero coefficients, less the load of a linear condition
     visit_boundary_cells(
         patch_, space_, condition.flags(), quadrature, projection, order,
         [&](int cell, int first, int count, const auto& values,
             const auto& shifted, const auto& weights, const auto& normals) {
             imposed = data.segment(first, count);
-            condition.local_load(values, shifted, weights, normals, imposed,
-                                 local);
             space_.dofs_on_element(cell, dofs);
-            add_to_load(dofs, local);
+            zero.setZero(std::ssize(dofs));
+            condition.local_residual(values, shifted, weights, normals,
+                                     imposed, zero, local);
+            add_to_load(dofs, -local);
         });
 
     finalize();
@@ -927,18 +935,21 @@ void Assembler<Basis, n>::assemble_stiffness(
                                         "interior knots");
     }
 
+    Eigen::VectorX<Scalar> zero;
     Eigen::MatrixX<Scalar> local;
     Eigen::MatrixX<Scalar> folded;
     std::vector<int> dofs;
     std::vector<int> positions;
 
+    // The tangent at zero coefficients, the same at any
     visit_ghost_faces(
         patch_, space_, penalty.flags(), quadrature, basis,
         [&](int cell_before, int cell_after, const auto& before,
             const auto& after, const auto& weights, int degree) {
-            penalty.local_stiffness(before, after, weights, degree, local);
-
             face_dofs(cell_before, cell_after, dofs, positions);
+            zero.setZero(std::ssize(positions));
+            penalty.local_tangent(before, after, weights, degree, zero, local);
+
             fold_face(local, positions, std::ssize(dofs), folded);
             add_to_matrix(stiffness_, dofs, folded);
         });
@@ -988,23 +999,29 @@ void Assembler<Basis, n>::add_skeleton_condition_stiffness(
     if (projection != nullptr)
         check_projection(*projection, order, quadrature.num_points());
 
+    Eigen::VectorX<Scalar> nodata;
+    Eigen::VectorX<Scalar> zero;
     Eigen::MatrixX<Scalar> local;
     Eigen::MatrixX<Scalar> folded;
     std::vector<int> dofs;
     std::vector<int> positions;
 
+    // The tangent at zero coefficients, the stiffness of a linear condition,
+    // over the rows of both cells
     visit_jump_faces(
         patch_, space_, condition.flags(), quadrature, projection, order,
         cell_weights,
-        [&](int cell_before, int cell_after, int, int, const auto& before,
-            const auto& after, const auto& shifted_before,
+        [&](int cell_before, int cell_after, int, int count,
+            const auto& before, const auto& after, const auto& shifted_before,
             const auto& shifted_after, const auto& side_weights,
             const auto& weights, const auto& normals) {
-            condition.local_stiffness(before, after, shifted_before,
-                                      shifted_after, side_weights, weights,
-                                      normals, local);
-
             face_dofs(cell_before, cell_after, dofs, positions);
+            nodata.setZero(count);
+            zero.setZero(std::ssize(positions));
+            condition.local_tangent(before, after, shifted_before,
+                                    shifted_after, side_weights, weights,
+                                    normals, nodata, zero, local);
+
             fold_face(local, positions, std::ssize(dofs), folded);
             add_to_matrix(stiffness_, dofs, folded);
         });
@@ -1062,11 +1079,14 @@ void Assembler<Basis, n>::add_skeleton_condition_load(
         check_projection(*projection, order, quadrature.num_points());
 
     Eigen::VectorX<Scalar> imposed;
+    Eigen::VectorX<Scalar> zero;
     Eigen::VectorX<Scalar> local;
     Eigen::VectorX<Scalar> folded;
     std::vector<int> dofs;
     std::vector<int> positions;
 
+    // The residual at zero coefficients, less the load of a linear
+    // condition, over the rows of both cells
     visit_jump_faces(
         patch_, space_, condition.flags(), quadrature, projection, order,
         cell_weights,
@@ -1075,13 +1095,14 @@ void Assembler<Basis, n>::add_skeleton_condition_load(
             const auto& shifted_after, const auto& side_weights,
             const auto& weights, const auto& normals) {
             imposed = data.segment(first, count);
-            condition.local_load(before, after, shifted_before, shifted_after,
-                                 side_weights, weights, normals, imposed,
-                                 local);
-
             face_dofs(cell_before, cell_after, dofs, positions);
+            zero.setZero(std::ssize(positions));
+            condition.local_residual(before, after, shifted_before,
+                                     shifted_after, side_weights, weights,
+                                     normals, imposed, zero, local);
+
             fold_face(local, positions, std::ssize(dofs), folded);
-            add_to_load(dofs, folded);
+            add_to_load(dofs, -folded);
         });
 
     finalize();

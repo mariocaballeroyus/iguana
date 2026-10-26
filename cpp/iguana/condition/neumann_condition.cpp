@@ -17,31 +17,33 @@ NeumannCondition<Basis, n>::NeumannCondition(const Trace<Basis, n>& trace)
 }
 
 template<typename Basis, std::size_t n>
-void NeumannCondition<Basis, n>::local_stiffness(
+void NeumannCondition<Basis, n>::local_tangent(
     const ElementValues<Basis, n>& values, const ElementValues<Basis, n>&,
     const Eigen::VectorX<Scalar>&, const PointMatrix<Scalar, n>&,
-    Eigen::MatrixX<Scalar>& stiffness) const
+    const Eigen::VectorX<Scalar>&, const Eigen::VectorX<Scalar>&,
+    Eigen::MatrixX<Scalar>& tangent) const
 {
-    // The data is known, so the condition adds no stiffness, over every
+    // The data is known, so the condition adds no tangent, over every
     // degree of freedom of the element as the rows of the trace
     Eigen::MatrixX<Scalar> trace;
     trace_.local_trace(values, trace);
-    stiffness.setZero(trace.rows(), trace.rows());
+    tangent.setZero(trace.rows(), trace.rows());
 }
 
 template<typename Basis, std::size_t n>
-void NeumannCondition<Basis, n>::local_load(
+void NeumannCondition<Basis, n>::local_residual(
     const ElementValues<Basis, n>& values, const ElementValues<Basis, n>&,
     const Eigen::VectorX<Scalar>& weights, const PointMatrix<Scalar, n>&,
-    const Eigen::VectorX<Scalar>& data, Eigen::VectorX<Scalar>& load) const
+    const Eigen::VectorX<Scalar>& data, const Eigen::VectorX<Scalar>&,
+    Eigen::VectorX<Scalar>& residual) const
 {
     // T(N_i), traces of the test functions the data does work on
     Eigen::MatrixX<Scalar> trace;
     trace_.local_trace(values, trace);
 
-    // F_i = ( T(N_i), g )_Γ
-    //     ≈ Σ_q w_q g(x_q) B_iq
-    load = trace * weights.cwiseProduct(data);
+    // R_i = − ( T(N_i), g )_Γ
+    //     ≈ − Σ_q w_q g(x_q) B_iq
+    residual = -(trace * weights.cwiseProduct(data));
 }
 
 template class NeumannCondition<TensorBSpline<double, 2>, 2>;

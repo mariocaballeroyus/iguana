@@ -17,15 +17,16 @@ namespace iguana
 {
 
 /**
- * @brief Condition on the interior faces of a grid, giving its stiffness
- *        and load on one face from the two cells on either side
+ * @brief Condition on the interior faces of a grid, giving its residual and
+ *        tangent on one face from the two cells on either side
  *
  * @details The two-sided sibling of Condition: each cell gives its one-sided
  *          values at the face and a weight for its test functions, such as
  *          its volume fraction in the Generalized Shifted Boundary Method.
  *          Rows and columns follow the degrees of freedom of the cell before
  *          the face, then those of the cell after, each ordered as for
- *          Element
+ *          Element, and so do the coefficients, a function of both cells
+ *          having a row in each
  *
  * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
  * @tparam n Dimension of the physical space of the patch
@@ -43,7 +44,9 @@ public:
     virtual ValueFlags flags() const noexcept = 0;
 
     /**
-     * @brief Stiffness matrix of the condition on one face
+     * @brief Tangent matrix of the condition on one face, the derivative of
+     *        its residual with respect to the coefficients, at the
+     *        coefficients
      *
      * @param before Values of the cell before the face at its points
      * @param after Values of the cell after the face at the same points
@@ -58,47 +61,17 @@ public:
      * @param normals Unit normals of the face in physical space, pointing
      *        from the cell before it to the cell after it, of size
      *        (num_points, n)
-     * @param stiffness Output of size (num_dofs, num_dofs) of both cells
-     *        together, overwritten. It is resized when necessary
-     *
-     * @pre The values were filled with flags(), at the points of @p weights
-     *      and @p normals
-     */
-    virtual void local_stiffness(
-        const ElementValues<Basis, n>& before,
-        const ElementValues<Basis, n>& after,
-        const ElementValues<Basis, n>& shifted_before,
-        const ElementValues<Basis, n>& shifted_after,
-        const std::array<Scalar, 2>& cell_weights,
-        const Eigen::VectorX<Scalar>& weights,
-        const PointMatrix<Scalar, n>& normals,
-        Eigen::MatrixX<Scalar>& stiffness) const = 0;
-
-    /**
-     * @brief Load vector of the condition on one face, from data given at
-     *        its points
-     *
-     * @param before Values of the cell before the face at its points
-     * @param after Values of the cell after the face at the same points
-     * @param shifted_before Values of the cell before the face where the
-     *        data is given, as for local_stiffness()
-     * @param shifted_after Values of the cell after the face where the data
-     *        is given, as for local_stiffness()
-     * @param cell_weights Weights of the test functions on the cell before
-     *        the face and on the cell after it
-     * @param weights Face weights, one per point
-     * @param normals Unit normals of the face in physical space, pointing
-     *        from the cell before it to the cell after it, of size
-     *        (num_points, n)
      * @param data Data of the condition at each point, such as the value it
      *        imposes, given at its closest point with a projection
-     * @param load Output of size num_dofs of both cells together,
-     *        overwritten. It is resized when necessary
+     * @param coefficients Coefficients of the unknowns on both cells
+     *        together, one per row
+     * @param tangent Output of size (num_dofs, num_dofs) of both cells
+     *        together, overwritten. It is resized when necessary
      *
      * @pre The values were filled with flags(), at the points of @p weights,
-     *      @p normals and @p data
+     *      @p normals and @p data, and @p coefficients has num_dofs entries
      */
-    virtual void local_load(
+    virtual void local_tangent(
         const ElementValues<Basis, n>& before,
         const ElementValues<Basis, n>& after,
         const ElementValues<Basis, n>& shifted_before,
@@ -107,7 +80,45 @@ public:
         const Eigen::VectorX<Scalar>& weights,
         const PointMatrix<Scalar, n>& normals,
         const Eigen::VectorX<Scalar>& data,
-        Eigen::VectorX<Scalar>& load) const = 0;
+        const Eigen::VectorX<Scalar>& coefficients,
+        Eigen::MatrixX<Scalar>& tangent) const = 0;
+
+    /**
+     * @brief Residual vector of the condition on one face at the
+     *        coefficients, its weak form tested by each function
+     *
+     * @param before Values of the cell before the face at its points
+     * @param after Values of the cell after the face at the same points
+     * @param shifted_before Values of the cell before the face where the
+     *        data is given, as for local_tangent()
+     * @param shifted_after Values of the cell after the face where the data
+     *        is given, as for local_tangent()
+     * @param cell_weights Weights of the test functions on the cell before
+     *        the face and on the cell after it
+     * @param weights Face weights, one per point
+     * @param normals Unit normals of the face in physical space, pointing
+     *        from the cell before it to the cell after it, of size
+     *        (num_points, n)
+     * @param data Data of the condition at each point, such as the value it
+     *        imposes, given at its closest point with a projection
+     * @param coefficients Coefficients of the unknowns on both cells
+     *        together, one per row
+     * @param residual Output of size num_dofs of both cells together,
+     *        overwritten. It is resized when necessary
+     *
+     * @pre As for local_tangent()
+     */
+    virtual void local_residual(
+        const ElementValues<Basis, n>& before,
+        const ElementValues<Basis, n>& after,
+        const ElementValues<Basis, n>& shifted_before,
+        const ElementValues<Basis, n>& shifted_after,
+        const std::array<Scalar, 2>& cell_weights,
+        const Eigen::VectorX<Scalar>& weights,
+        const PointMatrix<Scalar, n>& normals,
+        const Eigen::VectorX<Scalar>& data,
+        const Eigen::VectorX<Scalar>& coefficients,
+        Eigen::VectorX<Scalar>& residual) const = 0;
 };
 
 } // namespace iguana

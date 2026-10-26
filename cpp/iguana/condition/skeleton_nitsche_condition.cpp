@@ -55,15 +55,15 @@ SkeletonNitscheCondition<Basis, n>::SkeletonNitscheCondition(
 }
 
 template<typename Basis, std::size_t n>
-void SkeletonNitscheCondition<Basis, n>::local_stiffness(
+void SkeletonNitscheCondition<Basis, n>::local_tangent(
     const ElementValues<Basis, n>& before,
     const ElementValues<Basis, n>& after,
     const ElementValues<Basis, n>& shifted_before,
     const ElementValues<Basis, n>& shifted_after,
     const std::array<Scalar, 2>& cell_weights,
     const Eigen::VectorX<Scalar>& weights,
-    const PointMatrix<Scalar, n>& normals,
-    Eigen::MatrixX<Scalar>& stiffness) const
+    const PointMatrix<Scalar, n>& normals, const Eigen::VectorX<Scalar>&,
+    const Eigen::VectorX<Scalar>&, Eigen::MatrixX<Scalar>& tangent) const
 {
     // Jump of the weights along the normal, and γ of the weighted mean
     const Scalar jump = cell_weights[0] - cell_weights[1];
@@ -102,14 +102,14 @@ void SkeletonNitscheCondition<Basis, n>::local_stiffness(
     //        − j ( {{F(N_i)}}_γ, {{T(S N_j)}}_γ )_Γ
     //        + β |j| ( {{T(S N_i)}}_γ, {{T(S N_j)}}_γ / h )_Γ
     //      ≈ Σ_q w_q (β |j| S_iq S_jq / h_q − j T_iq F_jq − j F_iq S_jq)
-    stiffness =
+    tangent =
         shifted * penalized.asDiagonal() * shifted.transpose()
         - jump * (trace * weights.asDiagonal() * flux.transpose()
                   + flux * weights.asDiagonal() * shifted.transpose());
 }
 
 template<typename Basis, std::size_t n>
-void SkeletonNitscheCondition<Basis, n>::local_load(
+void SkeletonNitscheCondition<Basis, n>::local_residual(
     const ElementValues<Basis, n>& before,
     const ElementValues<Basis, n>& after,
     const ElementValues<Basis, n>& shifted_before,
@@ -117,8 +117,14 @@ void SkeletonNitscheCondition<Basis, n>::local_load(
     const std::array<Scalar, 2>& cell_weights,
     const Eigen::VectorX<Scalar>& weights,
     const PointMatrix<Scalar, n>& normals,
-    const Eigen::VectorX<Scalar>& data, Eigen::VectorX<Scalar>& load) const
+    const Eigen::VectorX<Scalar>& data,
+    const Eigen::VectorX<Scalar>& coefficients,
+    Eigen::VectorX<Scalar>& residual) const
 {
+    Eigen::MatrixX<Scalar> tangent;
+    local_tangent(before, after, shifted_before, shifted_after, cell_weights,
+                  weights, normals, data, coefficients, tangent);
+
     // Jump of the weights along the normal, and γ of the weighted mean
     const Scalar jump = cell_weights[0] - cell_weights[1];
     const Scalar gamma = cell_weights[0] / (cell_weights[0] + cell_weights[1]);
@@ -147,8 +153,12 @@ void SkeletonNitscheCondition<Basis, n>::local_load(
 
     // F_i = β |j| ( {{T(S N_i)}}_γ / h, g )_Γ − j ( {{F(N_i)}}_γ, g )_Γ
     //     ≈ Σ_q w_q g(x_q) (β |j| S_iq / h_q − j F_iq)
-    load = shifted * penalized.cwiseProduct(data)
-           - jump * flux * weights.cwiseProduct(data);
+    const Eigen::VectorX<Scalar> load =
+        shifted * penalized.cwiseProduct(data)
+        - jump * flux * weights.cwiseProduct(data);
+
+    // R_i = Σ_j K_ij c_j − F_i
+    residual = tangent * coefficients - load;
 }
 
 template class SkeletonNitscheCondition<TensorBSpline<double, 2>, 2>;

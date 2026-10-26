@@ -65,25 +65,28 @@ public:
     }
 
     /// @pre The cell weights are not both zero
-    void local_stiffness(const ElementValues<Basis, n>& before,
-                         const ElementValues<Basis, n>& after,
-                         const ElementValues<Basis, n>& shifted_before,
-                         const ElementValues<Basis, n>& shifted_after,
-                         const std::array<Scalar, 2>& cell_weights,
-                         const Eigen::VectorX<Scalar>& weights,
-                         const PointMatrix<Scalar, n>& normals,
-                         Eigen::MatrixX<Scalar>& stiffness) const override;
+    void local_tangent(const ElementValues<Basis, n>& before,
+                       const ElementValues<Basis, n>& after,
+                       const ElementValues<Basis, n>& shifted_before,
+                       const ElementValues<Basis, n>& shifted_after,
+                       const std::array<Scalar, 2>& cell_weights,
+                       const Eigen::VectorX<Scalar>& weights,
+                       const PointMatrix<Scalar, n>& normals,
+                       const Eigen::VectorX<Scalar>& data,
+                       const Eigen::VectorX<Scalar>& coefficients,
+                       Eigen::MatrixX<Scalar>& tangent) const override;
 
     /// @pre The cell weights are not both zero
-    void local_load(const ElementValues<Basis, n>& before,
-                    const ElementValues<Basis, n>& after,
-                    const ElementValues<Basis, n>& shifted_before,
-                    const ElementValues<Basis, n>& shifted_after,
-                    const std::array<Scalar, 2>& cell_weights,
-                    const Eigen::VectorX<Scalar>& weights,
-                    const PointMatrix<Scalar, n>& normals,
-                    const Eigen::VectorX<Scalar>& data,
-                    Eigen::VectorX<Scalar>& load) const override;
+    void local_residual(const ElementValues<Basis, n>& before,
+                        const ElementValues<Basis, n>& after,
+                        const ElementValues<Basis, n>& shifted_before,
+                        const ElementValues<Basis, n>& shifted_after,
+                        const std::array<Scalar, 2>& cell_weights,
+                        const Eigen::VectorX<Scalar>& weights,
+                        const PointMatrix<Scalar, n>& normals,
+                        const Eigen::VectorX<Scalar>& data,
+                        const Eigen::VectorX<Scalar>& coefficients,
+                        Eigen::VectorX<Scalar>& residual) const override;
 
 private:
     /// @brief Trace whose values are imposed

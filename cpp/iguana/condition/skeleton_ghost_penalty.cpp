@@ -29,11 +29,11 @@ SkeletonGhostPenalty<Basis, n>::SkeletonGhostPenalty(
 }
 
 template<typename Basis, std::size_t n>
-void SkeletonGhostPenalty<Basis, n>::local_stiffness(
+void SkeletonGhostPenalty<Basis, n>::local_tangent(
     const ElementValues<Basis, n>& before,
     const ElementValues<Basis, n>& after,
     const Eigen::VectorX<Scalar>& weights, int order,
-    Eigen::MatrixX<Scalar>& stiffness) const
+    const Eigen::VectorX<Scalar>&, Eigen::MatrixX<Scalar>& tangent) const
 {
     // [[∂ₙᵖ T(N_i)]], jumps of the derivatives, after the face minus before
     Eigen::MatrixX<Scalar> before_trace;
@@ -52,7 +52,22 @@ void SkeletonGhostPenalty<Basis, n>::local_stiffness(
 
     // K_ij = β ( [[∂ₙᵖ T(N_i)]], h^(2p−1+s) [[∂ₙᵖ T(N_j)]] )_Γ
     //      ≈ Σ_q w_q β h_q^(2p−1+s) J_iq J_jq
-    stiffness = jumps * penalized.asDiagonal() * jumps.transpose();
+    tangent = jumps * penalized.asDiagonal() * jumps.transpose();
+}
+
+template<typename Basis, std::size_t n>
+void SkeletonGhostPenalty<Basis, n>::local_residual(
+    const ElementValues<Basis, n>& before,
+    const ElementValues<Basis, n>& after,
+    const Eigen::VectorX<Scalar>& weights, int order,
+    const Eigen::VectorX<Scalar>& coefficients,
+    Eigen::VectorX<Scalar>& residual) const
+{
+    Eigen::MatrixX<Scalar> tangent;
+    local_tangent(before, after, weights, order, coefficients, tangent);
+
+    // R_i = Σ_j K_ij c_j
+    residual = tangent * coefficients;
 }
 
 template class SkeletonGhostPenalty<TensorBSpline<double, 2>, 2>;
