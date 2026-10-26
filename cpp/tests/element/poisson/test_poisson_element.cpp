@@ -76,8 +76,13 @@ TEST_CASE("A Poisson element integrates its forms on a rectangle exactly",
     const Eigen::Matrix4d expected = height / width * kroneckerProduct(m, s)
                                      + width / height * kroneckerProduct(s, m);
 
+    // The source f = y, with y = height times the second parameter, and the
+    // tangent at zero coefficients, the stiffness
+    const Eigen::VectorXd source = height * points.col(1);
+    const Eigen::VectorXd zero = Eigen::VectorXd::Zero(4);
+
     Eigen::MatrixXd stiffness;
-    element.local_stiffness(values, weights, stiffness);
+    element.local_tangent(values, weights, source, zero, stiffness);
 
     REQUIRE((stiffness - expected).cwiseAbs().maxCoeff() < 1e-14);
 
@@ -89,12 +94,11 @@ TEST_CASE("A Poisson element integrates its forms on a rectangle exactly",
                 .maxCoeff()
             < 1e-14);
 
-    // The source f = y, with y = height times the second parameter. The
-    // functions sum to one, so the load sums to the integral of y
-    const Eigen::VectorXd source = height * points.col(1);
+    // The residual at zero coefficients is the load, negated. The functions
+    // sum to one, so the load sums to the integral of y
+    Eigen::VectorXd residual;
+    element.local_residual(values, weights, source, zero, residual);
 
-    Eigen::VectorXd load;
-    element.local_load(values, weights, source, load);
-
-    REQUIRE_THAT(load.sum(), WithinAbs(width * height * height / 2., 1e-14));
+    REQUIRE_THAT(-residual.sum(),
+                 WithinAbs(width * height * height / 2., 1e-14));
 }

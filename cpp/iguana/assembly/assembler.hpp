@@ -30,21 +30,26 @@ namespace iguana
 {
 
 /**
- * @brief Global stiffness, mass and load of a space, assembled from the
- *        local ones of elements over the points of quadratures
+ * @brief Global tangent, residual and mass of a space, assembled from the
+ *        local ones of elements and conditions over the points of
+ *        quadratures, at coefficients of the unknowns
  *
- * The stiffness and mass are sequential PETSc matrices and the load a PETSc
- * vector, ready for its solvers after every assembly, and a failing PETSc
- * call throws std::runtime_error with its message. The sparsity pattern
- * of the stiffness is fixed by the space, an entry for every pair of
- * degrees of freedom sharing an element, so it is built once and each
- * assembly adds values into it. The mass shares it, so that time
- * integrators combine the two entry by entry. With the faces coupled, it
- * also has an entry for every pair on the two cells of an interior face of
- * the grid, as terms on faces need. Assemblies add up, so that
- * several terms, such as a domain and a boundary one, build one system.
- * The assembler does not tell linear from nonlinear or transient problems,
- * which the elements and the solvers that drive it do
+ * The tangent and mass are sequential PETSc matrices and the residual a
+ * PETSc vector, ready for its solvers after every assembly, and a failing
+ * PETSc call throws std::runtime_error with its message. Each term gives
+ * its residual and tangent at the coefficients a PETSc vector holds,
+ * gathered for the degrees of freedom of each cell or face: a linear term
+ * gives its stiffness as its tangent, and the stiffness times the
+ * coefficients less its load as its residual. The sparsity pattern of the
+ * tangent is fixed by the space, an entry for every pair of degrees of
+ * freedom sharing an element, so it is built once and each assembly adds
+ * values into it. The mass shares it, so that time integrators combine the
+ * two entry by entry. With the faces coupled, it also has an entry for
+ * every pair on the two cells of an interior face of the grid, as terms on
+ * faces need. Assemblies add up, so that several terms, such as a domain
+ * and a boundary one, build one system. The assembler does not tell linear
+ * from nonlinear or transient problems, which the elements and the solvers
+ * that drive it do
  *
  * The test functions of each cell may carry a weight of their own, such as
  * its volume fraction in the generalized shifted boundary method. Constant
@@ -89,8 +94,8 @@ public:
     static constexpr std::size_t dim = Basis::dimension;
 
     /**
-     * @brief Constructs a zero stiffness and load with the pattern of a space
-     *        of one field
+     * @brief Constructs a zero tangent, residual and mass with the pattern
+     *        of a space of one field
      *
      * @param space Space whose degrees of freedom number the system
      * @param patch Patch that maps the points of the quadratures
@@ -110,8 +115,8 @@ public:
               const Patch<Basis, n>& patch, bool couple_faces = false);
 
     /**
-     * @brief Constructs a zero stiffness and load with the pattern of a space
-     *        of several fields
+     * @brief Constructs a zero tangent, residual and mass with the pattern
+     *        of a space of several fields
      *
      * @param space Space whose degrees of freedom number the system, field
      *        after field
@@ -130,107 +135,124 @@ public:
     Assembler(const MixedFunctionSpace<Basis>& space,
               const Patch<Basis, n>& patch, bool couple_faces = false);
 
-    /// @brief Drops the references of the assembler to the stiffness, mass
-    ///        and load, which PETSc destroys once nothing else holds them
+    /// @brief Drops the references of the assembler to the tangent,
+    ///        residual and mass, which PETSc destroys once nothing else
+    ///        holds them
     ~Assembler();
 
     Assembler(const Assembler&) = delete;
     Assembler& operator=(const Assembler&) = delete;
 
     /**
-     * @brief Adds the stiffness of an element over the points of a
-     *        quadrature
+     * @brief Adds the tangent of an element over the points of a
+     *        quadrature, at coefficients
      *
      * @tparam E Element, a class derived from Element
      *
-     * @param element Element whose local stiffness is added
-     * @param quadrature Quadrature over elements of the grid of the basis
-     *
-     * @throws std::invalid_argument If the local matrices of @p element do
-     *         not match the degrees of freedom of the space
-     *
-     * @pre @p quadrature is built on the grid of the basis and the domain of
-     *      the space, so that every element it holds has its degrees of
-     *      freedom
-     */
-    template<std::derived_from<Element<Basis, n>> E>
-    void assemble_stiffness(const E& element,
-                            const QuadratureDomain<Scalar, dim>& quadrature);
-
-    /**
-     * @brief Adds the stiffness of an element over the points of a
-     *        quadrature, with the test functions of each cell weighted
-     *
-     * @tparam E Element, a class derived from Element
-     *
-     * @param element Element whose local stiffness is added
-     * @param quadrature Quadrature over elements of the grid of the basis
-     * @param cell_weights Weight of the test functions on each element of
-     *        the grid, in its numbering
-     *
-     * @throws std::invalid_argument If @p cell_weights does not have one
-     *         value per element of the grid, or if the local matrices of
-     *         @p element do not match the degrees of freedom of the space
-     *
-     * @pre @p quadrature is built on the grid of the basis, and every
-     *      element it holds with a non-zero weight has its degrees of
-     *      freedom in the space
-     */
-    template<std::derived_from<Element<Basis, n>> E>
-    void assemble_stiffness(const E& element,
-                            const QuadratureDomain<Scalar, dim>& quadrature,
-                            const Eigen::VectorX<Scalar>& cell_weights);
-
-    /**
-     * @brief Adds the load of an element over the points of a quadrature,
-     *        from a source given at them
-     *
-     * @tparam E Element, a class derived from Element
-     *
-     * @param element Element whose local load is added
+     * @param element Element whose local tangent is added
      * @param quadrature Quadrature over elements of the grid of the basis
      * @param source Value of the source at each point of the quadrature, a
      *        row per point in its order and a column per component
+     * @param coefficients Coefficients of the degrees of freedom of the
+     *        space, one each
      *
      * @throws std::invalid_argument If @p source does not have one row per
-     *         point of @p quadrature, or if the local loads of @p element do
-     *         not match the degrees of freedom of the space
+     *         point of @p quadrature, if @p coefficients does not have one
+     *         entry per degree of freedom, or if the local matrices of
+     *         @p element do not match the degrees of freedom of the space
      *
-     * @pre @p quadrature is built as for assemble_stiffness(), and
-     *      @p source has the components @p element reads
+     * @pre @p quadrature is built on the grid of the basis and the domain of
+     *      the space, so that every element it holds has its degrees of
+     *      freedom, @p source has the components @p element reads, and
+     *      @p coefficients is not the residual
      */
     template<std::derived_from<Element<Basis, n>> E>
-    void assemble_load(const E& element,
-                       const QuadratureDomain<Scalar, dim>& quadrature,
-                       const Eigen::MatrixX<Scalar>& source);
+    void assemble_tangent(const E& element,
+                          const QuadratureDomain<Scalar, dim>& quadrature,
+                          const Eigen::MatrixX<Scalar>& source,
+                          Vec coefficients);
 
     /**
-     * @brief Adds the load of an element over the points of a quadrature,
-     *        from a source given at them, with the test functions of each
+     * @brief Adds the tangent of an element over the points of a
+     *        quadrature, at coefficients, with the test functions of each
      *        cell weighted
      *
      * @tparam E Element, a class derived from Element
      *
-     * @param element Element whose local load is added
+     * @param element Element whose local tangent is added
      * @param quadrature Quadrature over elements of the grid of the basis
      * @param source Value of the source at each point of the quadrature, a
      *        row per point in its order and a column per component
      * @param cell_weights Weight of the test functions on each element of
      *        the grid, in its numbering
+     * @param coefficients Coefficients of the degrees of freedom of the
+     *        space, one each
      *
-     * @throws std::invalid_argument If @p source does not have one row per
-     *         point of @p quadrature, if @p cell_weights does not have one
-     *         value per element of the grid, or if the local loads of
-     *         @p element do not match the degrees of freedom of the space
+     * @throws std::invalid_argument As for the tangent of an element, or if
+     *         @p cell_weights does not have one value per element of the
+     *         grid
      *
-     * @pre @p quadrature is built as for the weighted assemble_stiffness(),
-     *      and @p source has the components @p element reads
+     * @pre @p quadrature is built on the grid of the basis, every element it
+     *      holds with a non-zero weight has its degrees of freedom in the
+     *      space, and as for the tangent of an element
      */
     template<std::derived_from<Element<Basis, n>> E>
-    void assemble_load(const E& element,
-                       const QuadratureDomain<Scalar, dim>& quadrature,
-                       const Eigen::MatrixX<Scalar>& source,
-                       const Eigen::VectorX<Scalar>& cell_weights);
+    void assemble_tangent(const E& element,
+                          const QuadratureDomain<Scalar, dim>& quadrature,
+                          const Eigen::MatrixX<Scalar>& source,
+                          const Eigen::VectorX<Scalar>& cell_weights,
+                          Vec coefficients);
+
+    /**
+     * @brief Adds the residual of an element over the points of a
+     *        quadrature, at coefficients
+     *
+     * @tparam E Element, a class derived from Element
+     *
+     * @param element Element whose local residual is added
+     * @param quadrature Quadrature over elements of the grid of the basis
+     * @param source Value of the source at each point of the quadrature, a
+     *        row per point in its order and a column per component
+     * @param coefficients Coefficients of the degrees of freedom of the
+     *        space, one each
+     *
+     * @throws std::invalid_argument As for the tangent of an element
+     *
+     * @pre As for the tangent of an element
+     */
+    template<std::derived_from<Element<Basis, n>> E>
+    void assemble_residual(const E& element,
+                           const QuadratureDomain<Scalar, dim>& quadrature,
+                           const Eigen::MatrixX<Scalar>& source,
+                           Vec coefficients);
+
+    /**
+     * @brief Adds the residual of an element over the points of a
+     *        quadrature, at coefficients, with the test functions of each
+     *        cell weighted
+     *
+     * @tparam E Element, a class derived from Element
+     *
+     * @param element Element whose local residual is added
+     * @param quadrature Quadrature over elements of the grid of the basis
+     * @param source Value of the source at each point of the quadrature, a
+     *        row per point in its order and a column per component
+     * @param cell_weights Weight of the test functions on each element of
+     *        the grid, in its numbering
+     * @param coefficients Coefficients of the degrees of freedom of the
+     *        space, one each
+     *
+     * @throws std::invalid_argument As for the weighted tangent of an
+     *         element
+     *
+     * @pre As for the weighted tangent of an element
+     */
+    template<std::derived_from<Element<Basis, n>> E>
+    void assemble_residual(const E& element,
+                           const QuadratureDomain<Scalar, dim>& quadrature,
+                           const Eigen::MatrixX<Scalar>& source,
+                           const Eigen::VectorX<Scalar>& cell_weights,
+                           Vec coefficients);
 
     /**
      * @brief Adds the mass of an element over the points of a quadrature
@@ -243,7 +265,7 @@ public:
      * @throws std::invalid_argument If the local matrices of @p element do
      *         not match the degrees of freedom of the space
      *
-     * @pre @p quadrature is built as for assemble_stiffness()
+     * @pre @p quadrature is built as for the tangent of an element
      */
     template<std::derived_from<Element<Basis, n>> E>
     void assemble_mass(const E& element,
@@ -264,7 +286,7 @@ public:
      *         value per element of the grid, or if the local matrices of
      *         @p element do not match the degrees of freedom of the space
      *
-     * @pre @p quadrature is built as for the weighted assemble_stiffness()
+     * @pre @p quadrature is built as for the weighted tangent of an element
      */
     template<std::derived_from<Element<Basis, n>> E>
     void assemble_mass(const E& element,
@@ -272,8 +294,8 @@ public:
                        const Eigen::VectorX<Scalar>& cell_weights);
 
     /**
-     * @brief Adds the stiffness of a condition along the points of a
-     *        boundary quadrature
+     * @brief Adds the tangent of a condition along the points of a boundary
+     *        quadrature, at coefficients
      *
      * The patch maps the weights of the quadrature, which measure the
      * boundary in parameter space, into the boundary weights the condition
@@ -281,46 +303,56 @@ public:
      *
      * @tparam C Condition, a final class derived from Condition
      *
-     * @param condition Condition whose local stiffness is added
+     * @param condition Condition whose local tangent is added
      * @param quadrature Quadrature of a boundary embedded in the grid of the
      *        basis
+     * @param data Data of the condition at each point of the quadrature, in
+     *        its order, such as the value it imposes
+     * @param coefficients Coefficients of the degrees of freedom of the
+     *        space, one each
      *
-     * @throws std::invalid_argument If the local matrices of @p condition do
-     *         not match the degrees of freedom of the space
+     * @throws std::invalid_argument If @p data does not have one value per
+     *         point of @p quadrature, if @p coefficients does not have one
+     *         entry per degree of freedom, or if the local matrices of
+     *         @p condition do not match the degrees of freedom of the space
      *
-     * @pre @p quadrature is built on the grid of the basis, and every element
-     *      it holds has its degrees of freedom in the space
+     * @pre @p quadrature is built on the grid of the basis, every element it
+     *      holds has its degrees of freedom in the space, and
+     *      @p coefficients is not the residual
      */
     template<std::derived_from<Condition<Basis, n>> C>
-    void assemble_stiffness(const C& condition,
-                            const QuadratureBoundary<Scalar, dim>& quadrature);
+    void assemble_tangent(const C& condition,
+                          const QuadratureBoundary<Scalar, dim>& quadrature,
+                          const Eigen::VectorX<Scalar>& data,
+                          Vec coefficients);
 
     /**
-     * @brief Adds the load of a condition along the points of a boundary
-     *        quadrature, from data given at them
+     * @brief Adds the residual of a condition along the points of a
+     *        boundary quadrature, at coefficients
      *
      * @tparam C Condition, a final class derived from Condition
      *
-     * @param condition Condition whose local load is added
+     * @param condition Condition whose local residual is added
      * @param quadrature Quadrature of a boundary embedded in the grid of the
      *        basis
-     * @param data Value the condition imposes at each point of the
-     *        quadrature, in its order
+     * @param data Data of the condition at each point of the quadrature, in
+     *        its order, such as the value it imposes
+     * @param coefficients Coefficients of the degrees of freedom of the
+     *        space, one each
      *
-     * @throws std::invalid_argument If @p data does not have one value per
-     *         point of @p quadrature, or if the local loads of @p condition
-     *         do not match the degrees of freedom of the space
+     * @throws std::invalid_argument As for the tangent of a condition
      *
-     * @pre @p quadrature is built as for the stiffness of a condition
+     * @pre As for the tangent of a condition
      */
     template<std::derived_from<Condition<Basis, n>> C>
-    void assemble_load(const C& condition,
-                       const QuadratureBoundary<Scalar, dim>& quadrature,
-                       const Eigen::VectorX<Scalar>& data);
+    void assemble_residual(const C& condition,
+                           const QuadratureBoundary<Scalar, dim>& quadrature,
+                           const Eigen::VectorX<Scalar>& data,
+                           Vec coefficients);
 
     /**
-     * @brief Adds the stiffness of a condition along the points of a
-     *        boundary quadrature, with the values expanded along the
+     * @brief Adds the tangent of a condition along the points of a boundary
+     *        quadrature, at coefficients, with the values expanded along the
      *        distance vectors of a projection
      *
      * As for a quadrature without a projection, but the condition also
@@ -330,7 +362,7 @@ public:
      *
      * @tparam C Condition, a final class derived from Condition
      *
-     * @param condition Condition whose local stiffness is added
+     * @param condition Condition whose local tangent is added
      * @param quadrature Quadrature of a boundary embedded in the grid of the
      *        basis
      * @param projection Projection of the points of @p quadrature onto the
@@ -338,32 +370,36 @@ public:
      * @param order Highest total order of the Taylor series, or of the
      *        derivatives that the shift weights of @p projection combine, as
      *        in ElementValues::shift()
+     * @param data Data of the condition at the closest point of each point
+     *        of the quadrature, in its order
+     * @param coefficients Coefficients of the degrees of freedom of the
+     *        space, one each
      *
-     * @throws std::invalid_argument If @p order is negative, if
-     *         @p projection does not have one distance vector per point of
-     *         @p quadrature, nor shift weights of one row per point and one
-     *         column per multi-index when it has them, with further weights
-     *         of their size alone, if the patch is not a B-spline one, or if
-     *         the local matrices of @p condition do not match the degrees of
-     *         freedom of the space
+     * @throws std::invalid_argument As for the tangent of a condition, if
+     *         @p order is negative, if @p projection does not have one
+     *         distance vector per point of @p quadrature, nor shift weights
+     *         of one row per point and one column per multi-index when it
+     *         has them, with further weights of their size alone, or if the
+     *         patch is not a B-spline one
      *
-     * @pre @p quadrature is built as for the stiffness of a condition, and
-     *      @p projection was computed from its points through the patch
+     * @pre As for the tangent of a condition, and @p projection was computed
+     *      from the points of @p quadrature through the patch
      */
     template<std::derived_from<Condition<Basis, n>> C>
-    void assemble_stiffness(const C& condition,
-                            const QuadratureBoundary<Scalar, dim>& quadrature,
-                            const BoundaryProjection<Scalar>& projection,
-                            int order) requires (dim == 2);
+    void assemble_tangent(const C& condition,
+                          const QuadratureBoundary<Scalar, dim>& quadrature,
+                          const BoundaryProjection<Scalar>& projection,
+                          int order, const Eigen::VectorX<Scalar>& data,
+                          Vec coefficients) requires (dim == 2);
 
     /**
-     * @brief Adds the load of a condition along the points of a boundary
-     *        quadrature, from data given at their closest points, with the
-     *        values expanded along the distance vectors of a projection
+     * @brief Adds the residual of a condition along the points of a
+     *        boundary quadrature, at coefficients, with the values expanded
+     *        along the distance vectors of a projection
      *
      * @tparam C Condition, a final class derived from Condition
      *
-     * @param condition Condition whose local load is added
+     * @param condition Condition whose local residual is added
      * @param quadrature Quadrature of a boundary embedded in the grid of the
      *        basis
      * @param projection Projection of the points of @p quadrature onto the
@@ -371,55 +407,78 @@ public:
      * @param order Highest total order of the Taylor series, or of the
      *        derivatives that the shift weights of @p projection combine, as
      *        in ElementValues::shift()
-     * @param data Value the condition imposes at the closest point of each
-     *        point of the quadrature, in its order
+     * @param data Data of the condition at the closest point of each point
+     *        of the quadrature, in its order
+     * @param coefficients Coefficients of the degrees of freedom of the
+     *        space, one each
      *
-     * @throws std::invalid_argument If @p data does not have one value per
-     *         point of @p quadrature, or as for the projected stiffness of a
+     * @throws std::invalid_argument As for the projected tangent of a
      *         condition
      *
-     * @pre As for the projected stiffness of a condition
+     * @pre As for the projected tangent of a condition
      */
     template<std::derived_from<Condition<Basis, n>> C>
-    void assemble_load(const C& condition,
-                       const QuadratureBoundary<Scalar, dim>& quadrature,
-                       const BoundaryProjection<Scalar>& projection,
-                       int order, const Eigen::VectorX<Scalar>& data)
-        requires (dim == 2);
+    void assemble_residual(const C& condition,
+                           const QuadratureBoundary<Scalar, dim>& quadrature,
+                           const BoundaryProjection<Scalar>& projection,
+                           int order, const Eigen::VectorX<Scalar>& data,
+                           Vec coefficients) requires (dim == 2);
 
     /**
-     * @brief Adds the stiffness of a ghost penalty over the points of a
-     *        skeleton quadrature
+     * @brief Adds the tangent of a ghost penalty over the points of a
+     *        skeleton quadrature, at coefficients
      *
      * On each face, the values of the cells before and after it, each with
      * its own polynomial, are differentiated across it at the same points,
      * to the degree of the field of the penalty there. The patch maps the
      * weights of the quadrature, which measure the faces in parameter
-     * space, into face weights, and the local stiffness couples the degrees
-     * of freedom of both cells
+     * space, into face weights, and the local tangent couples the degrees of
+     * freedom of both cells
      *
-     * @param penalty Ghost penalty whose local stiffness is added
+     * @param penalty Ghost penalty whose local tangent is added
      * @param quadrature Quadrature over interior faces of the grid of the
      *        basis
+     * @param coefficients Coefficients of the degrees of freedom of the
+     *        space, one each
      *
      * @throws std::invalid_argument If the faces are not coupled, if the map
      *         of the patch is not affine, if the patch is not a B-spline one,
      *         if the field of @p penalty is not one of the space, if a knot
-     *         vector of that field repeats an interior knot, or if the local
-     *         matrices of @p penalty do not match the degrees of freedom of
-     *         the space
+     *         vector of that field repeats an interior knot, if
+     *         @p coefficients does not have one entry per degree of freedom,
+     *         or if the local matrices of @p penalty do not match the degrees
+     *         of freedom of the space
      *
-     * @pre @p quadrature is built on the grid of the basis, and every cell
-     *      it holds has its degrees of freedom in the space
+     * @pre @p quadrature is built on the grid of the basis, every cell it
+     *      holds has its degrees of freedom in the space, and
+     *      @p coefficients is not the residual
      */
-    void assemble_stiffness(const SkeletonGhostPenalty<Basis, n>& penalty,
-                            const QuadratureSkeleton<Scalar, dim>& quadrature)
-        requires (dim == 2);
+    void assemble_tangent(const SkeletonGhostPenalty<Basis, n>& penalty,
+                          const QuadratureSkeleton<Scalar, dim>& quadrature,
+                          Vec coefficients) requires (dim == 2);
 
     /**
-     * @brief Adds the stiffness of a skeleton condition over the points of a
-     *        skeleton quadrature, with the test functions of each cell
-     *        weighted
+     * @brief Adds the residual of a ghost penalty over the points of a
+     *        skeleton quadrature, at coefficients
+     *
+     * @param penalty Ghost penalty whose local residual is added
+     * @param quadrature Quadrature over interior faces of the grid of the
+     *        basis
+     * @param coefficients Coefficients of the degrees of freedom of the
+     *        space, one each
+     *
+     * @throws std::invalid_argument As for the tangent of a ghost penalty
+     *
+     * @pre As for the tangent of a ghost penalty
+     */
+    void assemble_residual(const SkeletonGhostPenalty<Basis, n>& penalty,
+                           const QuadratureSkeleton<Scalar, dim>& quadrature,
+                           Vec coefficients) requires (dim == 2);
+
+    /**
+     * @brief Adds the tangent of a skeleton condition over the points of a
+     *        skeleton quadrature, at coefficients, with the test functions
+     *        of each cell weighted
      *
      * On each face whose two cells weigh differently, the values of the
      * cells before and after it, each with its own polynomial, are filled
@@ -433,61 +492,69 @@ public:
      * @tparam C Skeleton condition, a final class derived from
      *         SkeletonCondition
      *
-     * @param condition Skeleton condition whose local stiffness is added
+     * @param condition Skeleton condition whose local tangent is added
      * @param quadrature Quadrature over interior faces of the grid of the
      *        basis
+     * @param data Data of the condition at each point of the quadrature, in
+     *        its order, such as the value it imposes
      * @param cell_weights Weight of the test functions on each element of
      *        the grid, in its numbering
+     * @param coefficients Coefficients of the degrees of freedom of the
+     *        space, one each
      *
      * @throws std::invalid_argument If the faces are not coupled, if
+     *         @p data does not have one value per point of @p quadrature, if
      *         @p cell_weights does not have one value per element of the
-     *         grid, or if the local matrices of @p condition do not match
+     *         grid, if @p coefficients does not have one entry per degree of
+     *         freedom, or if the local matrices of @p condition do not match
      *         the degrees of freedom of the space
      *
-     * @pre @p quadrature is built on the grid of the basis, and every cell
-     *      of a face across which the weights jump has its degrees of
-     *      freedom in the space
+     * @pre @p quadrature is built on the grid of the basis, every cell of a
+     *      face across which the weights jump has its degrees of freedom in
+     *      the space, and @p coefficients is not the residual
      */
     template<std::derived_from<SkeletonCondition<Basis, n>> C>
-    void assemble_stiffness(const C& condition,
-                            const QuadratureSkeleton<Scalar, dim>& quadrature,
-                            const Eigen::VectorX<Scalar>& cell_weights)
-        requires (dim == 2);
+    void assemble_tangent(const C& condition,
+                          const QuadratureSkeleton<Scalar, dim>& quadrature,
+                          const Eigen::VectorX<Scalar>& data,
+                          const Eigen::VectorX<Scalar>& cell_weights,
+                          Vec coefficients) requires (dim == 2);
 
     /**
-     * @brief Adds the load of a skeleton condition over the points of a
-     *        skeleton quadrature, from data given at them, with the test
-     *        functions of each cell weighted
+     * @brief Adds the residual of a skeleton condition over the points of a
+     *        skeleton quadrature, at coefficients, with the test functions
+     *        of each cell weighted
      *
      * @tparam C Skeleton condition, a final class derived from
      *         SkeletonCondition
      *
-     * @param condition Skeleton condition whose local load is added
+     * @param condition Skeleton condition whose local residual is added
      * @param quadrature Quadrature over interior faces of the grid of the
      *        basis
-     * @param data Value the condition imposes at each point of the
-     *        quadrature, in its order
+     * @param data Data of the condition at each point of the quadrature, in
+     *        its order, such as the value it imposes
      * @param cell_weights Weight of the test functions on each element of
      *        the grid, in its numbering
+     * @param coefficients Coefficients of the degrees of freedom of the
+     *        space, one each
      *
-     * @throws std::invalid_argument If @p data does not have one value per
-     *         point of @p quadrature, or as for the stiffness of a skeleton
+     * @throws std::invalid_argument As for the tangent of a skeleton
      *         condition
      *
-     * @pre @p quadrature is built as for the stiffness of a skeleton condition
+     * @pre As for the tangent of a skeleton condition
      */
     template<std::derived_from<SkeletonCondition<Basis, n>> C>
-    void assemble_load(const C& condition,
-                       const QuadratureSkeleton<Scalar, dim>& quadrature,
-                       const Eigen::VectorX<Scalar>& data,
-                       const Eigen::VectorX<Scalar>& cell_weights)
-        requires (dim == 2);
+    void assemble_residual(const C& condition,
+                           const QuadratureSkeleton<Scalar, dim>& quadrature,
+                           const Eigen::VectorX<Scalar>& data,
+                           const Eigen::VectorX<Scalar>& cell_weights,
+                           Vec coefficients) requires (dim == 2);
 
     /**
-     * @brief Adds the stiffness of a skeleton condition over the points of a
-     *        skeleton quadrature, with the test functions of each cell
-     *        weighted and the values expanded along the distance vectors of
-     *        a projection
+     * @brief Adds the tangent of a skeleton condition over the points of a
+     *        skeleton quadrature, at coefficients, with the test functions
+     *        of each cell weighted and the values expanded along the
+     *        distance vectors of a projection
      *
      * As for a quadrature without a projection, but the values of both
      * cells of a face are also expanded from each point to its closest
@@ -496,7 +563,7 @@ public:
      * @tparam C Skeleton condition, a final class derived from
      *         SkeletonCondition
      *
-     * @param condition Skeleton condition whose local stiffness is added
+     * @param condition Skeleton condition whose local tangent is added
      * @param quadrature Quadrature over interior faces of the grid of the
      *        basis
      * @param projection Projection of the points of @p quadrature onto the
@@ -504,37 +571,41 @@ public:
      * @param order Highest total order of the Taylor series, or of the
      *        derivatives that the shift weights of @p projection combine, as
      *        in ElementValues::shift()
+     * @param data Data of the condition at the closest point of each point
+     *        of the quadrature, in its order
      * @param cell_weights Weight of the test functions on each element of
      *        the grid, in its numbering
+     * @param coefficients Coefficients of the degrees of freedom of the
+     *        space, one each
      *
-     * @throws std::invalid_argument As for the stiffness of a skeleton
+     * @throws std::invalid_argument As for the tangent of a skeleton
      *         condition, if @p order is negative, if @p projection does not
      *         have one distance vector per point of @p quadrature, nor shift
      *         weights of one row per point and one column per multi-index
      *         when it has them, with further weights of their size alone,
      *         or if the patch is not a B-spline one
      *
-     * @pre As for the stiffness of a skeleton condition, and @p projection was
+     * @pre As for the tangent of a skeleton condition, and @p projection was
      *      computed from the points of @p quadrature through the patch
      */
     template<std::derived_from<SkeletonCondition<Basis, n>> C>
-    void assemble_stiffness(const C& condition,
-                            const QuadratureSkeleton<Scalar, dim>& quadrature,
-                            const BoundaryProjection<Scalar>& projection,
-                            int order,
-                            const Eigen::VectorX<Scalar>& cell_weights)
-        requires (dim == 2);
+    void assemble_tangent(const C& condition,
+                          const QuadratureSkeleton<Scalar, dim>& quadrature,
+                          const BoundaryProjection<Scalar>& projection,
+                          int order, const Eigen::VectorX<Scalar>& data,
+                          const Eigen::VectorX<Scalar>& cell_weights,
+                          Vec coefficients) requires (dim == 2);
 
     /**
-     * @brief Adds the load of a skeleton condition over the points of a
-     *        skeleton quadrature, from data given at their closest points,
-     *        with the test functions of each cell weighted and the values
-     *        expanded along the distance vectors of a projection
+     * @brief Adds the residual of a skeleton condition over the points of a
+     *        skeleton quadrature, at coefficients, with the test functions
+     *        of each cell weighted and the values expanded along the
+     *        distance vectors of a projection
      *
      * @tparam C Skeleton condition, a final class derived from
      *         SkeletonCondition
      *
-     * @param condition Skeleton condition whose local load is added
+     * @param condition Skeleton condition whose local residual is added
      * @param quadrature Quadrature over interior faces of the grid of the
      *        basis
      * @param projection Projection of the points of @p quadrature onto the
@@ -542,121 +613,140 @@ public:
      * @param order Highest total order of the Taylor series, or of the
      *        derivatives that the shift weights of @p projection combine, as
      *        in ElementValues::shift()
-     * @param data Value the condition imposes at the closest point of each
-     *        point of the quadrature, in its order
+     * @param data Data of the condition at the closest point of each point
+     *        of the quadrature, in its order
      * @param cell_weights Weight of the test functions on each element of
      *        the grid, in its numbering
+     * @param coefficients Coefficients of the degrees of freedom of the
+     *        space, one each
      *
-     * @throws std::invalid_argument If @p data does not have one value per
-     *         point of @p quadrature, or as for the projected stiffness of a
+     * @throws std::invalid_argument As for the projected tangent of a
      *         skeleton condition
      *
-     * @pre As for the projected stiffness of a skeleton condition
+     * @pre As for the projected tangent of a skeleton condition
      */
     template<std::derived_from<SkeletonCondition<Basis, n>> C>
-    void assemble_load(const C& condition,
-                       const QuadratureSkeleton<Scalar, dim>& quadrature,
-                       const BoundaryProjection<Scalar>& projection,
-                       int order, const Eigen::VectorX<Scalar>& data,
-                       const Eigen::VectorX<Scalar>& cell_weights)
-        requires (dim == 2);
+    void assemble_residual(const C& condition,
+                           const QuadratureSkeleton<Scalar, dim>& quadrature,
+                           const BoundaryProjection<Scalar>& projection,
+                           int order, const Eigen::VectorX<Scalar>& data,
+                           const Eigen::VectorX<Scalar>& cell_weights,
+                           Vec coefficients) requires (dim == 2);
 
-    /// @brief Zeroes the stiffness, mass and load, keeping the pattern
+    /// @brief Zeroes the tangent, residual and mass, keeping the pattern
     void clear();
 
-    /// @brief Stiffness, of size (num_dofs, num_dofs), owned by the
-    ///        assembler unless a reference to it is taken
-    Mat stiffness() const noexcept
-    { return stiffness_; }
+    /// @brief Tangent, of size (num_dofs, num_dofs), owned by the assembler
+    ///        unless a reference to it is taken
+    Mat tangent() const noexcept
+    { return tangent_; }
 
     /// @brief Mass, of size (num_dofs, num_dofs), with the pattern of the
-    ///        stiffness, owned by the assembler unless a reference to it is
+    ///        tangent, owned by the assembler unless a reference to it is
     ///        taken
     Mat mass() const noexcept
     { return mass_; }
 
-    /// @brief Load, of size num_dofs, owned by the assembler unless a
+    /// @brief Residual, of size num_dofs, owned by the assembler unless a
     ///        reference to it is taken
-    Vec load() const noexcept
-    { return load_; }
+    Vec residual() const noexcept
+    { return residual_; }
 
 private:
     /**
-     * @brief Adds the stiffness of a condition along the points of a
-     *        boundary quadrature, shifted along a projection when one is
-     *        given, the work of both public overloads
-     */
-    template<std::derived_from<Condition<Basis, n>> C>
-    void add_condition_stiffness(
-        const C& condition, const QuadratureBoundary<Scalar, dim>& quadrature,
-        const BoundaryProjection<Scalar>* projection, int order);
-
-    /**
-     * @brief Adds the load of a condition along the points of a boundary
+     * @brief Adds the tangent of a condition along the points of a boundary
      *        quadrature, shifted along a projection when one is given, the
      *        work of both public overloads
      */
     template<std::derived_from<Condition<Basis, n>> C>
-    void add_condition_load(
+    void add_condition_tangent(
         const C& condition, const QuadratureBoundary<Scalar, dim>& quadrature,
         const BoundaryProjection<Scalar>* projection, int order,
-        const Eigen::VectorX<Scalar>& data);
+        const Eigen::VectorX<Scalar>& data, Vec coefficients);
 
     /**
-     * @brief Adds the stiffness of a skeleton condition over the points of a
-     *        skeleton quadrature, shifted along a projection when one is
+     * @brief Adds the residual of a condition along the points of a
+     *        boundary quadrature, shifted along a projection when one is
      *        given, the work of both public overloads
      */
-    template<std::derived_from<SkeletonCondition<Basis, n>> C>
-    void add_skeleton_condition_stiffness(
-        const C& condition, const QuadratureSkeleton<Scalar, dim>& quadrature,
+    template<std::derived_from<Condition<Basis, n>> C>
+    void add_condition_residual(
+        const C& condition, const QuadratureBoundary<Scalar, dim>& quadrature,
         const BoundaryProjection<Scalar>* projection, int order,
-        const Eigen::VectorX<Scalar>& cell_weights) requires (dim == 2);
+        const Eigen::VectorX<Scalar>& data, Vec coefficients);
 
     /**
-     * @brief Adds the load of a skeleton condition over the points of a
+     * @brief Adds the tangent of a skeleton condition over the points of a
      *        skeleton quadrature, shifted along a projection when one is
      *        given, the work of both public overloads
      */
     template<std::derived_from<SkeletonCondition<Basis, n>> C>
-    void add_skeleton_condition_load(
+    void add_skeleton_condition_tangent(
         const C& condition, const QuadratureSkeleton<Scalar, dim>& quadrature,
         const BoundaryProjection<Scalar>* projection, int order,
         const Eigen::VectorX<Scalar>& data,
-        const Eigen::VectorX<Scalar>& cell_weights) requires (dim == 2);
+        const Eigen::VectorX<Scalar>& cell_weights, Vec coefficients)
+        requires (dim == 2);
+
+    /**
+     * @brief Adds the residual of a skeleton condition over the points of a
+     *        skeleton quadrature, shifted along a projection when one is
+     *        given, the work of both public overloads
+     */
+    template<std::derived_from<SkeletonCondition<Basis, n>> C>
+    void add_skeleton_condition_residual(
+        const C& condition, const QuadratureSkeleton<Scalar, dim>& quadrature,
+        const BoundaryProjection<Scalar>* projection, int order,
+        const Eigen::VectorX<Scalar>& data,
+        const Eigen::VectorX<Scalar>& cell_weights, Vec coefficients)
+        requires (dim == 2);
+
+    /**
+     * @brief Checks that coefficients have one entry per degree of freedom
+     *        of the space
+     *
+     * @throws std::invalid_argument If they do not
+     */
+    void check_coefficients(Vec coefficients) const;
 
     /**
      * @brief Adds a local matrix at degrees of freedom, those of a cell or
-     *        of the two cells of a face, into the stiffness or the mass, the
+     *        of the two cells of a face, into the tangent or the mass, the
      *        only place where they are written
      *
      * @throws std::invalid_argument If @p local does not have a row and a
      *         column per entry of @p dofs
      *
      * @pre The rows of @p local follow @p dofs, and @p matrix is the
-     *      stiffness or the mass
+     *      tangent or the mass
      */
     void add_to_matrix(Mat matrix, std::span<const int> dofs,
                        const Eigen::MatrixX<Scalar>& local);
 
     /**
-     * @brief Adds a local load at degrees of freedom, those of a cell or of
-     *        the two cells of a face, the only place where the load is
-     *        written
+     * @brief Adds a local residual at degrees of freedom, those of a cell or
+     *        of the two cells of a face, the only place where the residual
+     *        is written
      *
      * @throws std::invalid_argument If @p local does not have an entry per
      *         entry of @p dofs
      *
      * @pre The rows of @p local follow @p dofs
      */
-    void add_to_load(std::span<const int> dofs,
-                     const Eigen::VectorX<Scalar>& local);
+    void add_to_residual(std::span<const int> dofs,
+                         const Eigen::VectorX<Scalar>& local);
 
     /**
-     * @brief Finishes the writes into the stiffness, mass and load, so that
-     *        PETSc can use them, at the end of every public assembly
+     * @brief Finishes the writes into the tangent or the mass, so that PETSc
+     *        can use it, at the end of every public assembly into it
      */
-    void finalize();
+    void finalize(Mat matrix);
+
+    /**
+     * @brief Finishes the writes into the residual, so that PETSc can use
+     *        it, at the end of every public assembly into it
+     */
+    void finalize(Vec vector);
 
     /**
      * @brief Degrees of freedom of the two cells of a face, each once, and
@@ -686,15 +776,15 @@ private:
     /// @brief Whether the pattern couples the cells of every interior face
     bool couple_faces_;
 
-    /// @brief Stiffness, with an entry for every pair of degrees of freedom
+    /// @brief Tangent, with an entry for every pair of degrees of freedom
     ///        sharing an element, or the cells of a face when coupled
-    Mat stiffness_ = nullptr;
+    Mat tangent_ = nullptr;
 
-    /// @brief Mass, with the pattern of the stiffness
+    /// @brief Mass, with the pattern of the tangent
     Mat mass_ = nullptr;
 
-    /// @brief Load
-    Vec load_ = nullptr;
+    /// @brief Residual
+    Vec residual_ = nullptr;
 };
 
 } // namespace iguana

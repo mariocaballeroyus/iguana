@@ -87,7 +87,8 @@ public:
     { return trace_.field(num_fields); }
 
     /**
-     * @brief Stiffness matrix of the penalty on one face
+     * @brief Tangent matrix of the penalty on one face, the same at any
+     *        coefficients
      *
      * @param before Values of the cell before the face, differentiated
      *        across it at the face points
@@ -95,16 +96,43 @@ public:
      *        it at the same points
      * @param weights Face weights, one per point
      * @param order Order p of the derivatives the values hold
-     * @param stiffness Output of size (num_dofs, num_dofs) of both
-     *        cells together, overwritten. It is resized when necessary
+     * @param coefficients Coefficients of the unknowns on both cells
+     *        together, one per row, as for SkeletonCondition
+     * @param tangent Output of size (num_dofs, num_dofs) of both cells
+     *        together, overwritten. It is resized when necessary
      *
      * @pre @p before and @p after were filled with flags() at the points of
-     *      @p weights and differentiated across the face
+     *      @p weights and differentiated across the face, and
+     *      @p coefficients has num_dofs entries
      */
-    void local_stiffness(const ElementValues<Basis, n>& before,
-                         const ElementValues<Basis, n>& after,
-                         const Eigen::VectorX<Scalar>& weights, int order,
-                         Eigen::MatrixX<Scalar>& stiffness) const;
+    void local_tangent(const ElementValues<Basis, n>& before,
+                       const ElementValues<Basis, n>& after,
+                       const Eigen::VectorX<Scalar>& weights, int order,
+                       const Eigen::VectorX<Scalar>& coefficients,
+                       Eigen::MatrixX<Scalar>& tangent) const;
+
+    /**
+     * @brief Residual vector of the penalty on one face at the coefficients,
+     *        its tangent times them
+     *
+     * @param before Values of the cell before the face, differentiated
+     *        across it at the face points
+     * @param after Values of the cell after the face, differentiated across
+     *        it at the same points
+     * @param weights Face weights, one per point
+     * @param order Order p of the derivatives the values hold
+     * @param coefficients Coefficients of the unknowns on both cells
+     *        together, one per row, as for SkeletonCondition
+     * @param residual Output of size num_dofs of both cells together,
+     *        overwritten. It is resized when necessary
+     *
+     * @pre As for local_tangent()
+     */
+    void local_residual(const ElementValues<Basis, n>& before,
+                        const ElementValues<Basis, n>& after,
+                        const Eigen::VectorX<Scalar>& weights, int order,
+                        const Eigen::VectorX<Scalar>& coefficients,
+                        Eigen::VectorX<Scalar>& residual) const;
 
 private:
     /// @brief Trace whose jumps are penalized

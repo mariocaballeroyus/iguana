@@ -4,12 +4,13 @@
 """PETSc problems, the solution of a problem on a function space
 
 A problem compiles the element, quadrature, conditions and stabilizations
-of a problem on a space into one form, assembles the form in a single
-compiled call into PETSc matrices and vectors, and solves the system with a
-PETSc solver set up from options. Its data, the source, the values of its
-conditions and the previous solution of a transient problem, change in
-place between solves, where the form reads them, so that a time loop keeps
-one problem. It needs a build of iguana with PETSc.
+of a problem on a space into one form, assembles the form into PETSc
+matrices and vectors, each pass over its integrals in one compiled call,
+and solves the system with a PETSc solver set up from options, linear or
+nonlinear. Its data, the source, the values of its conditions and the
+previous solution of a transient problem, change in place between solves,
+where the form reads them, so that a time loop keeps one problem. It needs
+a build of iguana with PETSc.
 """
 
 from __future__ import annotations
@@ -31,7 +32,134 @@ from iguana.quadrature import QuadratureDomain
 from iguana.stabilization import GhostPenalty
 
 
-class LinearProblem:
+class _Problem:
+    """Problem of an element on a space, its form assembled into PETSc, the
+    setup shared by the problems of this module."""
+
+    def __init__(
+        self,
+        element: PoissonElement | StokesElement,
+        space: FunctionSpace | MixedFunctionSpace,
+        quadrature: QuadratureDomain,
+        source: (npt.ArrayLike
+                 | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
+        *,
+        cell_weights: npt.ArrayLike | None,
+        conditions: Sequence[PenaltyCondition | NitscheCondition
+                             | NeumannCondition | SkeletonNitscheCondition],
+        stabilizations: Sequence[GhostPenalty],
+        pressure_reference: npt.ArrayLike | None,
+    ) -> None:
+        """Initialize the form and the assembler of the problem, checking
+        its terms as the problems document."""
+        if not isinstance(element, (PoissonElement, StokesElement)):
+            raise TypeError('the element must be a Poisson or a Stokes '
+                            'element')
+
+        if not isinstance(space, (FunctionSpace, MixedFunctionSpace)):
+            raise TypeError('the space must be a function space or a mixed '
+                            'space')
+
+        # A coefficient per unknown of the element, the components of one
+        # field or a field each
+        if not _holds_unknowns(space, element._num_unknowns):
+            raise ValueError('the space must give each unknown of the '
+                             'element a component of one field or a field '
+                             'of its own')
+
+        # Boundaries and faces lie in the plane, and so do the problems so far
+        patch = space.patch
+
+        if not isinstance(patch, PlanarPatch):
+            raise TypeError('the space must lie on a planar patch')
+
+        if not isinstance(quadrature, QuadratureDomain):
+            raise TypeError('the quadrature must be a domain quadrature')
+
+        # The system numbers the cells as the elements of the patch, which
+        # another patch or a refined grid would not
+        refined = np.any(quadrature.grid.levels != 0)
+
+        if quadrature.patch is not patch or refined:
+            raise ValueError('the quadrature must lie on the elements of the '
+                             'patch of the space')
+
+        conditions = list(conditions)
+        stabilizations = list(stabilizations)
+        _check_terms(element, patch, conditions, stabilizations)
+
+        on_faces = any(isinstance(condition, SkeletonNitscheCondition)
+                       for condition in conditions)
+
+        # A column per component of the source, contiguous, as the form
+        # reads each where it lies
+        self._quadrature = quadrature
+        self._source_shape = element._source_shape
+        self._source = np.empty((quadrature.num_points,
+                                 math.prod(self._source_shape)), order='F')
+        self.source = source
+        self._cell_weights = _cell_weights(quadrature, cell_weights, on_faces)
+
+        self._pinned = _pinned(element, space, pressure_reference)
+
+        # The form reads the data where it lies, so a source or values set
+        # later reach it without building it again
+        self._form = _cpp.Form2d()
+        self._element = element._cpp_element()
+        self._form.add_domain_integral(self._element, quadrature._cpp_object,
+                                       self._source, self._cell_weights)
+
+        for condition in conditions:
+            if isinstance(condition, SkeletonNitscheCondition):
+                condition._add_to(self._form, self._cell_weights)
+            else:
+                condition._add_to(self._form)
+
+        for stabilization in stabilizations:
+            stabilization._add_to(self._form)
+
+        # Terms across faces couple the cells on either side
+        couple_faces = on_faces or bool(stabilizations)
+        self._assembler = _cpp.Assembler2d(space._cpp_object,
+                                           patch._cpp_object, couple_faces)
+        self._tangent = self._assembler.tangent
+        self._mass = self._assembler.mass
+        self._residual = self._assembler.residual
+
+        # The solution has a coefficient per degree of freedom and
+        # component, field after field on a mixed space
+        self._space = space
+        self._x = self._residual.duplicate()
+
+    @property
+    def source(self) -> npt.NDArray[np.float64]:
+        """Source at each point of the quadrature, of shape `(num_points,)`
+        for the Poisson element and `(num_points, 2)` for the Stokes
+        element. It is set as at initialization, by its values or by a
+        function of the positions of the points."""
+        return self._source.reshape(-1, *self._source_shape).copy()
+
+    @source.setter
+    def source(
+        self,
+        source: (npt.ArrayLike
+                 | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
+    ) -> None:
+        if callable(source):
+            source = source(self._quadrature.positions)
+
+        source = np.asarray(source, dtype=np.float64)
+
+        if source.shape != (self._quadrature.num_points,
+                            *self._source_shape):
+            raise ValueError('the source must give each point the values the '
+                             'element takes')
+
+        # In place, where the form reads it
+        self._source[...] = source.reshape(len(self._source), -1)
+
+
+class LinearProblem(_Problem):
     """Linear problem of an element on a space, assembled into PETSc and
     solved by a PETSc linear solver."""
 
@@ -133,53 +261,11 @@ class LinearProblem:
                 given for an element without a pressure or is not a point of
                 the plane.
         """
-        if not isinstance(element, (PoissonElement, StokesElement)):
-            raise TypeError('the element must be a Poisson or a Stokes '
-                            'element')
-
-        if not isinstance(space, (FunctionSpace, MixedFunctionSpace)):
-            raise TypeError('the space must be a function space or a mixed '
-                            'space')
-
-        # A coefficient per unknown of the element, the components of one
-        # field or a field each
-        if not _holds_unknowns(space, element._num_unknowns):
-            raise ValueError('the space must give each unknown of the '
-                             'element a component of one field or a field '
-                             'of its own')
-
-        # Boundaries and faces lie in the plane, and so do the problems so far
-        patch = space.patch
-
-        if not isinstance(patch, PlanarPatch):
-            raise TypeError('the space must lie on a planar patch')
-
-        if not isinstance(quadrature, QuadratureDomain):
-            raise TypeError('the quadrature must be a domain quadrature')
-
-        # The system numbers the cells as the elements of the patch, which
-        # another patch or a refined grid would not
-        refined = np.any(quadrature.grid.levels != 0)
-
-        if quadrature.patch is not patch or refined:
-            raise ValueError('the quadrature must lie on the elements of the '
-                             'patch of the space')
-
         conditions = list(conditions)
-        stabilizations = list(stabilizations)
-        _check_terms(element, patch, conditions, stabilizations)
-
-        on_faces = any(isinstance(condition, SkeletonNitscheCondition)
-                       for condition in conditions)
-
-        # A column per component of the source, contiguous, as the form
-        # reads each where it lies
-        self._quadrature = quadrature
-        self._source_shape = element._source_shape
-        self._source = np.empty((quadrature.num_points,
-                                 math.prod(self._source_shape)), order='F')
-        self.source = source
-        self._cell_weights = _cell_weights(quadrature, cell_weights, on_faces)
+        super().__init__(element, space, quadrature, source,
+                         cell_weights=cell_weights, conditions=conditions,
+                         stabilizations=stabilizations,
+                         pressure_reference=pressure_reference)
 
         if step is not None and not step > 0.:
             raise ValueError('the time step must be positive')
@@ -194,53 +280,25 @@ class LinearProblem:
                              'steady problem')
 
         self._step = None if step is None else float(step)
-        self._pinned = _pinned(element, space, pressure_reference)
-
-        # The form reads the data where it lies, so a source or values set
-        # later reach it without building it again
-        self._form = _cpp.Form2d()
-        cpp_element = element._cpp_element()
-        self._form.add_domain_integral(cpp_element, quadrature._cpp_object,
-                                       self._source, self._cell_weights)
 
         # The time derivative is weighted by the cells like the other terms
         if self._step is not None:
-            self._form.add_mass_integral(cpp_element, quadrature._cpp_object,
+            self._form.add_mass_integral(self._element,
+                                         quadrature._cpp_object,
                                          self._cell_weights)
-
-        for condition in conditions:
-            if isinstance(condition, SkeletonNitscheCondition):
-                condition._add_to(self._form, self._cell_weights)
-            else:
-                condition._add_to(self._form)
-
-        for stabilization in stabilizations:
-            stabilization._add_to(self._form)
-
-        # Terms across faces couple the cells on either side
-        couple_faces = on_faces or bool(stabilizations)
-        self._assembler = _cpp.Assembler2d(space._cpp_object,
-                                           patch._cpp_object, couple_faces)
-        self._stiffness = self._assembler.stiffness
-        self._mass = self._assembler.mass
-        self._load = self._assembler.load
 
         # A steady system is the stiffness and load themselves, a transient
         # one their sums with the mass, on the pattern of the stiffness
         if self._step is None:
-            self._A = self._stiffness
-            self._b = self._load
+            self._A = self._tangent
+            self._b = self._residual
             self._previous = None
         else:
-            self._A = self._stiffness.duplicate()
-            self._b = self._load.duplicate()
-            self._previous = self._load.duplicate()
+            self._A = self._tangent.duplicate()
+            self._b = self._residual.duplicate()
+            self._previous = self._residual.duplicate()
             self._previous.zeroEntries()
 
-        # The solution, as the previous one, has a coefficient per degree of
-        # freedom and component, field after field on a mixed space
-        self._space = space
-        self._x = self._load.duplicate()
         self._solver = _linear_solver(self._A, petsc_options_prefix,
                                       petsc_options)
 
@@ -259,33 +317,6 @@ class LinearProblem:
     def solver(self) -> PETSc.KSP:
         """The PETSc linear solver of the system."""
         return self._solver
-
-    @property
-    def source(self) -> npt.NDArray[np.float64]:
-        """Source at each point of the quadrature, of shape `(num_points,)`
-        for the Poisson element and `(num_points, 2)` for the Stokes
-        element. It is set as at initialization, by its values or by a
-        function of the positions of the points."""
-        return self._source.reshape(-1, *self._source_shape).copy()
-
-    @source.setter
-    def source(
-        self,
-        source: (npt.ArrayLike
-                 | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
-    ) -> None:
-        if callable(source):
-            source = source(self._quadrature.positions)
-
-        source = np.asarray(source, dtype=np.float64)
-
-        if source.shape != (self._quadrature.num_points,
-                            *self._source_shape):
-            raise ValueError('the source must give each point the values the '
-                             'element takes')
-
-        # In place, where the form reads it
-        self._source[...] = source.reshape(len(self._source), -1)
 
     @property
     def previous(
@@ -330,21 +361,27 @@ class LinearProblem:
                 not affine, or that repeats an interior knot.
             RuntimeError: If the linear solver does not converge.
         """
-        # Anew from the current data, every integral in one call
+        # Anew from the current data, each pass over every integral in one
+        # call. At zero coefficients the tangent is the stiffness K and the
+        # residual K 0 - F, so that its negative is the load
         self._assembler.clear()
-        self._form.assemble(self._assembler)
+        self._x.zeroEntries()
+        self._form.assemble_tangent(self._assembler, self._x)
+        self._form.assemble_residual(self._assembler, self._x)
+        self._residual.scale(-1.)
 
         # Backward Euler: (K + M / step) u = F + M u_p / step
         if self._step is not None:
+            self._form.assemble_mass(self._assembler)
             same = PETSc.Mat.Structure.SAME_NONZERO_PATTERN
-            self._stiffness.copy(self._A, same)
+            self._tangent.copy(self._A, same)
             self._A.axpy(1. / self._step, self._mass, same)
             self._mass.mult(self._previous, self._b)
-            self._b.aypx(1. / self._step, self._load)
+            self._b.aypx(1. / self._step, self._residual)
 
-        # The pinned pressure, zero, left out of the other equations
+        # The pinned pressure, zero as the coefficients still are, left out
+        # of the other equations
         if self._pinned is not None:
-            self._x.zeroEntries()
             self._A.zeroRowsColumns([self._pinned], diag=1., x=self._x,
                                     b=self._b)
 
@@ -354,6 +391,198 @@ class LinearProblem:
             raise RuntimeError('the linear solver did not converge')
 
         return _coefficients(self._space, self._x.getArray())
+
+
+class NonlinearProblem(_Problem):
+    """Nonlinear problem of an element on a space, assembled into PETSc and
+    solved by Newton's method in a PETSc nonlinear solver."""
+
+    def __init__(
+        self,
+        element: PoissonElement | StokesElement,
+        space: FunctionSpace | MixedFunctionSpace,
+        quadrature: QuadratureDomain,
+        source: (npt.ArrayLike
+                 | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
+        *,
+        petsc_options_prefix: str,
+        cell_weights: npt.ArrayLike | None = None,
+        conditions: Sequence[PenaltyCondition | NitscheCondition
+                             | NeumannCondition
+                             | SkeletonNitscheCondition] = (),
+        stabilizations: Sequence[GhostPenalty] = (),
+        pressure_reference: npt.ArrayLike | None = None,
+        petsc_options: dict[str, object] | None = None,
+    ) -> None:
+        """Initialize the problem of an element on a space.
+
+        The solution solves R(u) = 0, with the residual R assembled over the
+        quadrature, along the boundaries of the conditions and across the
+        faces of the stabilizations. Each Newton step solves J du = -R(u)
+        with the tangent J, the derivative of R, both taken at the current
+        coefficients. A linear problem has the residual K u - F, which one
+        step solves.
+
+        A pressure reference fixes the constant pressure as for a linear
+        problem: the pinned pressure stays zero, its row and column of the
+        tangent those of the identity.
+
+        Args:
+            element: The element stating the problem, a Poisson or a Stokes
+                element.
+            space: The space of the solution, on a planar patch, as for a
+                linear problem.
+            quadrature: A quadrature over the elements of the patch of the
+                space, not over a refined grid.
+            source: The source at each point of the quadrature, in its
+                order, one value per point for the Poisson element and the
+                two components of the body force for the Stokes element, or
+                a function that takes their positions, of shape
+                `(num_points, 2)`, and returns those values.
+            petsc_options_prefix: The prefix of the options of the PETSc
+                solver, unique to the problem, such as `'navier_stokes_'`.
+            cell_weights: The weight of the test functions of the element on
+                each cell, in the order of the elements of the patch, as for
+                a linear problem. Without them, every cell weighs one.
+            conditions: Conditions on traces of the element along
+                boundaries in the patch of the space, or on the faces where
+                the cell weights jump, as for a linear problem.
+            stabilizations: Ghost penalties on traces of the element across
+                the faces of the cells of the patch of the space, as for a
+                linear problem.
+            pressure_reference: The point near which the pressure is zero,
+                of shape `(2,)`, for an element with a pressure. Without it,
+                nothing fixes the constant pressure.
+            petsc_options: Options of the PETSc nonlinear solver and of its
+                linear solver, such as `{'snes_rtol': 1e-10, 'ksp_type':
+                'gmres', 'pc_type': 'ilu'}`. Without them, Newton's method
+                with a backtracking line search factorizes each tangent,
+                with MUMPS when PETSc has it.
+
+        Raises:
+            TypeError: If the element is neither a Poisson nor a Stokes
+                element, if the space is neither a function space nor a
+                mixed space on a planar patch, if the quadrature is not a
+                domain quadrature, if a condition is neither a penalty, a
+                Nitsche, a Neumann nor a skeleton Nitsche condition, or if a
+                stabilization is not a ghost penalty.
+            ValueError: If the space does not give each unknown of the
+                element a component of one field or a field of its own, if
+                the quadrature, the boundary of a condition or the cells of
+                a stabilization do not lie on the elements of the patch of
+                the space, if a condition or a stabilization acts on a
+                trace of another element, if the source does not give each
+                point the values the element takes, if the cell weights are
+                not one per cell, if a skeleton Nitsche condition is given
+                without them, or if a pressure reference is given for an
+                element without a pressure or is not a point of the plane.
+        """
+        super().__init__(element, space, quadrature, source,
+                         cell_weights=cell_weights, conditions=conditions,
+                         stabilizations=stabilizations,
+                         pressure_reference=pressure_reference)
+
+        # The first solve starts from zero, and each later one from the
+        # solution before, so that a parameter may be continued
+        self._x.zeroEntries()
+        self._b = self._residual.duplicate()
+        self._solver = _nonlinear_solver(self, petsc_options_prefix,
+                                         petsc_options)
+
+    @property
+    def A(self) -> PETSc.Mat:
+        """The tangent of the residual, at the last coefficients at which
+        the solver took it."""
+        return self._tangent
+
+    @property
+    def b(self) -> PETSc.Vec:
+        """The residual of the solver, at the last coefficients at which it
+        took it."""
+        return self._b
+
+    @property
+    def solver(self) -> PETSc.SNES:
+        """The PETSc nonlinear solver of the problem."""
+        return self._solver
+
+    @property
+    def guess(
+        self,
+    ) -> npt.NDArray[np.float64] | tuple[npt.NDArray[np.float64], ...]:
+        """Coefficients of each degree of freedom from which the next solve
+        starts, shaped as the solution: zero at first, then the last
+        solution, or the last iterate of a solve that did not converge. The
+        pinned pressure starts from zero whatever its guess."""
+        return _coefficients(self._space, self._x.getArray())
+
+    @guess.setter
+    def guess(
+        self,
+        guess: npt.ArrayLike | Sequence[npt.ArrayLike],
+    ) -> None:
+        self._x.setArray(_entries(self._space, guess))
+
+    def solve(
+        self,
+    ) -> npt.NDArray[np.float64] | tuple[npt.NDArray[np.float64], ...]:
+        """Solve the problem with the current data, from the guess.
+
+        Returns:
+            The coefficients of each degree of freedom, shaped as those of
+            a linear problem.
+
+        Raises:
+            ValueError: If a stabilization is given on a patch whose map is
+                not affine, or that repeats an interior knot.
+            RuntimeError: If the nonlinear solver does not converge.
+        """
+        # Zero from the start, so that the steps keep it there, the row and
+        # column of the tangent leaving it out of the other equations
+        if self._pinned is not None:
+            self._x.setValue(self._pinned, 0.)
+            self._x.assemble()
+
+        self._solver.solve(None, self._x)
+
+        if self._solver.getConvergedReason() < 0:
+            raise RuntimeError('the nonlinear solver did not converge')
+
+        return _coefficients(self._space, self._x.getArray())
+
+    def _evaluate_residual(
+        self,
+        solver: PETSc.SNES,
+        x: PETSc.Vec,
+        residual: PETSc.Vec,
+    ) -> None:
+        """Assemble the residual at coefficients into the vector the solver
+        gives, which its line search may change for one of its own."""
+        self._residual.zeroEntries()
+        self._form.assemble_residual(self._assembler, x)
+        self._residual.copy(residual)
+
+        # The equation of the pinned pressure keeps it at zero
+        if self._pinned is not None:
+            residual.setValue(self._pinned, x.getValue(self._pinned))
+            residual.assemble()
+
+    def _evaluate_tangent(
+        self,
+        solver: PETSc.SNES,
+        x: PETSc.Vec,
+        tangent: PETSc.Mat,
+        preconditioner: PETSc.Mat,
+    ) -> None:
+        """Assemble the tangent at coefficients, the matrix the solver was
+        given."""
+        self._tangent.zeroEntries()
+        self._form.assemble_tangent(self._assembler, x)
+
+        # Rows and columns rather than rows, whose structure PETSc would
+        # drop for the next assembly
+        if self._pinned is not None:
+            self._tangent.zeroRowsColumns([self._pinned], diag=1.)
 
 
 def _check_terms(
@@ -456,8 +685,8 @@ def _entries(
         field.shape != _shape(each) for field, each in zip(fields, spaces))
 
     if mismatched:
-        raise ValueError('the previous solution must give the '
-                         'coefficients of every degree of freedom')
+        raise ValueError('the coefficients must give every degree of '
+                         'freedom of the space')
 
     return np.concatenate([field.ravel() for field in fields])
 
@@ -529,32 +758,62 @@ def _linear_solver(
     options: dict[str, object] | None,
 ) -> PETSc.KSP:
     """PETSc linear solver of an operator, set up from options under a
-    prefix, which leave the options database once applied."""
-    if options is None:
-        options = {'ksp_type': 'preonly', 'pc_type': 'lu'}
-
-        # MUMPS also factorizes the indefinite systems of mixed problems
-        if PETSc.Sys.hasExternalPackage('mumps'):
-            options['pc_factor_mat_solver_type'] = 'mumps'
-
+    prefix."""
     solver = PETSc.KSP().create(PETSc.COMM_SELF)
     solver.setOperators(operator)
-    solver.setOptionsPrefix(prefix)
-
-    database = PETSc.Options()
-    database.prefixPush(prefix)
-
-    for key, value in options.items():
-        database[key] = value
-
-    database.prefixPop()
-    solver.setFromOptions()
-
-    database.prefixPush(prefix)
-
-    for key in options:
-        del database[key]
-
-    database.prefixPop()
+    _set_from_options(solver, prefix,
+                      _direct_options() if options is None else options)
 
     return solver
+
+
+def _nonlinear_solver(
+    problem: NonlinearProblem,
+    prefix: str,
+    options: dict[str, object] | None,
+) -> PETSc.SNES:
+    """PETSc nonlinear solver of a problem, set up from options under a
+    prefix, which reach its linear solver too. Without them, the Newton's
+    method of PETSc, with its line search, factorizes each tangent."""
+    solver = PETSc.SNES().create(PETSc.COMM_SELF)
+    solver.setFunction(problem._evaluate_residual, problem._b)
+    solver.setJacobian(problem._evaluate_tangent, problem._tangent)
+
+    # After the function and the tangent, which the options may act on
+    _set_from_options(solver, prefix,
+                      _direct_options() if options is None else options)
+
+    return solver
+
+
+def _direct_options() -> dict[str, object]:
+    """Options of a linear solver that factorizes its operator."""
+    options = {'ksp_type': 'preonly', 'pc_type': 'lu'}
+
+    # MUMPS also factorizes the indefinite systems of mixed problems
+    if PETSc.Sys.hasExternalPackage('mumps'):
+        options['pc_factor_mat_solver_type'] = 'mumps'
+
+    return options
+
+
+def _set_from_options(
+    solver: PETSc.KSP | PETSc.SNES,
+    prefix: str,
+    options: dict[str, object],
+) -> None:
+    """Set up a PETSc solver from options under a prefix, which leave the
+    options database once applied."""
+    solver.setOptionsPrefix(prefix)
+
+    # By their full names, as PETSc prefixes the values it sets but not
+    # those it clears
+    database = PETSc.Options()
+
+    for key, value in options.items():
+        database[prefix + key] = value
+
+    solver.setFromOptions()
+
+    for key in options:
+        del database[prefix + key]

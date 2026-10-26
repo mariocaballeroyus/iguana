@@ -1,7 +1,8 @@
 # Copyright (c) 2026 Mario Caballero
 # SPDX-License-Identifier: MIT
 
-"""Tests of the linear problems on a function space, solved with PETSc"""
+"""Tests of the linear and nonlinear problems on a function space, solved
+with PETSc"""
 
 import itertools
 import math
@@ -17,10 +18,12 @@ from iguana import (Boundary, CellType, Derivatives, FunctionSpace,
                     StokesElement, SurrogateBoundary, classify_cells)
 
 try:
-    from iguana.petsc import LinearProblem
+    from petsc4py import PETSc
+
+    from iguana.petsc import LinearProblem, NonlinearProblem
 except ImportError:
     # A build without PETSc skips every test, which all solve
-    LinearProblem = None
+    PETSc = LinearProblem = NonlinearProblem = None
 
 pytestmark = pytest.mark.petsc
 
@@ -98,6 +101,19 @@ def parallelogram():
         for side in range(4)])
 
 
+def square():
+    """Square of side 1 inside the rectangle of sides 2 and 3, of straight
+    sides counterclockwise."""
+    lower, upper = np.array([.5, 1.25]), np.array([1.5, 2.25])
+    corners = np.array([lower, [upper[0], lower[1]], upper,
+                        [lower[0], upper[1]]])
+
+    return Boundary([iguana.create_curve(
+        degree=1, knots=[0., 0., 1., 1.],
+        control_points=[corners[side], corners[(side + 1) % 4]])
+        for side in range(4)])
+
+
 def polynomial(terms):
     """The polynomial sum c x^i y^j of terms (c, i, j), as a function of
     points."""
@@ -148,6 +164,60 @@ def stokes():
         return np.tile([1. - 2. * element.viscosity, 1.], (len(points), 1))
 
     return element, velocity, body_force
+
+
+def poisson_problem():
+    """Arguments and keywords of the Poisson problem of b . x, imposed by
+    Nitsche's method."""
+    patch = rectangle()
+    element = PoissonElement()
+    quadrature = gauss_quadrature(patch)
+    b = np.array([1., -2.])
+    condition = NitscheCondition(element.u, edges(patch), lambda x: x @ b,
+                                 40.)
+
+    return ((element, FunctionSpace(patch), quadrature,
+             np.zeros(quadrature.num_points)),
+            {'conditions': [condition]})
+
+
+def stokes_problem():
+    """Arguments and keywords of the Stokes problem of the quadratic flow,
+    imposed by Nitsche's method, its pressure fixed by a reference."""
+    patch = rectangle()
+    element, velocity, body_force = stokes()
+    condition = NitscheCondition(element.u, edges(patch), velocity,
+                                 40. * element.viscosity)
+
+    return ((element, FunctionSpace(patch, block_size=3),
+             gauss_quadrature(patch), body_force),
+            {'conditions': [condition], 'pressure_reference': (1., 1.6)})
+
+
+def shifted_stokes_problem():
+    """Arguments and keywords of the Stokes problem of the quadratic flow
+    inside a square, by the generalized shifted boundary method, its
+    pressure fixed by a reference."""
+    patch = iguana.create_rectangle(lengths=(2., 3.), elements=(6, 6))
+    boundary = square()
+    cell_types, fractions = classify_cells(patch, boundary)
+    element, velocity, body_force = stokes()
+
+    quadrature = QuadratureDomain(patch, cell_types)
+
+    for cell_type in (CellType.inside, CellType.cut, CellType.outside):
+        quadrature.fill_gauss_legendre(cell_type, 3)
+
+    condition = SkeletonNitscheCondition(element.u, patch, cell_types,
+                                         boundary, velocity,
+                                         40. * element.viscosity)
+    ghosts = [GhostPenalty(trace, patch, cell_types, .1)
+              for trace in (element.u, element.p)]
+
+    return ((element, FunctionSpace(patch, block_size=3), quadrature,
+             body_force),
+            {'cell_weights': fractions, 'conditions': [condition],
+             'stabilizations': ghosts, 'pressure_reference': (1., 1.75)})
 
 
 def test_quadratic_solution_is_exact():
@@ -258,14 +328,8 @@ def test_stokes_flow_by_the_generalized_shifted_boundary_method():
     flow and the pressure at every degree of freedom, those beyond the
     square included."""
     patch = iguana.create_rectangle(lengths=(2., 3.), elements=(6, 6))
-    lower, upper = np.array([.5, 1.25]), np.array([1.5, 2.25])
-    corners = np.array([lower, [upper[0], lower[1]], upper,
-                        [lower[0], upper[1]]])
-    square = Boundary([iguana.create_curve(
-        degree=1, knots=[0., 0., 1., 1.],
-        control_points=[corners[side], corners[(side + 1) % 4]])
-        for side in range(4)])
-    cell_types, fractions = classify_cells(patch, square)
+    boundary = square()
+    cell_types, fractions = classify_cells(patch, boundary)
     element, velocity, body_force = stokes()
 
     quadrature = QuadratureDomain(patch, cell_types)
@@ -273,8 +337,9 @@ def test_stokes_flow_by_the_generalized_shifted_boundary_method():
     for cell_type in (CellType.inside, CellType.cut, CellType.outside):
         quadrature.fill_gauss_legendre(cell_type, 3)
 
-    condition = SkeletonNitscheCondition(element.u, patch, cell_types, square,
-                                         velocity, 40. * element.viscosity)
+    condition = SkeletonNitscheCondition(element.u, patch, cell_types,
+                                         boundary, velocity,
+                                         40. * element.viscosity)
     ghosts = [GhostPenalty(trace, patch, cell_types, .1)
               for trace in (element.u, element.p)]
     u = LinearProblem(element, FunctionSpace(patch, block_size=3),
@@ -539,9 +604,82 @@ def test_petsc_options_set_up_the_solver():
 
     # The options leave the database once applied, so another problem of
     # the same prefix takes the defaults
+    assert not any(name.startswith('iterative_')
+                   for name in PETSc.Options().getAll())
     assert problem('iterative_').solver.getType() == 'preonly'
 
     # A solver stopped before it converges fails the solve
+    stopped = problem('stopped_', {'ksp_type': 'gmres', 'pc_type': 'none',
+                                   'ksp_max_it': 1})
+
+    with pytest.raises(RuntimeError):
+        stopped.solve()
+
+
+@pytest.mark.parametrize('linear_problem',
+                         [poisson_problem, stokes_problem,
+                          shifted_stokes_problem],
+                         ids=['poisson', 'stokes', 'shifted_stokes'])
+def test_newton_solves_a_linear_problem_in_one_step(linear_problem):
+    """The residual of a linear problem is affine, with its tangent as the
+    slope, so one Newton step finds the solution of the linear solver, from
+    zero as from any guess, the pinned pressure staying zero."""
+    arguments, keywords = linear_problem()
+    expected = LinearProblem(*arguments, **keywords,
+                             petsc_options_prefix='linear_').solve()
+    problem = NonlinearProblem(*arguments, **keywords,
+                               petsc_options_prefix='newton_')
+    u = problem.solve()
+
+    assert problem.solver.getIterationNumber() == 1
+    assert np.allclose(u, expected, rtol=0., atol=1e-12)
+
+    # The next solve starts from the solution, and from a guess off it
+    # takes one step again, the residual and tangent taken away from zero
+    assert np.array_equal(problem.guess, u)
+
+    problem.guess = u + np.random.default_rng(0).standard_normal(u.shape)
+    again = problem.solve()
+
+    assert problem.solver.getIterationNumber() == 1
+    assert np.allclose(again, expected, rtol=0., atol=1e-10)
+
+    # The pressure of the function nearest the reference, whatever its
+    # guess
+    if 'pressure_reference' in keywords:
+        space = arguments[1]
+        nearest = np.argmin(np.linalg.norm(
+            space.control_points - keywords['pressure_reference'], axis=1))
+
+        assert u[nearest, 2] == 0.
+        assert again[nearest, 2] == 0.
+
+
+def test_petsc_options_set_up_the_nonlinear_solver():
+    arguments, keywords = poisson_problem()
+
+    def problem(prefix, options=None):
+        return NonlinearProblem(*arguments, **keywords,
+                                petsc_options_prefix=prefix,
+                                petsc_options=options)
+
+    # Newton's method with a line search factorizes each tangent by
+    # default, and options choose the nonlinear solver and its linear one
+    default = problem('default_').solver
+    chosen = problem('chosen_', {'snes_type': 'newtontr',
+                                 'ksp_type': 'gmres',
+                                 'pc_type': 'jacobi'}).solver
+
+    assert default.getType() == 'newtonls'
+    assert default.getKSP().getType() == 'preonly'
+    assert chosen.getType() == 'newtontr'
+    assert chosen.getKSP().getType() == 'gmres'
+
+    # The options leave the database once applied
+    assert not any(name.startswith('chosen_')
+                   for name in PETSc.Options().getAll())
+
+    # A linear solver stopped before it converges fails the solve
     stopped = problem('stopped_', {'ksp_type': 'gmres', 'pc_type': 'none',
                                    'ksp_max_it': 1})
 

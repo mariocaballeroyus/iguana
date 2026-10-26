@@ -64,18 +64,21 @@ public:
                                       || flux_.flags().physical_gradients};
     }
 
-    void local_stiffness(const ElementValues<Basis, n>& values,
-                         const ElementValues<Basis, n>& shifted,
-                         const Eigen::VectorX<Scalar>& weights,
-                         const PointMatrix<Scalar, n>& normals,
-                         Eigen::MatrixX<Scalar>& stiffness) const override;
+    void local_tangent(const ElementValues<Basis, n>& values,
+                       const ElementValues<Basis, n>& shifted,
+                       const Eigen::VectorX<Scalar>& weights,
+                       const PointMatrix<Scalar, n>& normals,
+                       const Eigen::VectorX<Scalar>& data,
+                       const Eigen::VectorX<Scalar>& coefficients,
+                       Eigen::MatrixX<Scalar>& tangent) const override;
 
-    void local_load(const ElementValues<Basis, n>& values,
-                    const ElementValues<Basis, n>& shifted,
-                    const Eigen::VectorX<Scalar>& weights,
-                    const PointMatrix<Scalar, n>& normals,
-                    const Eigen::VectorX<Scalar>& data,
-                    Eigen::VectorX<Scalar>& load) const override;
+    void local_residual(const ElementValues<Basis, n>& values,
+                        const ElementValues<Basis, n>& shifted,
+                        const Eigen::VectorX<Scalar>& weights,
+                        const PointMatrix<Scalar, n>& normals,
+                        const Eigen::VectorX<Scalar>& data,
+                        const Eigen::VectorX<Scalar>& coefficients,
+                        Eigen::VectorX<Scalar>& residual) const override;
 
 private:
     /// @brief Trace whose values are imposed

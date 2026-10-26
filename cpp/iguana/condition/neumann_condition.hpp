@@ -22,7 +22,7 @@ namespace iguana
  *        traction
  *
  * @details The data is the boundary term of the weak form where it is
- *          known, so the condition adds a load and no stiffness. With the
+ *          known, so the condition adds a load and no tangent. With the
  *          field trace of −div(grad u) = f, the data is the outward flux
  *          du/dn
  *
@@ -48,18 +48,21 @@ public:
     ValueFlags flags() const noexcept override
     { return trace_.flags(); }
 
-    void local_stiffness(const ElementValues<Basis, n>& values,
-                         const ElementValues<Basis, n>& shifted,
-                         const Eigen::VectorX<Scalar>& weights,
-                         const PointMatrix<Scalar, n>& normals,
-                         Eigen::MatrixX<Scalar>& stiffness) const override;
+    void local_tangent(const ElementValues<Basis, n>& values,
+                       const ElementValues<Basis, n>& shifted,
+                       const Eigen::VectorX<Scalar>& weights,
+                       const PointMatrix<Scalar, n>& normals,
+                       const Eigen::VectorX<Scalar>& data,
+                       const Eigen::VectorX<Scalar>& coefficients,
+                       Eigen::MatrixX<Scalar>& tangent) const override;
 
-    void local_load(const ElementValues<Basis, n>& values,
-                    const ElementValues<Basis, n>& shifted,
-                    const Eigen::VectorX<Scalar>& weights,
-                    const PointMatrix<Scalar, n>& normals,
-                    const Eigen::VectorX<Scalar>& data,
-                    Eigen::VectorX<Scalar>& load) const override;
+    void local_residual(const ElementValues<Basis, n>& values,
+                        const ElementValues<Basis, n>& shifted,
+                        const Eigen::VectorX<Scalar>& weights,
+                        const PointMatrix<Scalar, n>& normals,
+                        const Eigen::VectorX<Scalar>& data,
+                        const Eigen::VectorX<Scalar>& coefficients,
+                        Eigen::VectorX<Scalar>& residual) const override;
 
 private:
     /// @brief Trace of the test functions the data does work on

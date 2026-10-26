@@ -11,30 +11,35 @@ namespace iguana
 {
 
 template<typename Basis, std::size_t n>
-void PoissonElement<Basis, n>::local_stiffness(
+void PoissonElement<Basis, n>::local_tangent(
     const ElementValues<Basis, n>& values,
-    const Eigen::VectorX<Scalar>& weights,
-    Eigen::MatrixX<Scalar>& stiffness) const
+    const Eigen::VectorX<Scalar>& weights, const Eigen::MatrixX<Scalar>&,
+    const Eigen::VectorX<Scalar>&, Eigen::MatrixX<Scalar>& tangent) const
 {
     const Eigen::Index num_active = values.values().rows();
-    stiffness.setZero(num_active, num_active);
+    tangent.setZero(num_active, num_active);
 
     // K_ij = ( ∇N_i, ∇N_j )_Ω
     //      ≈ Σ_q w_q ∇N_i(x_q) · ∇N_j(x_q)
     for (const Eigen::MatrixX<Scalar>& derivs : values.physical_gradients())
-        stiffness += derivs * weights.asDiagonal() * derivs.transpose();
+        tangent += derivs * weights.asDiagonal() * derivs.transpose();
 }
 
 template<typename Basis, std::size_t n>
-void PoissonElement<Basis, n>::local_load(
+void PoissonElement<Basis, n>::local_residual(
     const ElementValues<Basis, n>& values,
     const Eigen::VectorX<Scalar>& weights,
     const Eigen::MatrixX<Scalar>& source,
-    Eigen::VectorX<Scalar>& load) const
+    const Eigen::VectorX<Scalar>& coefficients,
+    Eigen::VectorX<Scalar>& residual) const
 {
-    // F_i = ( N_i, f )_Ω
-    //     ≈ Σ_q w_q f(x_q) N_i(x_q)
-    load = values.values() * weights.cwiseProduct(source.col(0));
+    Eigen::MatrixX<Scalar> tangent;
+    local_tangent(values, weights, source, coefficients, tangent);
+
+    // R_i = ( ∇N_i, ∇u_h )_Ω − ( N_i, f )_Ω
+    //     ≈ Σ_j K_ij c_j − Σ_q w_q f(x_q) N_i(x_q)
+    residual = tangent * coefficients
+               - values.values() * weights.cwiseProduct(source.col(0));
 }
 
 template<typename Basis, std::size_t n>

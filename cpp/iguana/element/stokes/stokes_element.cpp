@@ -25,10 +25,10 @@ StokesElement<Basis, n>::StokesElement(Scalar viscosity)
 }
 
 template<typename Basis, std::size_t n>
-void StokesElement<Basis, n>::local_stiffness(
+void StokesElement<Basis, n>::local_tangent(
     const ElementValues<Basis, n>& values,
-    const Eigen::VectorX<Scalar>& weights,
-    Eigen::MatrixX<Scalar>& stiffness) const
+    const Eigen::VectorX<Scalar>& weights, const Eigen::MatrixX<Scalar>&,
+    const Eigen::VectorX<Scalar>&, Eigen::MatrixX<Scalar>& tangent) const
 {
     const std::size_t num_fields = values.num_fields();
     const Eigen::MatrixX<Scalar>& pressure =
@@ -36,7 +36,7 @@ void StokesElement<Basis, n>::local_stiffness(
     const Eigen::Index pressure_row = first_row(values, n);
     const Eigen::Index size = first_row(values, n + 1);
 
-    stiffness.setZero(size, size);
+    tangent.setZero(size, size);
 
     // Block (a, b) pairs component a of the test functions with component b
     // of the trial ones, the pressure following the velocity
@@ -54,13 +54,13 @@ void StokesElement<Basis, n>::local_stiffness(
 
             // K_ij = ( 2μ ε(N_i e_a), ε(N_j e_b) )_Ω
             //      ≈ Σ_q w_q μ (δ_ab ∇N_i · ∇N_j + ∂_b N_i ∂_a N_j)
-            stiffness.block(row, col, rows, cols) =
+            tangent.block(row, col, rows, cols) =
                 viscosity_ * test_grads[b] * weights.asDiagonal()
                 * trial_grads[a].transpose();
 
             if (a == b) {
                 for (std::size_t c = 0; c < n; ++c)
-                    stiffness.block(row, col, rows, cols) +=
+                    tangent.block(row, col, rows, cols) +=
                         viscosity_ * test_grads[c] * weights.asDiagonal()
                         * trial_grads[c].transpose();
             }
@@ -68,7 +68,7 @@ void StokesElement<Basis, n>::local_stiffness(
 
         // K_ij = − ( div(N_i e_a), N_j )_Ω
         //      ≈ − Σ_q w_q ∂_a N_i N_j
-        stiffness.block(row, pressure_row, rows, pressure.rows()) =
+        tangent.block(row, pressure_row, rows, pressure.rows()) =
             -test_grads[a] * weights.asDiagonal() * pressure.transpose();
     }
 
@@ -79,20 +79,27 @@ void StokesElement<Basis, n>::local_stiffness(
 
         // K_ij = − ( N_i, div(N_j e_b) )_Ω
         //      ≈ − Σ_q w_q N_i ∂_b N_j
-        stiffness.block(pressure_row, col, pressure.rows(),
+        tangent.block(pressure_row, col, pressure.rows(),
                         trial_grads[b].rows()) =
             -pressure * weights.asDiagonal() * trial_grads[b].transpose();
     }
 }
 
 template<typename Basis, std::size_t n>
-void StokesElement<Basis, n>::local_load(
+void StokesElement<Basis, n>::local_residual(
     const ElementValues<Basis, n>& values,
     const Eigen::VectorX<Scalar>& weights,
     const Eigen::MatrixX<Scalar>& source,
-    Eigen::VectorX<Scalar>& load) const
+    const Eigen::VectorX<Scalar>& coefficients,
+    Eigen::VectorX<Scalar>& residual) const
 {
-    load.setZero(first_row(values, n + 1));
+    // The Galerkin tangent itself, not that of a derived element
+    Eigen::MatrixX<Scalar> tangent;
+    StokesElement::local_tangent(values, weights, source, coefficients,
+                                 tangent);
+
+    // R_i = Σ_j K_ij c_j, less the load of the velocity
+    residual = tangent * coefficients;
 
     for (std::size_t a = 0; a < n; ++a) {
         const Eigen::MatrixX<Scalar>& functions =
@@ -101,7 +108,7 @@ void StokesElement<Basis, n>::local_load(
 
         // F_i = ( N_i, f_a )_Ω
         //     ≈ Σ_q w_q f_a(x_q) N_i(x_q)
-        load.segment(first_row(values, a), functions.rows()) =
+        residual.segment(first_row(values, a), functions.rows()) -=
             functions * weights.cwiseProduct(source.col(component));
     }
 }
