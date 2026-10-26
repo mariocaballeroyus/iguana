@@ -121,6 +121,13 @@ Eigen::SparseMatrix<double, Eigen::RowMajor> mass_of(const A& assembler)
     return to_eigen(assembler.mass());
 }
 
+/// @brief Residual of an assembler, read back from PETSc
+template<typename A>
+Eigen::VectorXd residual_of(const A& assembler)
+{
+    return to_eigen(assembler.residual());
+}
+
 /// @brief Load of an assembler, the negative of its residual at zero
 ///        coefficients when its terms are linear, read back from PETSc
 template<typename A>
@@ -485,6 +492,40 @@ bool near(const Eigen::MatrixXd& computed, const Eigen::MatrixXd& expected)
            <= 1e-12 * expected.cwiseAbs().maxCoeff();
 }
 
+/**
+ * @brief Part of the change of the residual of a linear system, from zero
+ *        to random coefficients c, that its tangent leaves out, relative to
+ *        the change
+ *
+ *     |R(c) - R(0) - J c| / |R(c) - R(0)|
+ *
+ * @details The residual of a linear system changes by its tangent times
+ *          the coefficients, so the part is zero up to round-off when each
+ *          term gathers its coefficients where its local residual and
+ *          tangent place their rows
+ *
+ * @param assembler Assembler of the system, cleared before each assembly
+ * @param num_dofs Number of degrees of freedom of its space
+ * @param assemble Adds every term of the system at given coefficients
+ */
+template<typename A, typename Assemble>
+double tangent_defect(A& assembler, int num_dofs, const Assemble& assemble)
+{
+    const Eigen::VectorXd coefficients = Eigen::VectorXd::Random(num_dofs);
+
+    assembler.clear();
+    assemble(Coefficients(Eigen::VectorXd::Zero(num_dofs)));
+    const Eigen::VectorXd at_zero = residual_of(assembler);
+
+    assembler.clear();
+    assemble(Coefficients(coefficients));
+    const Eigen::VectorXd change = residual_of(assembler) - at_zero;
+
+    return (change - stiffness_of(assembler) * coefficients).cwiseAbs()
+               .maxCoeff()
+           / change.cwiseAbs().maxCoeff();
+}
+
 } // namespace
 
 TEST_CASE("The Poisson system of a rectangle integrates exactly",
@@ -693,7 +734,8 @@ TEST_CASE("A form adds its integrals in three passes, with its data as it "
     REQUIRE((load_of(by_form) - load_of(by_terms)).norm() == 0.);
 }
 
-TEST_CASE("An assembler needs one source value per point", "[assembler]")
+TEST_CASE("An assembler needs one source value per point and one "
+          "coefficient per degree of freedom", "[assembler]")
 {
     const Basis basis = uneven();
     const iguana::Patch<Basis, 2> patch = rectangle(basis);
@@ -713,6 +755,18 @@ TEST_CASE("An assembler needs one source value per point", "[assembler]")
 
     REQUIRE_THROWS_AS(assembler.assemble_residual(element, quadrature, source,
                                                   zero),
+                      std::invalid_argument);
+
+    // One coefficient short of the degrees of freedom
+    const Eigen::VectorXd ones = Eigen::VectorXd::Ones(quadrature.num_points());
+    const Coefficients short_coefficients(
+        Eigen::VectorXd::Zero(space.num_dofs() - 1));
+
+    REQUIRE_THROWS_AS(assembler.assemble_tangent(element, quadrature, ones,
+                                                 short_coefficients),
+                      std::invalid_argument);
+    REQUIRE_THROWS_AS(assembler.assemble_residual(element, quadrature, ones,
+                                                  short_coefficients),
                       std::invalid_argument);
 }
 
@@ -1344,26 +1398,31 @@ TEST_CASE("A Stokes system with Nitsche conditions holds a divergence-free "
                                               -2. * x.cwiseProduct(y)};
 
     iguana::Assembler<Basis, 2> assembler(space, patch);
-    const Coefficients zero(Eigen::VectorXd::Zero(space.num_dofs()));
-    assembler.assemble_tangent(element, cells, source, zero);
-    assembler.assemble_residual(element, cells, source, zero);
 
-    for (std::size_t component = 0; component < 2; ++component) {
-        const iguana::NitscheCondition<Basis, 2> condition(
-            traces[component], fluxes[component], 40. * viscosity);
+    const auto assemble = [&](Vec coefficients) {
+        assembler.assemble_tangent(element, cells, source, coefficients);
+        assembler.assemble_residual(element, cells, source, coefficients);
 
-        assembler.assemble_tangent(condition, edges, data[component], zero);
-        assembler.assemble_residual(condition, edges, data[component], zero);
-    }
+        for (std::size_t component = 0; component < 2; ++component) {
+            const iguana::NitscheCondition<Basis, 2> condition(
+                traces[component], fluxes[component], 40. * viscosity);
+
+            assembler.assemble_tangent(condition, edges, data[component],
+                                       coefficients);
+            assembler.assemble_residual(condition, edges, data[component],
+                                        coefficients);
+        }
+    };
 
     const Eigen::VectorXd exact = quadratic_flow(patch);
+    assemble(Coefficients(exact));
+
     const Eigen::SparseMatrix<double, Eigen::RowMajor> stiffness =
         stiffness_of(assembler);
 
     // The method and Nitsche's conditions are consistent, the residual of
-    // the momentum equation vanishing
-    REQUIRE((stiffness * exact - load_of(assembler)).cwiseAbs().maxCoeff()
-            < 1e-11);
+    // the momentum equation vanishing at the flow
+    REQUIRE(residual_of(assembler).cwiseAbs().maxCoeff() < 1e-11);
 
     // With the velocity imposed all around, a constant pressure balances
     // its own flux through the boundary, so it solves the system with zero
@@ -1371,6 +1430,9 @@ TEST_CASE("A Stokes system with Nitsche conditions holds a divergence-free "
     pressure(Eigen::seqN(2, basis.num_functions(), 3)).setOnes();
 
     REQUIRE((stiffness * pressure).cwiseAbs().maxCoeff() < 1e-12);
+
+    // The components of each cell gathered in the rows of its terms
+    REQUIRE(tangent_defect(assembler, space.num_dofs(), assemble) < 1e-12);
 }
 
 TEST_CASE("A Stokes system on divergence-conforming spaces holds a "
@@ -1423,17 +1485,21 @@ TEST_CASE("A Stokes system on divergence-conforming spaces holds a "
                                               -2. * x.cwiseProduct(y)};
 
     iguana::Assembler<Basis, 2> assembler(space, patch);
-    const Coefficients zero(Eigen::VectorXd::Zero(space.num_dofs()));
-    assembler.assemble_tangent(element, cells, source, zero);
-    assembler.assemble_residual(element, cells, source, zero);
 
-    for (std::size_t component = 0; component < 2; ++component) {
-        const iguana::NitscheCondition<Basis, 2> condition(
-            traces[component], fluxes[component], 40. * viscosity);
+    const auto assemble = [&](Vec coefficients) {
+        assembler.assemble_tangent(element, cells, source, coefficients);
+        assembler.assemble_residual(element, cells, source, coefficients);
 
-        assembler.assemble_tangent(condition, edges, data[component], zero);
-        assembler.assemble_residual(condition, edges, data[component], zero);
-    }
+        for (std::size_t component = 0; component < 2; ++component) {
+            const iguana::NitscheCondition<Basis, 2> condition(
+                traces[component], fluxes[component], 40. * viscosity);
+
+            assembler.assemble_tangent(condition, edges, data[component],
+                                       coefficients);
+            assembler.assemble_residual(condition, edges, data[component],
+                                        coefficients);
+        }
+    };
 
     // The coefficients of x^2 and x y from the blossoms of each direction,
     // and those of x + y at the control points of the patch, whose basis
@@ -1447,13 +1513,14 @@ TEST_CASE("A Stokes system on divergence-conforming spaces holds a "
                 height * grevilles(y_basis.grid().knots(1))),
         patch.coefficients() * Eigen::Vector2d(1., 1.);
 
+    assemble(Coefficients(exact));
+
     const Eigen::SparseMatrix<double, Eigen::RowMajor> stiffness =
         stiffness_of(assembler);
 
     // The method and Nitsche's conditions are consistent, the residual of
-    // the momentum equation vanishing
-    REQUIRE((stiffness * exact - load_of(assembler)).cwiseAbs().maxCoeff()
-            < 1e-11);
+    // the momentum equation vanishing at the flow
+    REQUIRE(residual_of(assembler).cwiseAbs().maxCoeff() < 1e-11);
 
     // With the velocity imposed all around, a constant pressure balances
     // its own flux through the boundary, so it solves the system with zero
@@ -1461,6 +1528,10 @@ TEST_CASE("A Stokes system on divergence-conforming spaces holds a "
     constant.tail(pressure.num_dofs()).setOnes();
 
     REQUIRE((stiffness * constant).cwiseAbs().maxCoeff() < 1e-12);
+
+    // The fields of each cell gathered one after another, as the rows of
+    // its terms
+    REQUIRE(tangent_defect(assembler, space.num_dofs(), assemble) < 1e-12);
 }
 
 TEST_CASE("A ghost penalty penalizes the jumps of the highest derivatives of "
@@ -1851,36 +1922,51 @@ TEST_CASE("The generalized shifted boundary method holds a divergence-free "
     const std::array<Eigen::VectorXd, 2> data{x.cwiseProduct(x),
                                               -2. * x.cwiseProduct(y)};
 
-    iguana::Assembler<Basis, 2> assembler(space, patch, true);
-    const Coefficients zero(Eigen::VectorXd::Zero(space.num_dofs()));
-    assembler.assemble_tangent(element, cells, source, fractions, zero);
-    assembler.assemble_residual(element, cells, source, fractions, zero);
-
-    for (std::size_t component = 0; component < 2; ++component) {
-        const iguana::SkeletonNitscheCondition<Basis, 2> face(
-            traces[component], fluxes[component], 40. * viscosity);
-        const iguana::SkeletonGhostPenalty<Basis, 2> ghost(
-            traces[component], .1 * viscosity);
-
-        assembler.assemble_tangent(face, faces, projection, 2, data[component],
-                                   fractions, zero);
-        assembler.assemble_residual(face, faces, projection, 2, data[component],
-                                    fractions, zero);
-        assembler.assemble_tangent(ghost, ghost_faces, zero);
-    }
-
     // Negative, as the pressure block of the symmetric form is
     const iguana::SkeletonGhostPenalty<Basis, 2> pressure_ghost(
         pressure, -.1 / viscosity, 2);
-    assembler.assemble_tangent(pressure_ghost, ghost_faces, zero);
+
+    iguana::Assembler<Basis, 2> assembler(space, patch, true);
+
+    const auto assemble = [&](Vec coefficients) {
+        assembler.assemble_tangent(element, cells, source, fractions,
+                                   coefficients);
+        assembler.assemble_residual(element, cells, source, fractions,
+                                    coefficients);
+
+        for (std::size_t component = 0; component < 2; ++component) {
+            const iguana::SkeletonNitscheCondition<Basis, 2> face(
+                traces[component], fluxes[component], 40. * viscosity);
+            const iguana::SkeletonGhostPenalty<Basis, 2> ghost(
+                traces[component], .1 * viscosity);
+
+            assembler.assemble_tangent(face, faces, projection, 2,
+                                       data[component], fractions,
+                                       coefficients);
+            assembler.assemble_residual(face, faces, projection, 2,
+                                        data[component], fractions,
+                                        coefficients);
+            assembler.assemble_tangent(ghost, ghost_faces, coefficients);
+            assembler.assemble_residual(ghost, ghost_faces, coefficients);
+        }
+
+        assembler.assemble_tangent(pressure_ghost, ghost_faces, coefficients);
+        assembler.assemble_residual(pressure_ghost, ghost_faces, coefficients);
+    };
+
+    const Eigen::VectorXd exact = quadratic_flow(patch);
+    assemble(Coefficients(exact));
 
     // Cell by cell, the weighted volume terms leave the jumps of the
     // weights times the traction on the faces, which the conditions
     // cancel, the expansions of order two reach the data exactly, and the
     // flow, one polynomial, does not jump
-    REQUIRE((stiffness_of(assembler) * quadratic_flow(patch)
-             - load_of(assembler)).cwiseAbs().maxCoeff()
-            < 1e-11 * load_of(assembler).cwiseAbs().maxCoeff());
+    REQUIRE(residual_of(assembler).cwiseAbs().maxCoeff()
+            < 1e-11 * (stiffness_of(assembler) * exact).cwiseAbs().maxCoeff());
+
+    // The two cells of each face gathered in the rows of its terms, their
+    // shared functions once
+    REQUIRE(tangent_defect(assembler, space.num_dofs(), assemble) < 1e-12);
 }
 
 TEST_CASE("Skeleton conditions need coupled faces, one weight per cell and a "
