@@ -346,6 +346,251 @@ void sparsity_pattern(const MixedFunctionSpace<Basis>& space,
     }
 }
 
+/**
+ * @brief Visits the cells of a domain quadrature whose weight is not zero,
+ *        with the values at their points and the physical weights there
+ *
+ * @details The physical weights are the quadrature weights times the
+ *          measure, times the weight of the test functions of the cell,
+ *          constant on it
+ *
+ * @param visit Called with the cell, the first of its points and their
+ *        number, the values and the weights
+ */
+template<typename Basis, std::size_t n, typename Visit>
+void visit_cells(
+    const Patch<Basis, n>& patch, const MixedFunctionSpace<Basis>& space,
+    ValueFlags flags,
+    const QuadratureDomain<typename Basis::Scalar, Basis::dimension>&
+        quadrature,
+    const Eigen::VectorX<typename Basis::Scalar>& cell_weights, Visit&& visit)
+{
+    using Scalar = typename Basis::Scalar;
+
+    ElementValues<Basis, n> values(patch, space.bases(), flags);
+    Eigen::MatrixX<Scalar> points;
+    Eigen::VectorX<Scalar> weights;
+
+    for (int held = 0; held < quadrature.num_elements(); ++held) {
+        const int cell = quadrature.elements()(held);
+        const Scalar cell_weight = cell_weights(cell);
+
+        // A cell of weight zero adds nothing
+        if (cell_weight == 0)
+            continue;
+
+        const int first = quadrature.offsets()(held);
+        const int count = quadrature.offsets()(held + 1) - first;
+
+        points = quadrature.points().middleRows(first, count);
+        values.reinit(cell, points);
+
+        // Physical weights, the quadrature weights times the measure, times
+        // the weight of the test functions of the cell, constant on it
+        weights = quadrature.weights().segment(first, count);
+        weights = cell_weight * weights.cwiseProduct(values.measures());
+
+        visit(cell, first, count, values, weights);
+    }
+}
+
+/**
+ * @brief Visits the cells of a boundary quadrature, with the values at
+ *        their points, expanded along a projection when one is given, and
+ *        the boundary weights and physical normals there
+ *
+ * @param visit Called with the cell, the first of its points and their
+ *        number, the values, the shifted values, the weights and the
+ *        normals
+ */
+template<typename Basis, std::size_t n, typename Visit>
+void visit_boundary_cells(
+    const Patch<Basis, n>& patch, const MixedFunctionSpace<Basis>& space,
+    ValueFlags flags,
+    const QuadratureBoundary<typename Basis::Scalar, Basis::dimension>&
+        quadrature,
+    const BoundaryProjection<typename Basis::Scalar>* projection, int order,
+    Visit&& visit)
+{
+    using Scalar = typename Basis::Scalar;
+
+    ElementValues<Basis, n> values(patch, space.bases(), flags);
+    ElementValues<Basis, n> shifted_values(patch, space.bases(), flags);
+    Eigen::MatrixX<Scalar> points;
+    Eigen::MatrixX<Scalar> normals;
+    Eigen::VectorX<Scalar> measures;
+    Eigen::VectorX<Scalar> weights;
+    PointMatrix<Scalar, n> physical_normals;
+
+    for (int held = 0; held < quadrature.num_elements(); ++held) {
+        const int cell = quadrature.elements()(held);
+        const int first = quadrature.offsets()(held);
+        const int count = quadrature.offsets()(held + 1) - first;
+
+        points = quadrature.points().middleRows(first, count);
+        values.reinit(cell, points);
+
+        // With a projection, the values are also expanded towards the
+        // boundary along the distance vectors, the weights and normals
+        // staying those of the points. Otherwise the shifted values are the
+        // values themselves
+        if (projection != nullptr) {
+            shifted_values.reinit(cell, points);
+            shift_values(shifted_values, *projection, first, count, order);
+        }
+
+        const ElementValues<Basis, n>& shifted =
+            projection != nullptr ? shifted_values : values;
+
+        // Boundary weights, the quadrature weights times the measure of the
+        // boundary through the map, and the normals in physical space, from
+        // the normals in parameter space
+        normals = quadrature.normals().middleRows(first, count);
+        Patch<Basis, n>::boundary_measure_on_element(values.tangents(),
+                                                     normals, measures);
+        Patch<Basis, n>::physical_normal_on_element(values.tangents(),
+                                                    normals,
+                                                    physical_normals);
+        weights = quadrature.weights().segment(first, count);
+        weights = weights.cwiseProduct(measures);
+
+        visit(cell, first, count, values, shifted, weights, physical_normals);
+    }
+}
+
+/**
+ * @brief Visits the faces of a skeleton quadrature across which the
+ *        weights of the cells jump, with the values of each cell at their
+ *        points, expanded along a projection when one is given, and the
+ *        face weights and physical normals there
+ *
+ * @param visit Called with the cells before and after the face, the first
+ *        of its points and their number, the values of each cell, their
+ *        shifted values, the weights of the two cells, the face weights and
+ *        the normals
+ */
+template<typename Basis, std::size_t n, typename Visit>
+void visit_jump_faces(
+    const Patch<Basis, n>& patch, const MixedFunctionSpace<Basis>& space,
+    ValueFlags flags,
+    const QuadratureSkeleton<typename Basis::Scalar, Basis::dimension>&
+        quadrature,
+    const BoundaryProjection<typename Basis::Scalar>* projection, int order,
+    const Eigen::VectorX<typename Basis::Scalar>& cell_weights, Visit&& visit)
+{
+    using Scalar = typename Basis::Scalar;
+
+    ElementValues<Basis, n> before(patch, space.bases(), flags);
+    ElementValues<Basis, n> after(patch, space.bases(), flags);
+    ElementValues<Basis, n> shifted_before(patch, space.bases(), flags);
+    ElementValues<Basis, n> shifted_after(patch, space.bases(), flags);
+    Eigen::MatrixX<Scalar> points;
+    Eigen::MatrixX<Scalar> normals;
+    Eigen::VectorX<Scalar> measures;
+    Eigen::VectorX<Scalar> weights;
+    PointMatrix<Scalar, n> physical_normals;
+
+    for (int face = 0; face < quadrature.num_faces(); ++face) {
+        const int cell_before = quadrature.cells()(face, 0);
+        const int cell_after = quadrature.cells()(face, 1);
+        const std::array<Scalar, 2> side_weights{cell_weights(cell_before),
+                                                 cell_weights(cell_after)};
+
+        // Without a jump of the test functions, the condition adds nothing
+        if (side_weights[0] == side_weights[1])
+            continue;
+
+        const int first = quadrature.offsets()(face);
+        const int count = quadrature.offsets()(face + 1) - first;
+
+        // The values of each cell, with its own polynomial, at the same
+        // points, and with a projection also expanded towards the boundary
+        // along the same distance vectors
+        points = quadrature.points().middleRows(first, count);
+        before.reinit(cell_before, points);
+        after.reinit(cell_after, points);
+
+        if (projection != nullptr) {
+            shifted_before.reinit(cell_before, points);
+            shifted_after.reinit(cell_after, points);
+            shift_values(shifted_before, *projection, first, count, order);
+            shift_values(shifted_after, *projection, first, count, order);
+        }
+
+        const bool shifted = projection != nullptr;
+
+        // Face weights and physical normals through the map, which is
+        // continuous across the face, from the cell before to the cell after
+        normals = quadrature.normals().middleRows(first, count);
+        Patch<Basis, n>::boundary_measure_on_element(before.tangents(),
+                                                     normals, measures);
+        Patch<Basis, n>::physical_normal_on_element(before.tangents(),
+                                                    normals,
+                                                    physical_normals);
+        weights = quadrature.weights().segment(first, count);
+        weights = weights.cwiseProduct(measures);
+
+        visit(cell_before, cell_after, first, count, before, after,
+              shifted ? shifted_before : before,
+              shifted ? shifted_after : after, side_weights, weights,
+              physical_normals);
+    }
+}
+
+/**
+ * @brief Visits the faces of a skeleton quadrature, with the values of each
+ *        cell at their points differentiated across the face to the degree
+ *        of a basis there, and the face weights
+ *
+ * @param visit Called with the cells before and after the face, the values
+ *        of each, the weights and the degree
+ */
+template<typename Basis, std::size_t n, typename Visit>
+void visit_ghost_faces(
+    const Patch<Basis, n>& patch, const MixedFunctionSpace<Basis>& space,
+    ValueFlags flags,
+    const QuadratureSkeleton<typename Basis::Scalar, Basis::dimension>&
+        quadrature,
+    const Basis& basis, Visit&& visit)
+{
+    using Scalar = typename Basis::Scalar;
+
+    ElementValues<Basis, n> before(patch, space.bases(), flags);
+    ElementValues<Basis, n> after(patch, space.bases(), flags);
+    Eigen::MatrixX<Scalar> points;
+    Eigen::MatrixX<Scalar> normals;
+    Eigen::VectorX<Scalar> measures;
+    Eigen::VectorX<Scalar> weights;
+
+    for (int face = 0; face < quadrature.num_faces(); ++face) {
+        const int first = quadrature.offsets()(face);
+        const int count = quadrature.offsets()(face + 1) - first;
+        const int cell_before = quadrature.cells()(face, 0);
+        const int cell_after = quadrature.cells()(face, 1);
+        const std::size_t direction =
+            static_cast<std::size_t>(quadrature.directions()(face));
+        const int degree = basis.grid().knots(direction).degree();
+
+        // The values of each cell, with its own polynomial, differentiated
+        // across the face at the same points
+        points = quadrature.points().middleRows(first, count);
+        before.reinit(cell_before, points);
+        after.reinit(cell_after, points);
+        differentiate_values(before, direction);
+        differentiate_values(after, direction);
+
+        // Face weights, the quadrature weights times the measure of the face
+        // through the map, which is continuous across it
+        normals = quadrature.normals().middleRows(first, count);
+        Patch<Basis, n>::boundary_measure_on_element(before.tangents(),
+                                                     normals, measures);
+        weights = quadrature.weights().segment(first, count);
+        weights = weights.cwiseProduct(measures);
+
+        visit(cell_before, cell_after, before, after, weights, degree);
+    }
+}
+
 } // namespace
 
 template<typename Basis, std::size_t n>
@@ -449,35 +694,16 @@ void Assembler<Basis, n>::assemble_stiffness(
                                     "the cell weights must have one value "
                                     "per element");
 
-    ElementValues<Basis, n> values(patch_, space_.bases(), element.flags());
-    Eigen::MatrixX<Scalar> points;
-    Eigen::VectorX<Scalar> weights;
     Eigen::MatrixX<Scalar> local;
     std::vector<int> dofs;
 
-    for (int held = 0; held < quadrature.num_elements(); ++held) {
-        const int cell = quadrature.elements()(held);
-        const Scalar cell_weight = cell_weights(cell);
-
-        // A cell of weight zero adds nothing
-        if (cell_weight == 0)
-            continue;
-
-        const int first = quadrature.offsets()(held);
-        const int count = quadrature.offsets()(held + 1) - first;
-
-        points = quadrature.points().middleRows(first, count);
-        values.reinit(cell, points);
-
-        // Physical weights, the quadrature weights times the measure, times
-        // the weight of the test functions of the cell, constant on it
-        weights = quadrature.weights().segment(first, count);
-        weights = cell_weight * weights.cwiseProduct(values.measures());
-
-        element.local_stiffness(values, weights, local);
-        space_.dofs_on_element(cell, dofs);
-        add_to_matrix(stiffness_, dofs, local);
-    }
+    visit_cells(patch_, space_, element.flags(), quadrature, cell_weights,
+                [&](int cell, int, int, const auto& values,
+                    const auto& weights) {
+                    element.local_stiffness(values, weights, local);
+                    space_.dofs_on_element(cell, dofs);
+                    add_to_matrix(stiffness_, dofs, local);
+                });
 
     finalize();
 }
@@ -511,37 +737,18 @@ void Assembler<Basis, n>::assemble_load(
                                     "the cell weights must have one value "
                                     "per element");
 
-    ElementValues<Basis, n> values(patch_, space_.bases(), element.flags());
-    Eigen::MatrixX<Scalar> points;
-    Eigen::VectorX<Scalar> weights;
     Eigen::MatrixX<Scalar> sources;
     Eigen::VectorX<Scalar> local;
     std::vector<int> dofs;
 
-    for (int held = 0; held < quadrature.num_elements(); ++held) {
-        const int cell = quadrature.elements()(held);
-        const Scalar cell_weight = cell_weights(cell);
-
-        // A cell of weight zero adds nothing
-        if (cell_weight == 0)
-            continue;
-
-        const int first = quadrature.offsets()(held);
-        const int count = quadrature.offsets()(held + 1) - first;
-
-        points = quadrature.points().middleRows(first, count);
-        values.reinit(cell, points);
-
-        // Physical weights, the quadrature weights times the measure, times
-        // the weight of the test functions of the cell, constant on it
-        weights = quadrature.weights().segment(first, count);
-        weights = cell_weight * weights.cwiseProduct(values.measures());
-
-        sources = source.middleRows(first, count);
-        element.local_load(values, weights, sources, local);
-        space_.dofs_on_element(cell, dofs);
-        add_to_load(dofs, local);
-    }
+    visit_cells(patch_, space_, element.flags(), quadrature, cell_weights,
+                [&](int cell, int first, int count, const auto& values,
+                    const auto& weights) {
+                    sources = source.middleRows(first, count);
+                    element.local_load(values, weights, sources, local);
+                    space_.dofs_on_element(cell, dofs);
+                    add_to_load(dofs, local);
+                });
 
     finalize();
 }
@@ -569,35 +776,16 @@ void Assembler<Basis, n>::assemble_mass(
                                     "the cell weights must have one value "
                                     "per element");
 
-    ElementValues<Basis, n> values(patch_, space_.bases(), element.flags());
-    Eigen::MatrixX<Scalar> points;
-    Eigen::VectorX<Scalar> weights;
     Eigen::MatrixX<Scalar> local;
     std::vector<int> dofs;
 
-    for (int held = 0; held < quadrature.num_elements(); ++held) {
-        const int cell = quadrature.elements()(held);
-        const Scalar cell_weight = cell_weights(cell);
-
-        // A cell of weight zero adds nothing
-        if (cell_weight == 0)
-            continue;
-
-        const int first = quadrature.offsets()(held);
-        const int count = quadrature.offsets()(held + 1) - first;
-
-        points = quadrature.points().middleRows(first, count);
-        values.reinit(cell, points);
-
-        // Physical weights, the quadrature weights times the measure, times
-        // the weight of the test functions of the cell, constant on it
-        weights = quadrature.weights().segment(first, count);
-        weights = cell_weight * weights.cwiseProduct(values.measures());
-
-        element.local_mass(values, weights, local);
-        space_.dofs_on_element(cell, dofs);
-        add_to_matrix(mass_, dofs, local);
-    }
+    visit_cells(patch_, space_, element.flags(), quadrature, cell_weights,
+                [&](int cell, int, int, const auto& values,
+                    const auto& weights) {
+                    element.local_mass(values, weights, local);
+                    space_.dofs_on_element(cell, dofs);
+                    add_to_matrix(mass_, dofs, local);
+                });
 
     finalize();
 }
@@ -629,54 +817,18 @@ void Assembler<Basis, n>::add_condition_stiffness(
     if (projection != nullptr)
         check_projection(*projection, order, quadrature.num_points());
 
-    ElementValues<Basis, n> values(patch_, space_.bases(), condition.flags());
-    ElementValues<Basis, n> shifted_values(patch_, space_.bases(),
-                                           condition.flags());
-    Eigen::MatrixX<Scalar> points;
-    Eigen::MatrixX<Scalar> normals;
-    Eigen::VectorX<Scalar> measures;
-    Eigen::VectorX<Scalar> weights;
-    PointMatrix<Scalar, n> physical_normals;
     Eigen::MatrixX<Scalar> local;
     std::vector<int> dofs;
 
-    for (int held = 0; held < quadrature.num_elements(); ++held) {
-        const int cell = quadrature.elements()(held);
-        const int first = quadrature.offsets()(held);
-        const int count = quadrature.offsets()(held + 1) - first;
-
-        points = quadrature.points().middleRows(first, count);
-        values.reinit(cell, points);
-
-        // With a projection, the values are also expanded towards the
-        // boundary along the distance vectors, the weights and normals
-        // staying those of the points. Otherwise the shifted values are the
-        // values themselves
-        if (projection != nullptr) {
-            shifted_values.reinit(cell, points);
-            shift_values(shifted_values, *projection, first, count, order);
-        }
-
-        const ElementValues<Basis, n>& shifted =
-            projection != nullptr ? shifted_values : values;
-
-        // Boundary weights, the quadrature weights times the measure of the
-        // boundary through the map, and the normals in physical space, from
-        // the normals in parameter space
-        normals = quadrature.normals().middleRows(first, count);
-        Patch<Basis, n>::boundary_measure_on_element(values.tangents(),
-                                                     normals, measures);
-        Patch<Basis, n>::physical_normal_on_element(values.tangents(),
-                                                    normals,
-                                                    physical_normals);
-        weights = quadrature.weights().segment(first, count);
-        weights = weights.cwiseProduct(measures);
-
-        condition.local_stiffness(values, shifted, weights, physical_normals,
-                                  local);
-        space_.dofs_on_element(cell, dofs);
-        add_to_matrix(stiffness_, dofs, local);
-    }
+    visit_boundary_cells(
+        patch_, space_, condition.flags(), quadrature, projection, order,
+        [&](int cell, int, int, const auto& values, const auto& shifted,
+            const auto& weights, const auto& normals) {
+            condition.local_stiffness(values, shifted, weights, normals,
+                                      local);
+            space_.dofs_on_element(cell, dofs);
+            add_to_matrix(stiffness_, dofs, local);
+        });
 
     finalize();
 }
@@ -714,56 +866,20 @@ void Assembler<Basis, n>::add_condition_load(
     if (projection != nullptr)
         check_projection(*projection, order, quadrature.num_points());
 
-    ElementValues<Basis, n> values(patch_, space_.bases(), condition.flags());
-    ElementValues<Basis, n> shifted_values(patch_, space_.bases(),
-                                           condition.flags());
-    Eigen::MatrixX<Scalar> points;
-    Eigen::MatrixX<Scalar> normals;
-    Eigen::VectorX<Scalar> measures;
-    Eigen::VectorX<Scalar> weights;
-    PointMatrix<Scalar, n> physical_normals;
     Eigen::VectorX<Scalar> imposed;
     Eigen::VectorX<Scalar> local;
     std::vector<int> dofs;
 
-    for (int held = 0; held < quadrature.num_elements(); ++held) {
-        const int cell = quadrature.elements()(held);
-        const int first = quadrature.offsets()(held);
-        const int count = quadrature.offsets()(held + 1) - first;
-
-        points = quadrature.points().middleRows(first, count);
-        values.reinit(cell, points);
-
-        // With a projection, the values are also expanded towards the
-        // boundary along the distance vectors, the weights and normals
-        // staying those of the points. Otherwise the shifted values are the
-        // values themselves
-        if (projection != nullptr) {
-            shifted_values.reinit(cell, points);
-            shift_values(shifted_values, *projection, first, count, order);
-        }
-
-        const ElementValues<Basis, n>& shifted =
-            projection != nullptr ? shifted_values : values;
-
-        // Boundary weights, the quadrature weights times the measure of the
-        // boundary through the map, and the normals in physical space, from
-        // the normals in parameter space
-        normals = quadrature.normals().middleRows(first, count);
-        Patch<Basis, n>::boundary_measure_on_element(values.tangents(),
-                                                     normals, measures);
-        Patch<Basis, n>::physical_normal_on_element(values.tangents(),
-                                                    normals,
-                                                    physical_normals);
-        weights = quadrature.weights().segment(first, count);
-        weights = weights.cwiseProduct(measures);
-
-        imposed = data.segment(first, count);
-        condition.local_load(values, shifted, weights, physical_normals,
-                             imposed, local);
-        space_.dofs_on_element(cell, dofs);
-        add_to_load(dofs, local);
-    }
+    visit_boundary_cells(
+        patch_, space_, condition.flags(), quadrature, projection, order,
+        [&](int cell, int first, int count, const auto& values,
+            const auto& shifted, const auto& weights, const auto& normals) {
+            imposed = data.segment(first, count);
+            condition.local_load(values, shifted, weights, normals, imposed,
+                                 local);
+            space_.dofs_on_element(cell, dofs);
+            add_to_load(dofs, local);
+        });
 
     finalize();
 }
@@ -803,48 +919,21 @@ void Assembler<Basis, n>::assemble_stiffness(
                                         "interior knots");
     }
 
-    ElementValues<Basis, n> before(patch_, space_.bases(), penalty.flags());
-    ElementValues<Basis, n> after(patch_, space_.bases(), penalty.flags());
-    Eigen::MatrixX<Scalar> points;
-    Eigen::MatrixX<Scalar> normals;
-    Eigen::VectorX<Scalar> measures;
-    Eigen::VectorX<Scalar> weights;
     Eigen::MatrixX<Scalar> local;
     Eigen::MatrixX<Scalar> folded;
     std::vector<int> dofs;
     std::vector<int> positions;
 
-    for (int face = 0; face < quadrature.num_faces(); ++face) {
-        const int first = quadrature.offsets()(face);
-        const int count = quadrature.offsets()(face + 1) - first;
-        const int cell_before = quadrature.cells()(face, 0);
-        const int cell_after = quadrature.cells()(face, 1);
-        const std::size_t direction =
-            static_cast<std::size_t>(quadrature.directions()(face));
-        const int degree = basis.grid().knots(direction).degree();
+    visit_ghost_faces(
+        patch_, space_, penalty.flags(), quadrature, basis,
+        [&](int cell_before, int cell_after, const auto& before,
+            const auto& after, const auto& weights, int degree) {
+            penalty.local_stiffness(before, after, weights, degree, local);
 
-        // The values of each cell, with its own polynomial, differentiated
-        // across the face at the same points
-        points = quadrature.points().middleRows(first, count);
-        before.reinit(cell_before, points);
-        after.reinit(cell_after, points);
-        differentiate_values(before, direction);
-        differentiate_values(after, direction);
-
-        // Face weights, the quadrature weights times the measure of the face
-        // through the map, which is continuous across it
-        normals = quadrature.normals().middleRows(first, count);
-        Patch<Basis, n>::boundary_measure_on_element(before.tangents(),
-                                                     normals, measures);
-        weights = quadrature.weights().segment(first, count);
-        weights = weights.cwiseProduct(measures);
-
-        penalty.local_stiffness(before, after, weights, degree, local);
-
-        face_dofs(cell_before, cell_after, dofs, positions);
-        fold_face(local, positions, std::ssize(dofs), folded);
-        add_to_matrix(stiffness_, dofs, folded);
-    }
+            face_dofs(cell_before, cell_after, dofs, positions);
+            fold_face(local, positions, std::ssize(dofs), folded);
+            add_to_matrix(stiffness_, dofs, folded);
+        });
 
     finalize();
 }
@@ -891,72 +980,26 @@ void Assembler<Basis, n>::add_skeleton_condition_stiffness(
     if (projection != nullptr)
         check_projection(*projection, order, quadrature.num_points());
 
-    ElementValues<Basis, n> before(patch_, space_.bases(), condition.flags());
-    ElementValues<Basis, n> after(patch_, space_.bases(), condition.flags());
-    ElementValues<Basis, n> shifted_before(patch_, space_.bases(),
-                                           condition.flags());
-    ElementValues<Basis, n> shifted_after(patch_, space_.bases(),
-                                          condition.flags());
-    Eigen::MatrixX<Scalar> points;
-    Eigen::MatrixX<Scalar> normals;
-    Eigen::VectorX<Scalar> measures;
-    Eigen::VectorX<Scalar> weights;
-    PointMatrix<Scalar, n> physical_normals;
     Eigen::MatrixX<Scalar> local;
     Eigen::MatrixX<Scalar> folded;
     std::vector<int> dofs;
     std::vector<int> positions;
 
-    for (int face = 0; face < quadrature.num_faces(); ++face) {
-        const int cell_before = quadrature.cells()(face, 0);
-        const int cell_after = quadrature.cells()(face, 1);
-        const std::array<Scalar, 2> side_weights{cell_weights(cell_before),
-                                                 cell_weights(cell_after)};
+    visit_jump_faces(
+        patch_, space_, condition.flags(), quadrature, projection, order,
+        cell_weights,
+        [&](int cell_before, int cell_after, int, int, const auto& before,
+            const auto& after, const auto& shifted_before,
+            const auto& shifted_after, const auto& side_weights,
+            const auto& weights, const auto& normals) {
+            condition.local_stiffness(before, after, shifted_before,
+                                      shifted_after, side_weights, weights,
+                                      normals, local);
 
-        // Without a jump of the test functions, the condition adds nothing
-        if (side_weights[0] == side_weights[1])
-            continue;
-
-        const int first = quadrature.offsets()(face);
-        const int count = quadrature.offsets()(face + 1) - first;
-
-        // The values of each cell, with its own polynomial, at the same
-        // points, and with a projection also expanded towards the boundary
-        // along the same distance vectors
-        points = quadrature.points().middleRows(first, count);
-        before.reinit(cell_before, points);
-        after.reinit(cell_after, points);
-
-        if (projection != nullptr) {
-            shifted_before.reinit(cell_before, points);
-            shifted_after.reinit(cell_after, points);
-            shift_values(shifted_before, *projection, first, count, order);
-            shift_values(shifted_after, *projection, first, count, order);
-        }
-
-        const bool shifted = projection != nullptr;
-
-        // Face weights and physical normals through the map, which is
-        // continuous across the face, from the cell before to the cell after
-        normals = quadrature.normals().middleRows(first, count);
-        Patch<Basis, n>::boundary_measure_on_element(before.tangents(),
-                                                     normals, measures);
-        Patch<Basis, n>::physical_normal_on_element(before.tangents(),
-                                                    normals,
-                                                    physical_normals);
-        weights = quadrature.weights().segment(first, count);
-        weights = weights.cwiseProduct(measures);
-
-        condition.local_stiffness(before, after,
-                                  shifted ? shifted_before : before,
-                                  shifted ? shifted_after : after,
-                                  side_weights, weights, physical_normals,
-                                  local);
-
-        face_dofs(cell_before, cell_after, dofs, positions);
-        fold_face(local, positions, std::ssize(dofs), folded);
-        add_to_matrix(stiffness_, dofs, folded);
-    }
+            face_dofs(cell_before, cell_after, dofs, positions);
+            fold_face(local, positions, std::ssize(dofs), folded);
+            add_to_matrix(stiffness_, dofs, folded);
+        });
 
     finalize();
 }
@@ -1010,73 +1053,28 @@ void Assembler<Basis, n>::add_skeleton_condition_load(
     if (projection != nullptr)
         check_projection(*projection, order, quadrature.num_points());
 
-    ElementValues<Basis, n> before(patch_, space_.bases(), condition.flags());
-    ElementValues<Basis, n> after(patch_, space_.bases(), condition.flags());
-    ElementValues<Basis, n> shifted_before(patch_, space_.bases(),
-                                           condition.flags());
-    ElementValues<Basis, n> shifted_after(patch_, space_.bases(),
-                                          condition.flags());
-    Eigen::MatrixX<Scalar> points;
-    Eigen::MatrixX<Scalar> normals;
-    Eigen::VectorX<Scalar> measures;
-    Eigen::VectorX<Scalar> weights;
-    PointMatrix<Scalar, n> physical_normals;
     Eigen::VectorX<Scalar> imposed;
     Eigen::VectorX<Scalar> local;
     Eigen::VectorX<Scalar> folded;
     std::vector<int> dofs;
     std::vector<int> positions;
 
-    for (int face = 0; face < quadrature.num_faces(); ++face) {
-        const int cell_before = quadrature.cells()(face, 0);
-        const int cell_after = quadrature.cells()(face, 1);
-        const std::array<Scalar, 2> side_weights{cell_weights(cell_before),
-                                                 cell_weights(cell_after)};
+    visit_jump_faces(
+        patch_, space_, condition.flags(), quadrature, projection, order,
+        cell_weights,
+        [&](int cell_before, int cell_after, int first, int count,
+            const auto& before, const auto& after, const auto& shifted_before,
+            const auto& shifted_after, const auto& side_weights,
+            const auto& weights, const auto& normals) {
+            imposed = data.segment(first, count);
+            condition.local_load(before, after, shifted_before, shifted_after,
+                                 side_weights, weights, normals, imposed,
+                                 local);
 
-        // Without a jump of the test functions, the condition adds nothing
-        if (side_weights[0] == side_weights[1])
-            continue;
-
-        const int first = quadrature.offsets()(face);
-        const int count = quadrature.offsets()(face + 1) - first;
-
-        // The values of each cell, with its own polynomial, at the same
-        // points, and with a projection also expanded towards the boundary
-        // along the same distance vectors
-        points = quadrature.points().middleRows(first, count);
-        before.reinit(cell_before, points);
-        after.reinit(cell_after, points);
-
-        if (projection != nullptr) {
-            shifted_before.reinit(cell_before, points);
-            shifted_after.reinit(cell_after, points);
-            shift_values(shifted_before, *projection, first, count, order);
-            shift_values(shifted_after, *projection, first, count, order);
-        }
-
-        const bool shifted = projection != nullptr;
-
-        // Face weights and physical normals through the map, which is
-        // continuous across the face, from the cell before to the cell after
-        normals = quadrature.normals().middleRows(first, count);
-        Patch<Basis, n>::boundary_measure_on_element(before.tangents(),
-                                                     normals, measures);
-        Patch<Basis, n>::physical_normal_on_element(before.tangents(),
-                                                    normals,
-                                                    physical_normals);
-        weights = quadrature.weights().segment(first, count);
-        weights = weights.cwiseProduct(measures);
-
-        imposed = data.segment(first, count);
-        condition.local_load(before, after,
-                             shifted ? shifted_before : before,
-                             shifted ? shifted_after : after, side_weights,
-                             weights, physical_normals, imposed, local);
-
-        face_dofs(cell_before, cell_after, dofs, positions);
-        fold_face(local, positions, std::ssize(dofs), folded);
-        add_to_load(dofs, folded);
-    }
+            face_dofs(cell_before, cell_after, dofs, positions);
+            fold_face(local, positions, std::ssize(dofs), folded);
+            add_to_load(dofs, folded);
+        });
 
     finalize();
 }
