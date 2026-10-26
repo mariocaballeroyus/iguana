@@ -694,14 +694,18 @@ void Assembler<Basis, n>::assemble_stiffness(
                                     "the cell weights must have one value "
                                     "per element");
 
+    const Eigen::MatrixX<Scalar> none;
+    Eigen::VectorX<Scalar> zero;
     Eigen::MatrixX<Scalar> local;
     std::vector<int> dofs;
 
+    // The tangent at zero coefficients, the stiffness of a linear element
     visit_cells(patch_, space_, element.flags(), quadrature, cell_weights,
                 [&](int cell, int, int, const auto& values,
                     const auto& weights) {
-                    element.local_stiffness(values, weights, local);
                     space_.dofs_on_element(cell, dofs);
+                    zero.setZero(std::ssize(dofs));
+                    element.local_tangent(values, weights, none, zero, local);
                     add_to_matrix(stiffness_, dofs, local);
                 });
 
@@ -738,16 +742,20 @@ void Assembler<Basis, n>::assemble_load(
                                     "per element");
 
     Eigen::MatrixX<Scalar> sources;
+    Eigen::VectorX<Scalar> zero;
     Eigen::VectorX<Scalar> local;
     std::vector<int> dofs;
 
+    // The residual at zero coefficients, less the load of a linear element
     visit_cells(patch_, space_, element.flags(), quadrature, cell_weights,
                 [&](int cell, int first, int count, const auto& values,
                     const auto& weights) {
                     sources = source.middleRows(first, count);
-                    element.local_load(values, weights, sources, local);
                     space_.dofs_on_element(cell, dofs);
-                    add_to_load(dofs, local);
+                    zero.setZero(std::ssize(dofs));
+                    element.local_residual(values, weights, sources, zero,
+                                           local);
+                    add_to_load(dofs, -local);
                 });
 
     finalize();

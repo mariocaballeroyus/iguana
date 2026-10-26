@@ -213,8 +213,15 @@ void check_galerkin(const Values& values, const Eigen::MatrixXd&,
     const Eigen::Index rows = num_rows(degrees);
     const Eigen::Index pressures = num_functions(degrees, 2);
 
+    // A constant body force, and the tangent at zero coefficients, the
+    // stiffness
+    Eigen::MatrixXd source(weights.size(), 2);
+    source.col(0).setConstant(.7);
+    source.col(1).setConstant(-1.2);
+    const Eigen::VectorXd zero = Eigen::VectorXd::Zero(rows);
+
     Eigen::MatrixXd stiffness;
-    element.local_stiffness(values, weights, stiffness);
+    element.local_tangent(values, weights, source, zero, stiffness);
 
     REQUIRE(stiffness.rows() == rows);
     REQUIRE(stiffness.cols() == rows);
@@ -241,14 +248,11 @@ void check_galerkin(const Values& values, const Eigen::MatrixXd&,
     REQUIRE_THAT(local(degrees, {}, {{1., 0, 1}}, {}).dot(stiffness * q),
                  WithinRel(-width * height * height / 2., 1e-12));
 
-    // A constant body force loads each component of the velocity by its
-    // integral, and not the pressure
-    Eigen::MatrixXd source(weights.size(), 2);
-    source.col(0).setConstant(.7);
-    source.col(1).setConstant(-1.2);
-
+    // The body force loads each component of the velocity by its integral,
+    // and not the pressure, the load being the residual at zero negated
     Eigen::VectorXd load;
-    element.local_load(values, weights, source, load);
+    element.local_residual(values, weights, source, zero, load);
+    load = -load;
 
     REQUIRE(load.size() == rows);
     REQUIRE_THAT(local(degrees, {{1., 0, 0}}, {}, {}).dot(load),
@@ -285,10 +289,17 @@ void check_stabilization(const Values& values, const Eigen::MatrixXd&,
     // τ_M = h^2 / (c μ), h^2 being the area of the element
     const double tau = area / (stabilization * viscosity);
 
+    // A constant body force, and the tangents at zero coefficients, the
+    // stiffnesses
+    Eigen::MatrixXd source(weights.size(), 2);
+    source.col(0).setConstant(.7);
+    source.col(1).setConstant(-1.2);
+    const Eigen::VectorXd zero = Eigen::VectorXd::Zero(num_rows(degrees));
+
     Eigen::MatrixXd stiffness;
     Eigen::MatrixXd galerkin_stiffness;
-    element.local_stiffness(values, weights, stiffness);
-    galerkin.local_stiffness(values, weights, galerkin_stiffness);
+    element.local_tangent(values, weights, source, zero, stiffness);
+    galerkin.local_tangent(values, weights, source, zero, galerkin_stiffness);
     const Eigen::MatrixXd added = stiffness - galerkin_stiffness;
 
     // For linear velocities, grad-div gives μ area tr A tr B
@@ -307,18 +318,15 @@ void check_stabilization(const Values& values, const Eigen::MatrixXd&,
                  WithinRel(2. * tau * viscosity * area, 1e-12));
     REQUIRE_THAT(q.dot(added * q), WithinRel(-tau * area, 1e-12));
 
-    // A constant body force f loads the pressure by −τ_M (∇q, f), and the
-    // mass pairs the pressure gradient with the velocity, −τ_M (∇q, u)
-    Eigen::MatrixXd source(weights.size(), 2);
-    source.col(0).setConstant(.7);
-    source.col(1).setConstant(-1.2);
+    // The body force f loads the pressure by −τ_M (∇q, f), the load being
+    // the residual at zero negated, and the mass pairs the pressure gradient
+    // with the velocity, −τ_M (∇q, u)
+    Eigen::VectorXd residual;
+    Eigen::VectorXd galerkin_residual;
+    element.local_residual(values, weights, source, zero, residual);
+    galerkin.local_residual(values, weights, source, zero, galerkin_residual);
 
-    Eigen::VectorXd load;
-    Eigen::VectorXd galerkin_load;
-    element.local_load(values, weights, source, load);
-    galerkin.local_load(values, weights, source, galerkin_load);
-
-    REQUIRE_THAT(q.dot(load - galerkin_load),
+    REQUIRE_THAT(q.dot(galerkin_residual - residual),
                  WithinRel(1.2 * tau * area, 1e-12));
 
     Eigen::MatrixXd mass;

@@ -27,13 +27,57 @@ StokesStabilizedElement<Basis, n>::StokesStabilizedElement(
 }
 
 template<typename Basis, std::size_t n>
-void StokesStabilizedElement<Basis, n>::local_stiffness(
+void StokesStabilizedElement<Basis, n>::local_tangent(
     const ElementValues<Basis, n>& values,
     const Eigen::VectorX<Scalar>& weights,
-    Eigen::MatrixX<Scalar>& stiffness) const
+    const Eigen::MatrixX<Scalar>& source,
+    const Eigen::VectorX<Scalar>& coefficients,
+    Eigen::MatrixX<Scalar>& tangent) const
 {
-    Base::local_stiffness(values, weights, stiffness);
+    Base::local_tangent(values, weights, source, coefficients, tangent);
+    add_stabilization(values, weights, tangent);
+}
 
+template<typename Basis, std::size_t n>
+void StokesStabilizedElement<Basis, n>::local_residual(
+    const ElementValues<Basis, n>& values,
+    const Eigen::VectorX<Scalar>& weights,
+    const Eigen::MatrixX<Scalar>& source,
+    const Eigen::VectorX<Scalar>& coefficients,
+    Eigen::VectorX<Scalar>& residual) const
+{
+    Base::local_residual(values, weights, source, coefficients, residual);
+
+    // R_i = Σ_j S_ij c_j over the stabilizing terms, less their load
+    Eigen::MatrixX<Scalar> stabilization =
+        Eigen::MatrixX<Scalar>::Zero(residual.size(), residual.size());
+    add_stabilization(values, weights, stabilization);
+    residual += stabilization * coefficients;
+
+    const std::array<Eigen::MatrixX<Scalar>, n>& pressure_grads =
+        values.physical_gradients(Base::field_of(values.num_fields(), n));
+    const Eigen::Index pressure_row = Base::first_row(values, n);
+
+    // Physical weights times τ_M
+    const Eigen::VectorX<Scalar> stabilized =
+        weights.cwiseProduct(tau(values));
+
+    for (std::size_t a = 0; a < n; ++a) {
+        const Eigen::Index component = static_cast<Eigen::Index>(a);
+
+        // F_i = − ( τ_M ∇N_i, f )_Ω
+        //     ≈ − Σ_q w_q τ_M ∇N_i(x_q) · f(x_q)
+        residual.segment(pressure_row, pressure_grads[a].rows()) +=
+            pressure_grads[a] * stabilized.cwiseProduct(source.col(component));
+    }
+}
+
+template<typename Basis, std::size_t n>
+void StokesStabilizedElement<Basis, n>::add_stabilization(
+    const ElementValues<Basis, n>& values,
+    const Eigen::VectorX<Scalar>& weights,
+    Eigen::MatrixX<Scalar>& tangent) const
+{
     const std::size_t num_fields = values.num_fields();
     const std::array<Eigen::MatrixX<Scalar>, n>& pressure_grads =
         values.physical_gradients(Base::field_of(num_fields, n));
@@ -57,7 +101,7 @@ void StokesStabilizedElement<Basis, n>::local_stiffness(
 
             // K_ij = ( τ_C div(N_i e_a), div(N_j e_b) )_Ω
             //      ≈ Σ_q w_q μ ∂_a N_i ∂_b N_j
-            stiffness.block(row, col, test_grads[a].rows(),
+            tangent.block(row, col, test_grads[a].rows(),
                             trial_grads[b].rows()) +=
                 viscosity * test_grads[a] * weights.asDiagonal()
                 * trial_grads[b].transpose();
@@ -85,7 +129,7 @@ void StokesStabilizedElement<Basis, n>::local_stiffness(
 
         // K_ij = − ( τ_M ∇N_i, −div(2μ ε(N_j e_b)) )_Ω
         //      ≈ Σ_q w_q τ_M μ (∂_b N_i ΔN_j + ∇N_i · ∇∂_b N_j)
-        stiffness.block(pressure_row, col, pressure_rows, cols) +=
+        tangent.block(pressure_row, col, pressure_rows, cols) +=
             viscosity * (pressure_grads[b] * stabilized.asDiagonal()
                              * laplacians.transpose()
                          + curvature);
@@ -94,37 +138,10 @@ void StokesStabilizedElement<Basis, n>::local_stiffness(
     // K_ij = − ( τ_M ∇N_i, ∇N_j )_Ω
     //      ≈ − Σ_q w_q τ_M ∇N_i · ∇N_j
     for (std::size_t c = 0; c < n; ++c) {
-        stiffness.block(pressure_row, pressure_row, pressure_rows,
+        tangent.block(pressure_row, pressure_row, pressure_rows,
                         pressure_rows) -=
             pressure_grads[c] * stabilized.asDiagonal()
             * pressure_grads[c].transpose();
-    }
-}
-
-template<typename Basis, std::size_t n>
-void StokesStabilizedElement<Basis, n>::local_load(
-    const ElementValues<Basis, n>& values,
-    const Eigen::VectorX<Scalar>& weights,
-    const Eigen::MatrixX<Scalar>& source,
-    Eigen::VectorX<Scalar>& load) const
-{
-    Base::local_load(values, weights, source, load);
-
-    const std::array<Eigen::MatrixX<Scalar>, n>& pressure_grads =
-        values.physical_gradients(Base::field_of(values.num_fields(), n));
-    const Eigen::Index pressure_row = Base::first_row(values, n);
-
-    // Physical weights times τ_M
-    const Eigen::VectorX<Scalar> stabilized =
-        weights.cwiseProduct(tau(values));
-
-    for (std::size_t a = 0; a < n; ++a) {
-        const Eigen::Index component = static_cast<Eigen::Index>(a);
-
-        // F_i = − ( τ_M ∇N_i, f )_Ω
-        //     ≈ − Σ_q w_q τ_M ∇N_i(x_q) · f(x_q)
-        load.segment(pressure_row, pressure_grads[a].rows()) -=
-            pressure_grads[a] * stabilized.cwiseProduct(source.col(component));
     }
 }
 

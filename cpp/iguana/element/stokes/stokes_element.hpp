@@ -63,14 +63,17 @@ public:
     ValueFlags flags() const noexcept override
     { return {.physical_gradients = true}; }
 
-    void local_stiffness(const ElementValues<Basis, n>& values,
-                         const Eigen::VectorX<Scalar>& weights,
-                         Eigen::MatrixX<Scalar>& stiffness) const override;
+    void local_tangent(const ElementValues<Basis, n>& values,
+                       const Eigen::VectorX<Scalar>& weights,
+                       const Eigen::MatrixX<Scalar>& source,
+                       const Eigen::VectorX<Scalar>& coefficients,
+                       Eigen::MatrixX<Scalar>& tangent) const override;
 
-    void local_load(const ElementValues<Basis, n>& values,
-                    const Eigen::VectorX<Scalar>& weights,
-                    const Eigen::MatrixX<Scalar>& source,
-                    Eigen::VectorX<Scalar>& load) const override;
+    void local_residual(const ElementValues<Basis, n>& values,
+                        const Eigen::VectorX<Scalar>& weights,
+                        const Eigen::MatrixX<Scalar>& source,
+                        const Eigen::VectorX<Scalar>& coefficients,
+                        Eigen::VectorX<Scalar>& residual) const override;
 
     void local_mass(const ElementValues<Basis, n>& values,
                     const Eigen::VectorX<Scalar>& weights,
