@@ -17,10 +17,12 @@ from iguana import (Boundary, CellType, Derivatives, FunctionSpace,
                     StokesElement, SurrogateBoundary, classify_cells)
 
 try:
+    from petsc4py import PETSc
+
     from iguana.petsc import LinearProblem
 except ImportError:
     # A build without PETSc skips every test, which all solve
-    LinearProblem = None
+    PETSc = LinearProblem = None
 
 pytestmark = pytest.mark.petsc
 
@@ -539,6 +541,8 @@ def test_petsc_options_set_up_the_solver():
 
     # The options leave the database once applied, so another problem of
     # the same prefix takes the defaults
+    assert not any(name.startswith('iterative_')
+                   for name in PETSc.Options().getAll())
     assert problem('iterative_').solver.getType() == 'preonly'
 
     # A solver stopped before it converges fails the solve

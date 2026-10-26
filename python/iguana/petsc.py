@@ -590,18 +590,14 @@ def _set_from_options(
     options database once applied."""
     solver.setOptionsPrefix(prefix)
 
+    # By their full names, as PETSc prefixes the values it sets but not
+    # those it clears
     database = PETSc.Options()
-    database.prefixPush(prefix)
 
     for key, value in options.items():
-        database[key] = value
+        database[prefix + key] = value
 
-    database.prefixPop()
     solver.setFromOptions()
 
-    database.prefixPush(prefix)
-
     for key in options:
-        del database[key]
-
-    database.prefixPop()
+        del database[prefix + key]
