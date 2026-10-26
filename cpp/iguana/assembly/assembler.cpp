@@ -146,6 +146,82 @@ void check_projection(const BoundaryProjection<T>& projection, int order,
 }
 
 /**
+ * @brief Checks that the cell weights of a pass weight every element
+ *
+ * @throws std::invalid_argument If the cell weights do not have one value
+ *         per element
+ */
+template<std::floating_point T>
+void check_cell_weights(const Eigen::VectorX<T>& cell_weights,
+                        int num_elements)
+{
+    if (cell_weights.size() != num_elements)
+        throw std::invalid_argument("Assembler: "
+                                    "the cell weights must have one value "
+                                    "per element");
+}
+
+/**
+ * @brief Checks the source and the cell weights of an element pass
+ *
+ * @throws std::invalid_argument If the source does not have one row per
+ *         point, or the cell weights one value per element
+ */
+template<std::floating_point T>
+void check_element_data(const Eigen::MatrixX<T>& source,
+                        const Eigen::VectorX<T>& cell_weights,
+                        int num_points, int num_elements)
+{
+    if (source.rows() != num_points)
+        throw std::invalid_argument("Assembler: "
+                                    "the source must have one row per point");
+
+    check_cell_weights(cell_weights, num_elements);
+}
+
+/**
+ * @brief Checks the data and the projection, if any, of a condition pass
+ *
+ * @throws std::invalid_argument If the data does not have one value per
+ *         point, or as check_projection() does
+ */
+template<std::floating_point T>
+void check_condition_data(const Eigen::VectorX<T>& data,
+                          const BoundaryProjection<T>* projection, int order,
+                          int num_points)
+{
+    if (data.size() != num_points)
+        throw std::invalid_argument("Assembler: "
+                                    "the data must have one value per point");
+
+    if (projection != nullptr)
+        check_projection(*projection, order, num_points);
+}
+
+/**
+ * @brief Checks the faces, the data, the projection, if any, and the cell
+ *        weights of a skeleton condition pass
+ *
+ * @throws std::invalid_argument If the faces are not coupled, or as
+ *         check_condition_data() and check_cell_weights() do
+ */
+template<std::floating_point T>
+void check_skeleton_data(bool couple_faces, const Eigen::VectorX<T>& data,
+                         const BoundaryProjection<T>* projection, int order,
+                         const Eigen::VectorX<T>& cell_weights,
+                         int num_points, int num_elements)
+{
+    // Without the faces coupled, the pattern would grow with each new face
+    if (!couple_faces)
+        throw std::invalid_argument("Assembler: "
+                                    "a skeleton condition needs the faces "
+                                    "coupled");
+
+    check_condition_data(data, projection, order, num_points);
+    check_cell_weights(cell_weights, num_elements);
+}
+
+/**
  * @brief Differentiates the values at the points of one face across it, to
  *        the order of the degree there
  *
@@ -226,8 +302,8 @@ void fold_face(const Eigen::MatrixX<T>& local,
 }
 
 /**
- * @brief Sums the entries of the local load of a face that share a degree
- *        of freedom, as for a local matrix
+ * @brief Sums the entries of the local residual of a face that share a
+ *        degree of freedom, as for a local matrix
  *
  * @throws std::invalid_argument If @p local does not have an entry per
  *         entry of @p positions
@@ -241,8 +317,8 @@ void fold_face(const Eigen::VectorX<T>& local,
 
     if (local.size() != count)
         throw std::invalid_argument("Assembler: "
-                                    "the local load must match the degrees "
-                                    "of freedom of the space");
+                                    "the local residual must match the "
+                                    "degrees of freedom of the space");
 
     folded.setZero(num_dofs);
 
@@ -591,6 +667,105 @@ void visit_ghost_faces(
     }
 }
 
+/**
+ * @brief Read access to the entries of a PETSc vector for the length of a
+ *        pass, given back even when the pass throws
+ */
+class Entries
+{
+public:
+    explicit Entries(Vec vector) : vector_(vector)
+    {
+        check_petsc(VecGetArrayRead(vector_, &entries_));
+    }
+
+    ~Entries()
+    {
+        // A destructor must not throw, so a failure is left to PETSc to
+        // report
+        static_cast<void>(VecRestoreArrayRead(vector_, &entries_));
+    }
+
+    Entries(const Entries&) = delete;
+    Entries& operator=(const Entries&) = delete;
+
+    /// @brief The entries at degrees of freedom, one per row
+    template<std::floating_point T>
+    void gather(std::span<const int> dofs, Eigen::VectorX<T>& local) const
+    {
+        local.resize(std::ssize(dofs));
+
+        for (std::ptrdiff_t row = 0; row < local.size(); ++row)
+            local(row) = entries_[dofs[row]];
+    }
+
+    /// @brief The entries at the degrees of freedom of the rows of a face,
+    ///        given by their positions among the degrees of freedom
+    template<std::floating_point T>
+    void gather(std::span<const int> dofs, std::span<const int> positions,
+                Eigen::VectorX<T>& local) const
+    {
+        local.resize(std::ssize(positions));
+
+        for (std::ptrdiff_t row = 0; row < local.size(); ++row)
+            local(row) = entries_[dofs[positions[row]]];
+    }
+
+private:
+    /// @brief Vector whose entries are read
+    Vec vector_;
+
+    /// @brief Its entries, while they are read
+    const PetscScalar* entries_ = nullptr;
+};
+
+/**
+ * @brief Basis of the field a ghost penalty extends, checked to suit it
+ *
+ * @throws std::invalid_argument If the faces are not coupled, if the map of
+ *         the patch is not affine, if the field of the penalty is not one of
+ *         the space, or if a knot vector of that field repeats an interior
+ *         knot
+ */
+template<typename Basis, std::size_t n>
+const Basis& ghost_basis(bool couple_faces, const Patch<Basis, n>& patch,
+                         const MixedFunctionSpace<Basis>& space,
+                         const SkeletonGhostPenalty<Basis, n>& penalty)
+{
+    // Without the faces coupled, the pattern would grow with each new face
+    if (!couple_faces)
+        throw std::invalid_argument("Assembler: "
+                                    "a ghost penalty needs the faces coupled");
+
+    // Only on an affine map do the jumps of the derivatives across the knot
+    // lines give those of the physical normal derivatives
+    if (!patch.is_affine())
+        throw std::invalid_argument("Assembler: "
+                                    "a ghost penalty needs an affine patch");
+
+    // The penalty extends one field, whose basis gives the degrees
+    const std::size_t field = penalty.field(space.num_fields());
+
+    if (field >= space.num_fields())
+        throw std::invalid_argument("Assembler: "
+                                    "a ghost penalty must act on a field of "
+                                    "the space");
+
+    const Basis& basis = space.field(field).basis();
+
+    // A repeated knot of the field would let lower derivatives of its
+    // functions jump unpenalized
+    for (std::size_t direction = 0; direction < Basis::dimension;
+         ++direction) {
+        if (!simple_interior_knots(basis.grid().knots(direction)))
+            throw std::invalid_argument("Assembler: "
+                                        "a ghost penalty needs simple "
+                                        "interior knots");
+    }
+
+    return basis;
+}
+
 } // namespace
 
 template<typename Basis, std::size_t n>
@@ -632,34 +807,34 @@ Assembler<Basis, n>::Assembler(const MixedFunctionSpace<Basis>& space,
     std::vector<PetscInt> columns;
     sparsity_pattern(space, counts, couple_faces, offsets, columns);
 
-    // The compressed rows of the pattern preallocate the stiffness, its
+    // The compressed rows of the pattern preallocate the tangent, its
     // explicit zeros the only entries a write may reach. The block size
     // tells the solvers which degrees of freedom are components of one
     // function, in blocks only when the space has a single field
     const int block_size =
         space.num_fields() == 1 ? space.field(0).block_size() : 1;
 
-    check_petsc(MatCreate(PETSC_COMM_SELF, &stiffness_));
-    check_petsc(MatSetSizes(stiffness_, num_dofs, num_dofs, num_dofs,
+    check_petsc(MatCreate(PETSC_COMM_SELF, &tangent_));
+    check_petsc(MatSetSizes(tangent_, num_dofs, num_dofs, num_dofs,
                             num_dofs));
-    check_petsc(MatSetBlockSize(stiffness_, block_size));
-    check_petsc(MatSetType(stiffness_, MATSEQAIJ));
-    check_petsc(MatSeqAIJSetPreallocationCSR(stiffness_, offsets.data(),
+    check_petsc(MatSetBlockSize(tangent_, block_size));
+    check_petsc(MatSetType(tangent_, MATSEQAIJ));
+    check_petsc(MatSeqAIJSetPreallocationCSR(tangent_, offsets.data(),
                                              columns.data(), nullptr));
 
     // The mass shares the pattern, and both read local matrices by columns,
     // as Eigen stores them, and refuse entries outside the pattern
-    check_petsc(MatDuplicate(stiffness_, MAT_SHARE_NONZERO_PATTERN, &mass_));
+    check_petsc(MatDuplicate(tangent_, MAT_SHARE_NONZERO_PATTERN, &mass_));
 
-    for (Mat matrix : {stiffness_, mass_}) {
+    for (Mat matrix : {tangent_, mass_}) {
         check_petsc(MatSetOption(matrix, MAT_ROW_ORIENTED, PETSC_FALSE));
         check_petsc(MatSetOption(matrix, MAT_NEW_NONZERO_ALLOCATION_ERR,
                                  PETSC_TRUE));
     }
 
-    // The load follows the rows, with their block size
-    check_petsc(MatCreateVecs(stiffness_, nullptr, &load_));
-    check_petsc(VecZeroEntries(load_));
+    // The residual follows the rows, with their block size
+    check_petsc(MatCreateVecs(tangent_, nullptr, &residual_));
+    check_petsc(VecZeroEntries(residual_));
 }
 
 template<typename Basis, std::size_t n>
@@ -667,98 +842,96 @@ Assembler<Basis, n>::~Assembler()
 {
     // A destructor must not throw, so a failure is left to PETSc to report
     static_cast<void>(MatDestroy(&mass_));
-    static_cast<void>(MatDestroy(&stiffness_));
-    static_cast<void>(VecDestroy(&load_));
+    static_cast<void>(MatDestroy(&tangent_));
+    static_cast<void>(VecDestroy(&residual_));
 }
 
 template<typename Basis, std::size_t n>
 template<std::derived_from<Element<Basis, n>> E>
-void Assembler<Basis, n>::assemble_stiffness(
-    const E& element, const QuadratureDomain<Scalar, dim>& quadrature)
+void Assembler<Basis, n>::assemble_tangent(
+    const E& element, const QuadratureDomain<Scalar, dim>& quadrature,
+    const Eigen::MatrixX<Scalar>& source, Vec coefficients)
 {
     // Every cell weighted by one
     const Eigen::VectorX<Scalar> ones =
         Eigen::VectorX<Scalar>::Ones(space_.num_elements());
 
-    assemble_stiffness(element, quadrature, ones);
+    assemble_tangent(element, quadrature, source, ones, coefficients);
 }
 
 template<typename Basis, std::size_t n>
 template<std::derived_from<Element<Basis, n>> E>
-void Assembler<Basis, n>::assemble_stiffness(
+void Assembler<Basis, n>::assemble_tangent(
     const E& element, const QuadratureDomain<Scalar, dim>& quadrature,
-    const Eigen::VectorX<Scalar>& cell_weights)
+    const Eigen::MatrixX<Scalar>& source,
+    const Eigen::VectorX<Scalar>& cell_weights, Vec coefficients)
 {
-    if (cell_weights.size() != space_.num_elements())
-        throw std::invalid_argument("Assembler: "
-                                    "the cell weights must have one value "
-                                    "per element");
+    check_element_data(source, cell_weights, quadrature.num_points(),
+                       space_.num_elements());
+    check_coefficients(coefficients);
 
-    const Eigen::MatrixX<Scalar> none;
-    Eigen::VectorX<Scalar> zero;
+    const Entries entries(coefficients);
+    Eigen::MatrixX<Scalar> sources;
+    Eigen::VectorX<Scalar> cell_coefficients;
     Eigen::MatrixX<Scalar> local;
     std::vector<int> dofs;
 
-    // The tangent at zero coefficients, the stiffness of a linear element
     visit_cells(patch_, space_, element.flags(), quadrature, cell_weights,
-                [&](int cell, int, int, const auto& values,
+                [&](int cell, int first, int count, const auto& values,
                     const auto& weights) {
                     space_.dofs_on_element(cell, dofs);
-                    zero.setZero(std::ssize(dofs));
-                    element.local_tangent(values, weights, none, zero, local);
-                    add_to_matrix(stiffness_, dofs, local);
+                    entries.gather(dofs, cell_coefficients);
+                    sources = source.middleRows(first, count);
+                    element.local_tangent(values, weights, sources,
+                                          cell_coefficients, local);
+                    add_to_matrix(tangent_, dofs, local);
                 });
 
-    finalize();
+    finalize(tangent_);
 }
 
 template<typename Basis, std::size_t n>
 template<std::derived_from<Element<Basis, n>> E>
-void Assembler<Basis, n>::assemble_load(
+void Assembler<Basis, n>::assemble_residual(
     const E& element, const QuadratureDomain<Scalar, dim>& quadrature,
-    const Eigen::MatrixX<Scalar>& source)
+    const Eigen::MatrixX<Scalar>& source, Vec coefficients)
 {
     // Every cell weighted by one
     const Eigen::VectorX<Scalar> ones =
         Eigen::VectorX<Scalar>::Ones(space_.num_elements());
 
-    assemble_load(element, quadrature, source, ones);
+    assemble_residual(element, quadrature, source, ones, coefficients);
 }
 
 template<typename Basis, std::size_t n>
 template<std::derived_from<Element<Basis, n>> E>
-void Assembler<Basis, n>::assemble_load(
+void Assembler<Basis, n>::assemble_residual(
     const E& element, const QuadratureDomain<Scalar, dim>& quadrature,
     const Eigen::MatrixX<Scalar>& source,
-    const Eigen::VectorX<Scalar>& cell_weights)
+    const Eigen::VectorX<Scalar>& cell_weights, Vec coefficients)
 {
-    if (source.rows() != quadrature.num_points())
-        throw std::invalid_argument("Assembler: "
-                                    "the source must have one row per point");
+    check_element_data(source, cell_weights, quadrature.num_points(),
+                       space_.num_elements());
+    check_coefficients(coefficients);
 
-    if (cell_weights.size() != space_.num_elements())
-        throw std::invalid_argument("Assembler: "
-                                    "the cell weights must have one value "
-                                    "per element");
-
+    const Entries entries(coefficients);
     Eigen::MatrixX<Scalar> sources;
-    Eigen::VectorX<Scalar> zero;
+    Eigen::VectorX<Scalar> cell_coefficients;
     Eigen::VectorX<Scalar> local;
     std::vector<int> dofs;
 
-    // The residual at zero coefficients, less the load of a linear element
     visit_cells(patch_, space_, element.flags(), quadrature, cell_weights,
                 [&](int cell, int first, int count, const auto& values,
                     const auto& weights) {
-                    sources = source.middleRows(first, count);
                     space_.dofs_on_element(cell, dofs);
-                    zero.setZero(std::ssize(dofs));
-                    element.local_residual(values, weights, sources, zero,
-                                           local);
-                    add_to_load(dofs, -local);
+                    entries.gather(dofs, cell_coefficients);
+                    sources = source.middleRows(first, count);
+                    element.local_residual(values, weights, sources,
+                                           cell_coefficients, local);
+                    add_to_residual(dofs, local);
                 });
 
-    finalize();
+    finalize(residual_);
 }
 
 template<typename Basis, std::size_t n>
@@ -779,10 +952,7 @@ void Assembler<Basis, n>::assemble_mass(
     const E& element, const QuadratureDomain<Scalar, dim>& quadrature,
     const Eigen::VectorX<Scalar>& cell_weights)
 {
-    if (cell_weights.size() != space_.num_elements())
-        throw std::invalid_argument("Assembler: "
-                                    "the cell weights must have one value "
-                                    "per element");
+    check_cell_weights(cell_weights, space_.num_elements());
 
     Eigen::MatrixX<Scalar> local;
     std::vector<int> dofs;
@@ -795,298 +965,248 @@ void Assembler<Basis, n>::assemble_mass(
                     add_to_matrix(mass_, dofs, local);
                 });
 
-    finalize();
+    finalize(mass_);
 }
 
 template<typename Basis, std::size_t n>
 template<std::derived_from<Condition<Basis, n>> C>
-void Assembler<Basis, n>::assemble_stiffness(
-    const C& condition, const QuadratureBoundary<Scalar, dim>& quadrature)
-{
-    add_condition_stiffness(condition, quadrature, nullptr, 0);
-}
-
-template<typename Basis, std::size_t n>
-template<std::derived_from<Condition<Basis, n>> C>
-void Assembler<Basis, n>::assemble_stiffness(
+void Assembler<Basis, n>::assemble_tangent(
     const C& condition, const QuadratureBoundary<Scalar, dim>& quadrature,
-    const BoundaryProjection<Scalar>& projection, int order)
-    requires (dim == 2)
+    const Eigen::VectorX<Scalar>& data, Vec coefficients)
 {
-    add_condition_stiffness(condition, quadrature, &projection, order);
+    add_condition_tangent(condition, quadrature, nullptr, 0, data,
+                          coefficients);
 }
 
 template<typename Basis, std::size_t n>
 template<std::derived_from<Condition<Basis, n>> C>
-void Assembler<Basis, n>::add_condition_stiffness(
+void Assembler<Basis, n>::assemble_residual(
     const C& condition, const QuadratureBoundary<Scalar, dim>& quadrature,
-    const BoundaryProjection<Scalar>* projection, int order)
+    const Eigen::VectorX<Scalar>& data, Vec coefficients)
 {
-    if (projection != nullptr)
-        check_projection(*projection, order, quadrature.num_points());
+    add_condition_residual(condition, quadrature, nullptr, 0, data,
+                           coefficients);
+}
 
-    Eigen::VectorX<Scalar> nodata;
-    Eigen::VectorX<Scalar> zero;
+template<typename Basis, std::size_t n>
+template<std::derived_from<Condition<Basis, n>> C>
+void Assembler<Basis, n>::assemble_tangent(
+    const C& condition, const QuadratureBoundary<Scalar, dim>& quadrature,
+    const BoundaryProjection<Scalar>& projection, int order,
+    const Eigen::VectorX<Scalar>& data, Vec coefficients) requires (dim == 2)
+{
+    add_condition_tangent(condition, quadrature, &projection, order, data,
+                          coefficients);
+}
+
+template<typename Basis, std::size_t n>
+template<std::derived_from<Condition<Basis, n>> C>
+void Assembler<Basis, n>::assemble_residual(
+    const C& condition, const QuadratureBoundary<Scalar, dim>& quadrature,
+    const BoundaryProjection<Scalar>& projection, int order,
+    const Eigen::VectorX<Scalar>& data, Vec coefficients) requires (dim == 2)
+{
+    add_condition_residual(condition, quadrature, &projection, order, data,
+                           coefficients);
+}
+
+template<typename Basis, std::size_t n>
+template<std::derived_from<Condition<Basis, n>> C>
+void Assembler<Basis, n>::add_condition_tangent(
+    const C& condition, const QuadratureBoundary<Scalar, dim>& quadrature,
+    const BoundaryProjection<Scalar>* projection, int order,
+    const Eigen::VectorX<Scalar>& data, Vec coefficients)
+{
+    check_condition_data(data, projection, order, quadrature.num_points());
+    check_coefficients(coefficients);
+
+    const Entries entries(coefficients);
+    Eigen::VectorX<Scalar> imposed;
+    Eigen::VectorX<Scalar> cell_coefficients;
     Eigen::MatrixX<Scalar> local;
     std::vector<int> dofs;
 
-    // The tangent at zero coefficients, the stiffness of a linear condition
-    visit_boundary_cells(
-        patch_, space_, condition.flags(), quadrature, projection, order,
-        [&](int cell, int, int count, const auto& values,
-            const auto& shifted, const auto& weights, const auto& normals) {
-            space_.dofs_on_element(cell, dofs);
-            nodata.setZero(count);
-            zero.setZero(std::ssize(dofs));
-            condition.local_tangent(values, shifted, weights, normals, nodata,
-                                    zero, local);
-            add_to_matrix(stiffness_, dofs, local);
-        });
-
-    finalize();
-}
-
-template<typename Basis, std::size_t n>
-template<std::derived_from<Condition<Basis, n>> C>
-void Assembler<Basis, n>::assemble_load(
-    const C& condition, const QuadratureBoundary<Scalar, dim>& quadrature,
-    const Eigen::VectorX<Scalar>& data)
-{
-    add_condition_load(condition, quadrature, nullptr, 0, data);
-}
-
-template<typename Basis, std::size_t n>
-template<std::derived_from<Condition<Basis, n>> C>
-void Assembler<Basis, n>::assemble_load(
-    const C& condition, const QuadratureBoundary<Scalar, dim>& quadrature,
-    const BoundaryProjection<Scalar>& projection, int order,
-    const Eigen::VectorX<Scalar>& data) requires (dim == 2)
-{
-    add_condition_load(condition, quadrature, &projection, order, data);
-}
-
-template<typename Basis, std::size_t n>
-template<std::derived_from<Condition<Basis, n>> C>
-void Assembler<Basis, n>::add_condition_load(
-    const C& condition, const QuadratureBoundary<Scalar, dim>& quadrature,
-    const BoundaryProjection<Scalar>* projection, int order,
-    const Eigen::VectorX<Scalar>& data)
-{
-    if (data.size() != quadrature.num_points())
-        throw std::invalid_argument("Assembler: "
-                                    "the data must have one value per point");
-
-    if (projection != nullptr)
-        check_projection(*projection, order, quadrature.num_points());
-
-    Eigen::VectorX<Scalar> imposed;
-    Eigen::VectorX<Scalar> zero;
-    Eigen::VectorX<Scalar> local;
-    std::vector<int> dofs;
-
-    // The residual at zero coefficients, less the load of a linear condition
     visit_boundary_cells(
         patch_, space_, condition.flags(), quadrature, projection, order,
         [&](int cell, int first, int count, const auto& values,
             const auto& shifted, const auto& weights, const auto& normals) {
-            imposed = data.segment(first, count);
             space_.dofs_on_element(cell, dofs);
-            zero.setZero(std::ssize(dofs));
-            condition.local_residual(values, shifted, weights, normals,
-                                     imposed, zero, local);
-            add_to_load(dofs, -local);
+            entries.gather(dofs, cell_coefficients);
+            imposed = data.segment(first, count);
+            condition.local_tangent(values, shifted, weights, normals,
+                                    imposed, cell_coefficients, local);
+            add_to_matrix(tangent_, dofs, local);
         });
 
-    finalize();
+    finalize(tangent_);
 }
 
 template<typename Basis, std::size_t n>
-void Assembler<Basis, n>::assemble_stiffness(
-    const SkeletonGhostPenalty<Basis, n>& penalty,
-    const QuadratureSkeleton<Scalar, dim>& quadrature) requires (dim == 2)
+template<std::derived_from<Condition<Basis, n>> C>
+void Assembler<Basis, n>::add_condition_residual(
+    const C& condition, const QuadratureBoundary<Scalar, dim>& quadrature,
+    const BoundaryProjection<Scalar>* projection, int order,
+    const Eigen::VectorX<Scalar>& data, Vec coefficients)
 {
-    // Without the faces coupled, the pattern would grow with each new face
-    if (!couple_faces_)
-        throw std::invalid_argument("Assembler: "
-                                    "a ghost penalty needs the faces coupled");
+    check_condition_data(data, projection, order, quadrature.num_points());
+    check_coefficients(coefficients);
 
-    // Only on an affine map do the jumps of the derivatives across the knot
-    // lines give those of the physical normal derivatives
-    if (!patch_.is_affine())
-        throw std::invalid_argument("Assembler: "
-                                    "a ghost penalty needs an affine patch");
+    const Entries entries(coefficients);
+    Eigen::VectorX<Scalar> imposed;
+    Eigen::VectorX<Scalar> cell_coefficients;
+    Eigen::VectorX<Scalar> local;
+    std::vector<int> dofs;
 
-    // The penalty extends one field, whose basis gives the degrees
-    const std::size_t field = penalty.field(space_.num_fields());
+    visit_boundary_cells(
+        patch_, space_, condition.flags(), quadrature, projection, order,
+        [&](int cell, int first, int count, const auto& values,
+            const auto& shifted, const auto& weights, const auto& normals) {
+            space_.dofs_on_element(cell, dofs);
+            entries.gather(dofs, cell_coefficients);
+            imposed = data.segment(first, count);
+            condition.local_residual(values, shifted, weights, normals,
+                                     imposed, cell_coefficients, local);
+            add_to_residual(dofs, local);
+        });
 
-    if (field >= space_.num_fields())
-        throw std::invalid_argument("Assembler: "
-                                    "a ghost penalty must act on a field of "
-                                    "the space");
+    finalize(residual_);
+}
 
-    const Basis& basis = space_.field(field).basis();
+template<typename Basis, std::size_t n>
+void Assembler<Basis, n>::assemble_tangent(
+    const SkeletonGhostPenalty<Basis, n>& penalty,
+    const QuadratureSkeleton<Scalar, dim>& quadrature, Vec coefficients)
+    requires (dim == 2)
+{
+    const Basis& basis = ghost_basis(couple_faces_, patch_, space_, penalty);
+    check_coefficients(coefficients);
 
-    // A repeated knot of the field would let lower derivatives of its
-    // functions jump unpenalized
-    for (std::size_t direction = 0; direction < dim; ++direction) {
-        if (!simple_interior_knots(basis.grid().knots(direction)))
-            throw std::invalid_argument("Assembler: "
-                                        "a ghost penalty needs simple "
-                                        "interior knots");
-    }
-
-    Eigen::VectorX<Scalar> zero;
+    const Entries entries(coefficients);
+    Eigen::VectorX<Scalar> face_coefficients;
     Eigen::MatrixX<Scalar> local;
     Eigen::MatrixX<Scalar> folded;
     std::vector<int> dofs;
     std::vector<int> positions;
 
-    // The tangent at zero coefficients, the same at any
     visit_ghost_faces(
         patch_, space_, penalty.flags(), quadrature, basis,
         [&](int cell_before, int cell_after, const auto& before,
             const auto& after, const auto& weights, int degree) {
             face_dofs(cell_before, cell_after, dofs, positions);
-            zero.setZero(std::ssize(positions));
-            penalty.local_tangent(before, after, weights, degree, zero, local);
+            entries.gather(dofs, positions, face_coefficients);
+            penalty.local_tangent(before, after, weights, degree,
+                                  face_coefficients, local);
 
             fold_face(local, positions, std::ssize(dofs), folded);
-            add_to_matrix(stiffness_, dofs, folded);
+            add_to_matrix(tangent_, dofs, folded);
         });
 
-    finalize();
+    finalize(tangent_);
 }
 
 template<typename Basis, std::size_t n>
-template<std::derived_from<SkeletonCondition<Basis, n>> C>
-void Assembler<Basis, n>::assemble_stiffness(
-    const C& condition, const QuadratureSkeleton<Scalar, dim>& quadrature,
-    const Eigen::VectorX<Scalar>& cell_weights) requires (dim == 2)
+void Assembler<Basis, n>::assemble_residual(
+    const SkeletonGhostPenalty<Basis, n>& penalty,
+    const QuadratureSkeleton<Scalar, dim>& quadrature, Vec coefficients)
+    requires (dim == 2)
 {
-    add_skeleton_condition_stiffness(condition, quadrature, nullptr, 0,
-                                     cell_weights);
-}
+    const Basis& basis = ghost_basis(couple_faces_, patch_, space_, penalty);
+    check_coefficients(coefficients);
 
-template<typename Basis, std::size_t n>
-template<std::derived_from<SkeletonCondition<Basis, n>> C>
-void Assembler<Basis, n>::assemble_stiffness(
-    const C& condition, const QuadratureSkeleton<Scalar, dim>& quadrature,
-    const BoundaryProjection<Scalar>& projection, int order,
-    const Eigen::VectorX<Scalar>& cell_weights) requires (dim == 2)
-{
-    add_skeleton_condition_stiffness(condition, quadrature, &projection, order,
-                                     cell_weights);
-}
-
-template<typename Basis, std::size_t n>
-template<std::derived_from<SkeletonCondition<Basis, n>> C>
-void Assembler<Basis, n>::add_skeleton_condition_stiffness(
-    const C& condition, const QuadratureSkeleton<Scalar, dim>& quadrature,
-    const BoundaryProjection<Scalar>* projection, int order,
-    const Eigen::VectorX<Scalar>& cell_weights) requires (dim == 2)
-{
-    // Without the faces coupled, the pattern would grow with each new face
-    if (!couple_faces_)
-        throw std::invalid_argument("Assembler: "
-                                    "a skeleton condition needs the faces "
-                                    "coupled");
-
-    if (cell_weights.size() != space_.num_elements())
-        throw std::invalid_argument("Assembler: "
-                                    "the cell weights must have one value "
-                                    "per element");
-
-    if (projection != nullptr)
-        check_projection(*projection, order, quadrature.num_points());
-
-    Eigen::VectorX<Scalar> nodata;
-    Eigen::VectorX<Scalar> zero;
-    Eigen::MatrixX<Scalar> local;
-    Eigen::MatrixX<Scalar> folded;
-    std::vector<int> dofs;
-    std::vector<int> positions;
-
-    // The tangent at zero coefficients, the stiffness of a linear condition,
-    // over the rows of both cells
-    visit_jump_faces(
-        patch_, space_, condition.flags(), quadrature, projection, order,
-        cell_weights,
-        [&](int cell_before, int cell_after, int, int count,
-            const auto& before, const auto& after, const auto& shifted_before,
-            const auto& shifted_after, const auto& side_weights,
-            const auto& weights, const auto& normals) {
-            face_dofs(cell_before, cell_after, dofs, positions);
-            nodata.setZero(count);
-            zero.setZero(std::ssize(positions));
-            condition.local_tangent(before, after, shifted_before,
-                                    shifted_after, side_weights, weights,
-                                    normals, nodata, zero, local);
-
-            fold_face(local, positions, std::ssize(dofs), folded);
-            add_to_matrix(stiffness_, dofs, folded);
-        });
-
-    finalize();
-}
-
-template<typename Basis, std::size_t n>
-template<std::derived_from<SkeletonCondition<Basis, n>> C>
-void Assembler<Basis, n>::assemble_load(
-    const C& condition, const QuadratureSkeleton<Scalar, dim>& quadrature,
-    const Eigen::VectorX<Scalar>& data,
-    const Eigen::VectorX<Scalar>& cell_weights) requires (dim == 2)
-{
-    add_skeleton_condition_load(condition, quadrature, nullptr, 0, data,
-                                cell_weights);
-}
-
-template<typename Basis, std::size_t n>
-template<std::derived_from<SkeletonCondition<Basis, n>> C>
-void Assembler<Basis, n>::assemble_load(
-    const C& condition, const QuadratureSkeleton<Scalar, dim>& quadrature,
-    const BoundaryProjection<Scalar>& projection, int order,
-    const Eigen::VectorX<Scalar>& data,
-    const Eigen::VectorX<Scalar>& cell_weights) requires (dim == 2)
-{
-    add_skeleton_condition_load(condition, quadrature, &projection, order, data,
-                                cell_weights);
-}
-
-template<typename Basis, std::size_t n>
-template<std::derived_from<SkeletonCondition<Basis, n>> C>
-void Assembler<Basis, n>::add_skeleton_condition_load(
-    const C& condition, const QuadratureSkeleton<Scalar, dim>& quadrature,
-    const BoundaryProjection<Scalar>* projection, int order,
-    const Eigen::VectorX<Scalar>& data,
-    const Eigen::VectorX<Scalar>& cell_weights) requires (dim == 2)
-{
-    if (data.size() != quadrature.num_points())
-        throw std::invalid_argument("Assembler: "
-                                    "the data must have one value per point");
-
-    // Without the faces coupled, the pattern would grow with each new face
-    if (!couple_faces_)
-        throw std::invalid_argument("Assembler: "
-                                    "a skeleton condition needs the faces "
-                                    "coupled");
-
-    if (cell_weights.size() != space_.num_elements())
-        throw std::invalid_argument("Assembler: "
-                                    "the cell weights must have one value "
-                                    "per element");
-
-    if (projection != nullptr)
-        check_projection(*projection, order, quadrature.num_points());
-
-    Eigen::VectorX<Scalar> imposed;
-    Eigen::VectorX<Scalar> zero;
+    const Entries entries(coefficients);
+    Eigen::VectorX<Scalar> face_coefficients;
     Eigen::VectorX<Scalar> local;
     Eigen::VectorX<Scalar> folded;
     std::vector<int> dofs;
     std::vector<int> positions;
 
-    // The residual at zero coefficients, less the load of a linear
-    // condition, over the rows of both cells
+    visit_ghost_faces(
+        patch_, space_, penalty.flags(), quadrature, basis,
+        [&](int cell_before, int cell_after, const auto& before,
+            const auto& after, const auto& weights, int degree) {
+            face_dofs(cell_before, cell_after, dofs, positions);
+            entries.gather(dofs, positions, face_coefficients);
+            penalty.local_residual(before, after, weights, degree,
+                                   face_coefficients, local);
+
+            fold_face(local, positions, std::ssize(dofs), folded);
+            add_to_residual(dofs, folded);
+        });
+
+    finalize(residual_);
+}
+
+template<typename Basis, std::size_t n>
+template<std::derived_from<SkeletonCondition<Basis, n>> C>
+void Assembler<Basis, n>::assemble_tangent(
+    const C& condition, const QuadratureSkeleton<Scalar, dim>& quadrature,
+    const Eigen::VectorX<Scalar>& data,
+    const Eigen::VectorX<Scalar>& cell_weights, Vec coefficients)
+    requires (dim == 2)
+{
+    add_skeleton_condition_tangent(condition, quadrature, nullptr, 0, data,
+                                   cell_weights, coefficients);
+}
+
+template<typename Basis, std::size_t n>
+template<std::derived_from<SkeletonCondition<Basis, n>> C>
+void Assembler<Basis, n>::assemble_residual(
+    const C& condition, const QuadratureSkeleton<Scalar, dim>& quadrature,
+    const Eigen::VectorX<Scalar>& data,
+    const Eigen::VectorX<Scalar>& cell_weights, Vec coefficients)
+    requires (dim == 2)
+{
+    add_skeleton_condition_residual(condition, quadrature, nullptr, 0, data,
+                                    cell_weights, coefficients);
+}
+
+template<typename Basis, std::size_t n>
+template<std::derived_from<SkeletonCondition<Basis, n>> C>
+void Assembler<Basis, n>::assemble_tangent(
+    const C& condition, const QuadratureSkeleton<Scalar, dim>& quadrature,
+    const BoundaryProjection<Scalar>& projection, int order,
+    const Eigen::VectorX<Scalar>& data,
+    const Eigen::VectorX<Scalar>& cell_weights, Vec coefficients)
+    requires (dim == 2)
+{
+    add_skeleton_condition_tangent(condition, quadrature, &projection, order,
+                                   data, cell_weights, coefficients);
+}
+
+template<typename Basis, std::size_t n>
+template<std::derived_from<SkeletonCondition<Basis, n>> C>
+void Assembler<Basis, n>::assemble_residual(
+    const C& condition, const QuadratureSkeleton<Scalar, dim>& quadrature,
+    const BoundaryProjection<Scalar>& projection, int order,
+    const Eigen::VectorX<Scalar>& data,
+    const Eigen::VectorX<Scalar>& cell_weights, Vec coefficients)
+    requires (dim == 2)
+{
+    add_skeleton_condition_residual(condition, quadrature, &projection, order,
+                                    data, cell_weights, coefficients);
+}
+
+template<typename Basis, std::size_t n>
+template<std::derived_from<SkeletonCondition<Basis, n>> C>
+void Assembler<Basis, n>::add_skeleton_condition_tangent(
+    const C& condition, const QuadratureSkeleton<Scalar, dim>& quadrature,
+    const BoundaryProjection<Scalar>* projection, int order,
+    const Eigen::VectorX<Scalar>& data,
+    const Eigen::VectorX<Scalar>& cell_weights, Vec coefficients)
+    requires (dim == 2)
+{
+    check_skeleton_data(couple_faces_, data, projection, order, cell_weights,
+                        quadrature.num_points(), space_.num_elements());
+    check_coefficients(coefficients);
+
+    const Entries entries(coefficients);
+    Eigen::VectorX<Scalar> imposed;
+    Eigen::VectorX<Scalar> face_coefficients;
+    Eigen::MatrixX<Scalar> local;
+    Eigen::MatrixX<Scalar> folded;
+    std::vector<int> dofs;
+    std::vector<int> positions;
+
     visit_jump_faces(
         patch_, space_, condition.flags(), quadrature, projection, order,
         cell_weights,
@@ -1094,18 +1214,74 @@ void Assembler<Basis, n>::add_skeleton_condition_load(
             const auto& before, const auto& after, const auto& shifted_before,
             const auto& shifted_after, const auto& side_weights,
             const auto& weights, const auto& normals) {
-            imposed = data.segment(first, count);
             face_dofs(cell_before, cell_after, dofs, positions);
-            zero.setZero(std::ssize(positions));
-            condition.local_residual(before, after, shifted_before,
-                                     shifted_after, side_weights, weights,
-                                     normals, imposed, zero, local);
+            entries.gather(dofs, positions, face_coefficients);
+            imposed = data.segment(first, count);
+            condition.local_tangent(before, after, shifted_before,
+                                    shifted_after, side_weights, weights,
+                                    normals, imposed, face_coefficients,
+                                    local);
 
             fold_face(local, positions, std::ssize(dofs), folded);
-            add_to_load(dofs, -folded);
+            add_to_matrix(tangent_, dofs, folded);
         });
 
-    finalize();
+    finalize(tangent_);
+}
+
+template<typename Basis, std::size_t n>
+template<std::derived_from<SkeletonCondition<Basis, n>> C>
+void Assembler<Basis, n>::add_skeleton_condition_residual(
+    const C& condition, const QuadratureSkeleton<Scalar, dim>& quadrature,
+    const BoundaryProjection<Scalar>* projection, int order,
+    const Eigen::VectorX<Scalar>& data,
+    const Eigen::VectorX<Scalar>& cell_weights, Vec coefficients)
+    requires (dim == 2)
+{
+    check_skeleton_data(couple_faces_, data, projection, order, cell_weights,
+                        quadrature.num_points(), space_.num_elements());
+    check_coefficients(coefficients);
+
+    const Entries entries(coefficients);
+    Eigen::VectorX<Scalar> imposed;
+    Eigen::VectorX<Scalar> face_coefficients;
+    Eigen::VectorX<Scalar> local;
+    Eigen::VectorX<Scalar> folded;
+    std::vector<int> dofs;
+    std::vector<int> positions;
+
+    visit_jump_faces(
+        patch_, space_, condition.flags(), quadrature, projection, order,
+        cell_weights,
+        [&](int cell_before, int cell_after, int first, int count,
+            const auto& before, const auto& after, const auto& shifted_before,
+            const auto& shifted_after, const auto& side_weights,
+            const auto& weights, const auto& normals) {
+            face_dofs(cell_before, cell_after, dofs, positions);
+            entries.gather(dofs, positions, face_coefficients);
+            imposed = data.segment(first, count);
+            condition.local_residual(before, after, shifted_before,
+                                     shifted_after, side_weights, weights,
+                                     normals, imposed, face_coefficients,
+                                     local);
+
+            fold_face(local, positions, std::ssize(dofs), folded);
+            add_to_residual(dofs, folded);
+        });
+
+    finalize(residual_);
+}
+
+template<typename Basis, std::size_t n>
+void Assembler<Basis, n>::check_coefficients(Vec coefficients) const
+{
+    PetscInt size = 0;
+    check_petsc(VecGetSize(coefficients, &size));
+
+    if (size != space_.num_dofs())
+        throw std::invalid_argument("Assembler: "
+                                    "the coefficients must have one entry "
+                                    "per degree of freedom");
 }
 
 template<typename Basis, std::size_t n>
@@ -1128,33 +1304,35 @@ void Assembler<Basis, n>::add_to_matrix(Mat matrix,
 }
 
 template<typename Basis, std::size_t n>
-void Assembler<Basis, n>::add_to_load(std::span<const int> dofs,
-                                      const Eigen::VectorX<Scalar>& local)
+void Assembler<Basis, n>::add_to_residual(std::span<const int> dofs,
+                                          const Eigen::VectorX<Scalar>& local)
 {
     // The k-th degree of freedom pairs with row k
     const PetscInt count = static_cast<PetscInt>(dofs.size());
 
     // PETSc reads an entry for every degree of freedom, past the end of a
-    // local load of another block size
+    // local residual of another block size
     if (local.size() != count)
         throw std::invalid_argument("Assembler: "
-                                    "the local load must match the degrees "
-                                    "of freedom of the space");
+                                    "the local residual must match the "
+                                    "degrees of freedom of the space");
 
-    check_petsc(VecSetValues(load_, count, dofs.data(), local.data(),
+    check_petsc(VecSetValues(residual_, count, dofs.data(), local.data(),
                              ADD_VALUES));
 }
 
 template<typename Basis, std::size_t n>
-void Assembler<Basis, n>::finalize()
+void Assembler<Basis, n>::finalize(Mat matrix)
 {
-    for (Mat matrix : {stiffness_, mass_}) {
-        check_petsc(MatAssemblyBegin(matrix, MAT_FINAL_ASSEMBLY));
-        check_petsc(MatAssemblyEnd(matrix, MAT_FINAL_ASSEMBLY));
-    }
+    check_petsc(MatAssemblyBegin(matrix, MAT_FINAL_ASSEMBLY));
+    check_petsc(MatAssemblyEnd(matrix, MAT_FINAL_ASSEMBLY));
+}
 
-    check_petsc(VecAssemblyBegin(load_));
-    check_petsc(VecAssemblyEnd(load_));
+template<typename Basis, std::size_t n>
+void Assembler<Basis, n>::finalize(Vec vector)
+{
+    check_petsc(VecAssemblyBegin(vector));
+    check_petsc(VecAssemblyEnd(vector));
 }
 
 template<typename Basis, std::size_t n>
@@ -1192,9 +1370,9 @@ template<typename Basis, std::size_t n>
 void Assembler<Basis, n>::clear()
 {
     // Only the stored values, so that the pattern stays
-    check_petsc(MatZeroEntries(stiffness_));
+    check_petsc(MatZeroEntries(tangent_));
     check_petsc(MatZeroEntries(mass_));
-    check_petsc(VecZeroEntries(load_));
+    check_petsc(VecZeroEntries(residual_));
 }
 
 template class Assembler<TensorBSpline<double, 2>, 2>;
@@ -1202,61 +1380,65 @@ template class Assembler<TensorBSpline<double, 3>, 3>;
 template class Assembler<TensorNURBS<double, 2>, 2>;
 template class Assembler<TensorNURBS<double, 3>, 3>;
 
-template void Assembler<TensorBSpline<double, 2>, 2>::assemble_stiffness(
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
     const PoissonElement<TensorBSpline<double, 2>, 2>&,
-    const QuadratureDomain<double, 2>&);
-template void Assembler<TensorBSpline<double, 3>, 3>::assemble_stiffness(
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&, Vec);
+template void Assembler<TensorBSpline<double, 3>, 3>::assemble_tangent(
     const PoissonElement<TensorBSpline<double, 3>, 3>&,
-    const QuadratureDomain<double, 3>&);
-template void Assembler<TensorNURBS<double, 2>, 2>::assemble_stiffness(
+    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_tangent(
     const PoissonElement<TensorNURBS<double, 2>, 2>&,
-    const QuadratureDomain<double, 2>&);
-template void Assembler<TensorNURBS<double, 3>, 3>::assemble_stiffness(
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 3>, 3>::assemble_tangent(
     const PoissonElement<TensorNURBS<double, 3>, 3>&,
-    const QuadratureDomain<double, 3>&);
+    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&, Vec);
 
-template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
-    const PoissonElement<TensorBSpline<double, 2>, 2>&,
-    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&);
-template void Assembler<TensorBSpline<double, 3>, 3>::assemble_load(
-    const PoissonElement<TensorBSpline<double, 3>, 3>&,
-    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&);
-template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
-    const PoissonElement<TensorNURBS<double, 2>, 2>&,
-    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&);
-template void Assembler<TensorNURBS<double, 3>, 3>::assemble_load(
-    const PoissonElement<TensorNURBS<double, 3>, 3>&,
-    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&);
-
-template void Assembler<TensorBSpline<double, 2>, 2>::assemble_stiffness(
-    const PoissonElement<TensorBSpline<double, 2>, 2>&,
-    const QuadratureDomain<double, 2>&, const Eigen::VectorX<double>&);
-template void Assembler<TensorBSpline<double, 3>, 3>::assemble_stiffness(
-    const PoissonElement<TensorBSpline<double, 3>, 3>&,
-    const QuadratureDomain<double, 3>&, const Eigen::VectorX<double>&);
-template void Assembler<TensorNURBS<double, 2>, 2>::assemble_stiffness(
-    const PoissonElement<TensorNURBS<double, 2>, 2>&,
-    const QuadratureDomain<double, 2>&, const Eigen::VectorX<double>&);
-template void Assembler<TensorNURBS<double, 3>, 3>::assemble_stiffness(
-    const PoissonElement<TensorNURBS<double, 3>, 3>&,
-    const QuadratureDomain<double, 3>&, const Eigen::VectorX<double>&);
-
-template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
     const PoissonElement<TensorBSpline<double, 2>, 2>&,
     const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&,
-    const Eigen::VectorX<double>&);
-template void Assembler<TensorBSpline<double, 3>, 3>::assemble_load(
+    const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorBSpline<double, 3>, 3>::assemble_tangent(
     const PoissonElement<TensorBSpline<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&,
-    const Eigen::VectorX<double>&);
-template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
+    const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_tangent(
     const PoissonElement<TensorNURBS<double, 2>, 2>&,
     const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&,
-    const Eigen::VectorX<double>&);
-template void Assembler<TensorNURBS<double, 3>, 3>::assemble_load(
+    const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 3>, 3>::assemble_tangent(
     const PoissonElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&,
-    const Eigen::VectorX<double>&);
+    const Eigen::VectorX<double>&, Vec);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_residual(
+    const PoissonElement<TensorBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&, Vec);
+template void Assembler<TensorBSpline<double, 3>, 3>::assemble_residual(
+    const PoissonElement<TensorBSpline<double, 3>, 3>&,
+    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_residual(
+    const PoissonElement<TensorNURBS<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 3>, 3>::assemble_residual(
+    const PoissonElement<TensorNURBS<double, 3>, 3>&,
+    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&, Vec);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_residual(
+    const PoissonElement<TensorBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&,
+    const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorBSpline<double, 3>, 3>::assemble_residual(
+    const PoissonElement<TensorBSpline<double, 3>, 3>&,
+    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&,
+    const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_residual(
+    const PoissonElement<TensorNURBS<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&,
+    const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 3>, 3>::assemble_residual(
+    const PoissonElement<TensorNURBS<double, 3>, 3>&,
+    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&,
+    const Eigen::VectorX<double>&, Vec);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_mass(
     const PoissonElement<TensorBSpline<double, 2>, 2>&,
@@ -1284,61 +1466,65 @@ template void Assembler<TensorNURBS<double, 3>, 3>::assemble_mass(
     const PoissonElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::VectorX<double>&);
 
-template void Assembler<TensorBSpline<double, 2>, 2>::assemble_stiffness(
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
     const StokesElement<TensorBSpline<double, 2>, 2>&,
-    const QuadratureDomain<double, 2>&);
-template void Assembler<TensorBSpline<double, 3>, 3>::assemble_stiffness(
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&, Vec);
+template void Assembler<TensorBSpline<double, 3>, 3>::assemble_tangent(
     const StokesElement<TensorBSpline<double, 3>, 3>&,
-    const QuadratureDomain<double, 3>&);
-template void Assembler<TensorNURBS<double, 2>, 2>::assemble_stiffness(
+    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_tangent(
     const StokesElement<TensorNURBS<double, 2>, 2>&,
-    const QuadratureDomain<double, 2>&);
-template void Assembler<TensorNURBS<double, 3>, 3>::assemble_stiffness(
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 3>, 3>::assemble_tangent(
     const StokesElement<TensorNURBS<double, 3>, 3>&,
-    const QuadratureDomain<double, 3>&);
+    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&, Vec);
 
-template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
-    const StokesElement<TensorBSpline<double, 2>, 2>&,
-    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&);
-template void Assembler<TensorBSpline<double, 3>, 3>::assemble_load(
-    const StokesElement<TensorBSpline<double, 3>, 3>&,
-    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&);
-template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
-    const StokesElement<TensorNURBS<double, 2>, 2>&,
-    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&);
-template void Assembler<TensorNURBS<double, 3>, 3>::assemble_load(
-    const StokesElement<TensorNURBS<double, 3>, 3>&,
-    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&);
-
-template void Assembler<TensorBSpline<double, 2>, 2>::assemble_stiffness(
-    const StokesElement<TensorBSpline<double, 2>, 2>&,
-    const QuadratureDomain<double, 2>&, const Eigen::VectorX<double>&);
-template void Assembler<TensorBSpline<double, 3>, 3>::assemble_stiffness(
-    const StokesElement<TensorBSpline<double, 3>, 3>&,
-    const QuadratureDomain<double, 3>&, const Eigen::VectorX<double>&);
-template void Assembler<TensorNURBS<double, 2>, 2>::assemble_stiffness(
-    const StokesElement<TensorNURBS<double, 2>, 2>&,
-    const QuadratureDomain<double, 2>&, const Eigen::VectorX<double>&);
-template void Assembler<TensorNURBS<double, 3>, 3>::assemble_stiffness(
-    const StokesElement<TensorNURBS<double, 3>, 3>&,
-    const QuadratureDomain<double, 3>&, const Eigen::VectorX<double>&);
-
-template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
     const StokesElement<TensorBSpline<double, 2>, 2>&,
     const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&,
-    const Eigen::VectorX<double>&);
-template void Assembler<TensorBSpline<double, 3>, 3>::assemble_load(
+    const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorBSpline<double, 3>, 3>::assemble_tangent(
     const StokesElement<TensorBSpline<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&,
-    const Eigen::VectorX<double>&);
-template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
+    const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_tangent(
     const StokesElement<TensorNURBS<double, 2>, 2>&,
     const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&,
-    const Eigen::VectorX<double>&);
-template void Assembler<TensorNURBS<double, 3>, 3>::assemble_load(
+    const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 3>, 3>::assemble_tangent(
     const StokesElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&,
-    const Eigen::VectorX<double>&);
+    const Eigen::VectorX<double>&, Vec);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_residual(
+    const StokesElement<TensorBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&, Vec);
+template void Assembler<TensorBSpline<double, 3>, 3>::assemble_residual(
+    const StokesElement<TensorBSpline<double, 3>, 3>&,
+    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_residual(
+    const StokesElement<TensorNURBS<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 3>, 3>::assemble_residual(
+    const StokesElement<TensorNURBS<double, 3>, 3>&,
+    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&, Vec);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_residual(
+    const StokesElement<TensorBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&,
+    const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorBSpline<double, 3>, 3>::assemble_residual(
+    const StokesElement<TensorBSpline<double, 3>, 3>&,
+    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&,
+    const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_residual(
+    const StokesElement<TensorNURBS<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&,
+    const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 3>, 3>::assemble_residual(
+    const StokesElement<TensorNURBS<double, 3>, 3>&,
+    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&,
+    const Eigen::VectorX<double>&, Vec);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_mass(
     const StokesElement<TensorBSpline<double, 2>, 2>&,
@@ -1366,61 +1552,65 @@ template void Assembler<TensorNURBS<double, 3>, 3>::assemble_mass(
     const StokesElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::VectorX<double>&);
 
-template void Assembler<TensorBSpline<double, 2>, 2>::assemble_stiffness(
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
     const StokesStabilizedElement<TensorBSpline<double, 2>, 2>&,
-    const QuadratureDomain<double, 2>&);
-template void Assembler<TensorBSpline<double, 3>, 3>::assemble_stiffness(
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&, Vec);
+template void Assembler<TensorBSpline<double, 3>, 3>::assemble_tangent(
     const StokesStabilizedElement<TensorBSpline<double, 3>, 3>&,
-    const QuadratureDomain<double, 3>&);
-template void Assembler<TensorNURBS<double, 2>, 2>::assemble_stiffness(
+    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_tangent(
     const StokesStabilizedElement<TensorNURBS<double, 2>, 2>&,
-    const QuadratureDomain<double, 2>&);
-template void Assembler<TensorNURBS<double, 3>, 3>::assemble_stiffness(
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 3>, 3>::assemble_tangent(
     const StokesStabilizedElement<TensorNURBS<double, 3>, 3>&,
-    const QuadratureDomain<double, 3>&);
+    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&, Vec);
 
-template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
-    const StokesStabilizedElement<TensorBSpline<double, 2>, 2>&,
-    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&);
-template void Assembler<TensorBSpline<double, 3>, 3>::assemble_load(
-    const StokesStabilizedElement<TensorBSpline<double, 3>, 3>&,
-    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&);
-template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
-    const StokesStabilizedElement<TensorNURBS<double, 2>, 2>&,
-    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&);
-template void Assembler<TensorNURBS<double, 3>, 3>::assemble_load(
-    const StokesStabilizedElement<TensorNURBS<double, 3>, 3>&,
-    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&);
-
-template void Assembler<TensorBSpline<double, 2>, 2>::assemble_stiffness(
-    const StokesStabilizedElement<TensorBSpline<double, 2>, 2>&,
-    const QuadratureDomain<double, 2>&, const Eigen::VectorX<double>&);
-template void Assembler<TensorBSpline<double, 3>, 3>::assemble_stiffness(
-    const StokesStabilizedElement<TensorBSpline<double, 3>, 3>&,
-    const QuadratureDomain<double, 3>&, const Eigen::VectorX<double>&);
-template void Assembler<TensorNURBS<double, 2>, 2>::assemble_stiffness(
-    const StokesStabilizedElement<TensorNURBS<double, 2>, 2>&,
-    const QuadratureDomain<double, 2>&, const Eigen::VectorX<double>&);
-template void Assembler<TensorNURBS<double, 3>, 3>::assemble_stiffness(
-    const StokesStabilizedElement<TensorNURBS<double, 3>, 3>&,
-    const QuadratureDomain<double, 3>&, const Eigen::VectorX<double>&);
-
-template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
     const StokesStabilizedElement<TensorBSpline<double, 2>, 2>&,
     const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&,
-    const Eigen::VectorX<double>&);
-template void Assembler<TensorBSpline<double, 3>, 3>::assemble_load(
+    const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorBSpline<double, 3>, 3>::assemble_tangent(
     const StokesStabilizedElement<TensorBSpline<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&,
-    const Eigen::VectorX<double>&);
-template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
+    const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_tangent(
     const StokesStabilizedElement<TensorNURBS<double, 2>, 2>&,
     const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&,
-    const Eigen::VectorX<double>&);
-template void Assembler<TensorNURBS<double, 3>, 3>::assemble_load(
+    const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 3>, 3>::assemble_tangent(
     const StokesStabilizedElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&,
-    const Eigen::VectorX<double>&);
+    const Eigen::VectorX<double>&, Vec);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_residual(
+    const StokesStabilizedElement<TensorBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&, Vec);
+template void Assembler<TensorBSpline<double, 3>, 3>::assemble_residual(
+    const StokesStabilizedElement<TensorBSpline<double, 3>, 3>&,
+    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_residual(
+    const StokesStabilizedElement<TensorNURBS<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 3>, 3>::assemble_residual(
+    const StokesStabilizedElement<TensorNURBS<double, 3>, 3>&,
+    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&, Vec);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_residual(
+    const StokesStabilizedElement<TensorBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&,
+    const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorBSpline<double, 3>, 3>::assemble_residual(
+    const StokesStabilizedElement<TensorBSpline<double, 3>, 3>&,
+    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&,
+    const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_residual(
+    const StokesStabilizedElement<TensorNURBS<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&,
+    const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 3>, 3>::assemble_residual(
+    const StokesStabilizedElement<TensorNURBS<double, 3>, 3>&,
+    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&,
+    const Eigen::VectorX<double>&, Vec);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_mass(
     const StokesStabilizedElement<TensorBSpline<double, 2>, 2>&,
@@ -1448,124 +1638,118 @@ template void Assembler<TensorNURBS<double, 3>, 3>::assemble_mass(
     const StokesStabilizedElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::VectorX<double>&);
 
-template void Assembler<TensorBSpline<double, 2>, 2>::assemble_stiffness(
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
     const PenaltyCondition<TensorBSpline<double, 2>, 2>&,
-    const QuadratureBoundary<double, 2>&);
-template void Assembler<TensorNURBS<double, 2>, 2>::assemble_stiffness(
+    const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_tangent(
     const PenaltyCondition<TensorNURBS<double, 2>, 2>&,
-    const QuadratureBoundary<double, 2>&);
+    const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&, Vec);
 
-template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
     const PenaltyCondition<TensorBSpline<double, 2>, 2>&,
-    const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&);
-template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
+    const QuadratureBoundary<double, 2>&, const BoundaryProjection<double>&,
+    int, const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_tangent(
     const PenaltyCondition<TensorNURBS<double, 2>, 2>&,
-    const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&);
+    const QuadratureBoundary<double, 2>&, const BoundaryProjection<double>&,
+    int, const Eigen::VectorX<double>&, Vec);
 
-template void Assembler<TensorBSpline<double, 2>, 2>::assemble_stiffness(
-    const NeumannCondition<TensorBSpline<double, 2>, 2>&,
-    const QuadratureBoundary<double, 2>&);
-template void Assembler<TensorNURBS<double, 2>, 2>::assemble_stiffness(
-    const NeumannCondition<TensorNURBS<double, 2>, 2>&,
-    const QuadratureBoundary<double, 2>&);
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_residual(
+    const PenaltyCondition<TensorBSpline<double, 2>, 2>&,
+    const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_residual(
+    const PenaltyCondition<TensorNURBS<double, 2>, 2>&,
+    const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&, Vec);
 
-template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
-    const NeumannCondition<TensorBSpline<double, 2>, 2>&,
-    const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&);
-template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
-    const NeumannCondition<TensorNURBS<double, 2>, 2>&,
-    const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&);
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_residual(
+    const PenaltyCondition<TensorBSpline<double, 2>, 2>&,
+    const QuadratureBoundary<double, 2>&, const BoundaryProjection<double>&,
+    int, const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_residual(
+    const PenaltyCondition<TensorNURBS<double, 2>, 2>&,
+    const QuadratureBoundary<double, 2>&, const BoundaryProjection<double>&,
+    int, const Eigen::VectorX<double>&, Vec);
 
-template void Assembler<TensorBSpline<double, 2>, 2>::assemble_stiffness(
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
     const NitscheCondition<TensorBSpline<double, 2>, 2>&,
-    const QuadratureBoundary<double, 2>&);
-template void Assembler<TensorNURBS<double, 2>, 2>::assemble_stiffness(
+    const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_tangent(
     const NitscheCondition<TensorNURBS<double, 2>, 2>&,
-    const QuadratureBoundary<double, 2>&);
+    const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&, Vec);
 
-template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
     const NitscheCondition<TensorBSpline<double, 2>, 2>&,
-    const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&);
-template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
+    const QuadratureBoundary<double, 2>&, const BoundaryProjection<double>&,
+    int, const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_tangent(
     const NitscheCondition<TensorNURBS<double, 2>, 2>&,
-    const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&);
+    const QuadratureBoundary<double, 2>&, const BoundaryProjection<double>&,
+    int, const Eigen::VectorX<double>&, Vec);
 
-template void Assembler<TensorBSpline<double, 2>, 2>::assemble_stiffness(
-    const SkeletonNitscheCondition<TensorBSpline<double, 2>, 2>&,
-    const QuadratureSkeleton<double, 2>&, const Eigen::VectorX<double>&);
-template void Assembler<TensorNURBS<double, 2>, 2>::assemble_stiffness(
-    const SkeletonNitscheCondition<TensorNURBS<double, 2>, 2>&,
-    const QuadratureSkeleton<double, 2>&, const Eigen::VectorX<double>&);
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_residual(
+    const NitscheCondition<TensorBSpline<double, 2>, 2>&,
+    const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_residual(
+    const NitscheCondition<TensorNURBS<double, 2>, 2>&,
+    const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&, Vec);
 
-template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_residual(
+    const NitscheCondition<TensorBSpline<double, 2>, 2>&,
+    const QuadratureBoundary<double, 2>&, const BoundaryProjection<double>&,
+    int, const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_residual(
+    const NitscheCondition<TensorNURBS<double, 2>, 2>&,
+    const QuadratureBoundary<double, 2>&, const BoundaryProjection<double>&,
+    int, const Eigen::VectorX<double>&, Vec);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
+    const NeumannCondition<TensorBSpline<double, 2>, 2>&,
+    const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_tangent(
+    const NeumannCondition<TensorNURBS<double, 2>, 2>&,
+    const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&, Vec);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_residual(
+    const NeumannCondition<TensorBSpline<double, 2>, 2>&,
+    const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_residual(
+    const NeumannCondition<TensorNURBS<double, 2>, 2>&,
+    const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&, Vec);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
     const SkeletonNitscheCondition<TensorBSpline<double, 2>, 2>&,
     const QuadratureSkeleton<double, 2>&, const Eigen::VectorX<double>&,
-    const Eigen::VectorX<double>&);
-template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
+    const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_tangent(
     const SkeletonNitscheCondition<TensorNURBS<double, 2>, 2>&,
     const QuadratureSkeleton<double, 2>&, const Eigen::VectorX<double>&,
-    const Eigen::VectorX<double>&);
+    const Eigen::VectorX<double>&, Vec);
 
-template void Assembler<TensorBSpline<double, 2>, 2>::assemble_stiffness(
-    const PenaltyCondition<TensorBSpline<double, 2>, 2>&,
-    const QuadratureBoundary<double, 2>&,
-    const BoundaryProjection<double>&, int);
-template void Assembler<TensorNURBS<double, 2>, 2>::assemble_stiffness(
-    const PenaltyCondition<TensorNURBS<double, 2>, 2>&,
-    const QuadratureBoundary<double, 2>&,
-    const BoundaryProjection<double>&, int);
-
-template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
-    const PenaltyCondition<TensorBSpline<double, 2>, 2>&,
-    const QuadratureBoundary<double, 2>&,
-    const BoundaryProjection<double>&, int,
-    const Eigen::VectorX<double>&);
-template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
-    const PenaltyCondition<TensorNURBS<double, 2>, 2>&,
-    const QuadratureBoundary<double, 2>&,
-    const BoundaryProjection<double>&, int,
-    const Eigen::VectorX<double>&);
-
-template void Assembler<TensorBSpline<double, 2>, 2>::assemble_stiffness(
-    const NitscheCondition<TensorBSpline<double, 2>, 2>&,
-    const QuadratureBoundary<double, 2>&,
-    const BoundaryProjection<double>&, int);
-template void Assembler<TensorNURBS<double, 2>, 2>::assemble_stiffness(
-    const NitscheCondition<TensorNURBS<double, 2>, 2>&,
-    const QuadratureBoundary<double, 2>&,
-    const BoundaryProjection<double>&, int);
-
-template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
-    const NitscheCondition<TensorBSpline<double, 2>, 2>&,
-    const QuadratureBoundary<double, 2>&,
-    const BoundaryProjection<double>&, int,
-    const Eigen::VectorX<double>&);
-template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
-    const NitscheCondition<TensorNURBS<double, 2>, 2>&,
-    const QuadratureBoundary<double, 2>&,
-    const BoundaryProjection<double>&, int,
-    const Eigen::VectorX<double>&);
-
-template void Assembler<TensorBSpline<double, 2>, 2>::assemble_stiffness(
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
     const SkeletonNitscheCondition<TensorBSpline<double, 2>, 2>&,
-    const QuadratureSkeleton<double, 2>&,
-    const BoundaryProjection<double>&, int,
-    const Eigen::VectorX<double>&);
-template void Assembler<TensorNURBS<double, 2>, 2>::assemble_stiffness(
+    const QuadratureSkeleton<double, 2>&, const BoundaryProjection<double>&,
+    int, const Eigen::VectorX<double>&, const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_tangent(
     const SkeletonNitscheCondition<TensorNURBS<double, 2>, 2>&,
-    const QuadratureSkeleton<double, 2>&,
-    const BoundaryProjection<double>&, int,
-    const Eigen::VectorX<double>&);
+    const QuadratureSkeleton<double, 2>&, const BoundaryProjection<double>&,
+    int, const Eigen::VectorX<double>&, const Eigen::VectorX<double>&, Vec);
 
-template void Assembler<TensorBSpline<double, 2>, 2>::assemble_load(
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_residual(
     const SkeletonNitscheCondition<TensorBSpline<double, 2>, 2>&,
-    const QuadratureSkeleton<double, 2>&,
-    const BoundaryProjection<double>&, int,
-    const Eigen::VectorX<double>&, const Eigen::VectorX<double>&);
-template void Assembler<TensorNURBS<double, 2>, 2>::assemble_load(
+    const QuadratureSkeleton<double, 2>&, const Eigen::VectorX<double>&,
+    const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_residual(
     const SkeletonNitscheCondition<TensorNURBS<double, 2>, 2>&,
-    const QuadratureSkeleton<double, 2>&,
-    const BoundaryProjection<double>&, int,
-    const Eigen::VectorX<double>&, const Eigen::VectorX<double>&);
+    const QuadratureSkeleton<double, 2>&, const Eigen::VectorX<double>&,
+    const Eigen::VectorX<double>&, Vec);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_residual(
+    const SkeletonNitscheCondition<TensorBSpline<double, 2>, 2>&,
+    const QuadratureSkeleton<double, 2>&, const BoundaryProjection<double>&,
+    int, const Eigen::VectorX<double>&, const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_residual(
+    const SkeletonNitscheCondition<TensorNURBS<double, 2>, 2>&,
+    const QuadratureSkeleton<double, 2>&, const BoundaryProjection<double>&,
+    int, const Eigen::VectorX<double>&, const Eigen::VectorX<double>&, Vec);
 
 } // namespace iguana

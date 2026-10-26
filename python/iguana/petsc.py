@@ -221,26 +221,26 @@ class LinearProblem:
         couple_faces = on_faces or bool(stabilizations)
         self._assembler = _cpp.Assembler2d(space._cpp_object,
                                            patch._cpp_object, couple_faces)
-        self._stiffness = self._assembler.stiffness
+        self._tangent = self._assembler.tangent
         self._mass = self._assembler.mass
-        self._load = self._assembler.load
+        self._residual = self._assembler.residual
 
         # A steady system is the stiffness and load themselves, a transient
         # one their sums with the mass, on the pattern of the stiffness
         if self._step is None:
-            self._A = self._stiffness
-            self._b = self._load
+            self._A = self._tangent
+            self._b = self._residual
             self._previous = None
         else:
-            self._A = self._stiffness.duplicate()
-            self._b = self._load.duplicate()
-            self._previous = self._load.duplicate()
+            self._A = self._tangent.duplicate()
+            self._b = self._residual.duplicate()
+            self._previous = self._residual.duplicate()
             self._previous.zeroEntries()
 
         # The solution, as the previous one, has a coefficient per degree of
         # freedom and component, field after field on a mixed space
         self._space = space
-        self._x = self._load.duplicate()
+        self._x = self._residual.duplicate()
         self._solver = _linear_solver(self._A, petsc_options_prefix,
                                       petsc_options)
 
@@ -330,21 +330,27 @@ class LinearProblem:
                 not affine, or that repeats an interior knot.
             RuntimeError: If the linear solver does not converge.
         """
-        # Anew from the current data, every integral in one call
+        # Anew from the current data, each pass over every integral in one
+        # call. At zero coefficients the tangent is the stiffness K and the
+        # residual K 0 - F, so that its negative is the load
         self._assembler.clear()
-        self._form.assemble(self._assembler)
+        self._x.zeroEntries()
+        self._form.assemble_tangent(self._assembler, self._x)
+        self._form.assemble_residual(self._assembler, self._x)
+        self._residual.scale(-1.)
 
         # Backward Euler: (K + M / step) u = F + M u_p / step
         if self._step is not None:
+            self._form.assemble_mass(self._assembler)
             same = PETSc.Mat.Structure.SAME_NONZERO_PATTERN
-            self._stiffness.copy(self._A, same)
+            self._tangent.copy(self._A, same)
             self._A.axpy(1. / self._step, self._mass, same)
             self._mass.mult(self._previous, self._b)
-            self._b.aypx(1. / self._step, self._load)
+            self._b.aypx(1. / self._step, self._residual)
 
-        # The pinned pressure, zero, left out of the other equations
+        # The pinned pressure, zero as the coefficients still are, left out
+        # of the other equations
         if self._pinned is not None:
-            self._x.zeroEntries()
             self._A.zeroRowsColumns([self._pinned], diag=1., x=self._x,
                                     b=self._b)
 

@@ -78,11 +78,40 @@ Eigen::VectorXd to_eigen(Vec vector)
     return result;
 }
 
-/// @brief Stiffness of an assembler, read back from PETSc
+/// @brief PETSc vector of coefficients, destroyed with its scope
+class Coefficients
+{
+public:
+    explicit Coefficients(const Eigen::VectorXd& values)
+    {
+        const PetscInt size = static_cast<PetscInt>(values.size());
+        check(VecCreateSeq(PETSC_COMM_SELF, size, &vector_));
+
+        PetscScalar* entries = nullptr;
+        check(VecGetArray(vector_, &entries));
+        Eigen::Map<Eigen::VectorXd>(entries, size) = values;
+        check(VecRestoreArray(vector_, &entries));
+    }
+
+    ~Coefficients()
+    { static_cast<void>(VecDestroy(&vector_)); }
+
+    Coefficients(const Coefficients&) = delete;
+    Coefficients& operator=(const Coefficients&) = delete;
+
+    operator Vec() const
+    { return vector_; }
+
+private:
+    Vec vector_ = nullptr;
+};
+
+/// @brief Stiffness of an assembler, its tangent at zero coefficients when
+///        its terms are linear, read back from PETSc
 template<typename A>
 Eigen::SparseMatrix<double, Eigen::RowMajor> stiffness_of(const A& assembler)
 {
-    return to_eigen(assembler.stiffness());
+    return to_eigen(assembler.tangent());
 }
 
 /// @brief Mass of an assembler, read back from PETSc
@@ -92,11 +121,12 @@ Eigen::SparseMatrix<double, Eigen::RowMajor> mass_of(const A& assembler)
     return to_eigen(assembler.mass());
 }
 
-/// @brief Load of an assembler, read back from PETSc
+/// @brief Load of an assembler, the negative of its residual at zero
+///        coefficients when its terms are linear, read back from PETSc
 template<typename A>
 Eigen::VectorXd load_of(const A& assembler)
 {
-    return to_eigen(assembler.load());
+    return -to_eigen(assembler.residual());
 }
 
 /// @brief Sides of the rectangle, so that the measure of the map is not one
@@ -470,12 +500,13 @@ TEST_CASE("The Poisson system of a rectangle integrates exactly",
     const iguana::PoissonElement<Basis, 2> element;
 
     iguana::Assembler<Basis, 2> assembler(space, patch);
+    const Coefficients zero(Eigen::VectorXd::Zero(space.num_dofs()));
 
     // The source f = y, with y = height times the second parameter
     const Eigen::VectorXd source = height * quadrature.points().col(1);
 
-    assembler.assemble_stiffness(element, quadrature);
-    assembler.assemble_load(element, quadrature, source);
+    assembler.assemble_tangent(element, quadrature, source, zero);
+    assembler.assemble_residual(element, quadrature, source, zero);
 
     const Eigen::SparseMatrix<double, Eigen::RowMajor> stiffness =
         stiffness_of(assembler);
@@ -514,12 +545,13 @@ TEST_CASE("A space of another basis on the elements of the patch assembles "
     const iguana::PoissonElement<Basis, 2> element;
 
     iguana::Assembler<Basis, 2> assembler(space, patch);
+    const Coefficients zero(Eigen::VectorXd::Zero(space.num_dofs()));
 
     // The source f = y, with y = height times the second parameter
     const Eigen::VectorXd source = height * quadrature.points().col(1);
 
-    assembler.assemble_stiffness(element, quadrature);
-    assembler.assemble_load(element, quadrature, source);
+    assembler.assemble_tangent(element, quadrature, source, zero);
+    assembler.assemble_residual(element, quadrature, source, zero);
 
     const Eigen::SparseMatrix<double, Eigen::RowMajor> stiffness =
         stiffness_of(assembler);
@@ -573,10 +605,11 @@ TEST_CASE("The Poisson system leaves out the functions of outside cells",
     const iguana::PoissonElement<Basis, 2> element;
 
     iguana::Assembler<Basis, 2> assembler(space, patch);
+    const Coefficients zero(Eigen::VectorXd::Zero(space.num_dofs()));
     const Eigen::VectorXd ones = Eigen::VectorXd::Ones(quadrature.num_points());
 
-    assembler.assemble_stiffness(element, quadrature);
-    assembler.assemble_load(element, quadrature, ones);
+    assembler.assemble_tangent(element, quadrature, ones, zero);
+    assembler.assemble_residual(element, quadrature, ones, zero);
 
     // The degrees of freedom number the functions compactly, and those
     // left sum to one over the inside cells, the parameters [0, .6] x [0, 1]
@@ -601,18 +634,19 @@ TEST_CASE("A cleared assembler assembles the same system again",
     const iguana::PoissonElement<Basis, 2> element;
 
     iguana::Assembler<Basis, 2> assembler(space, patch);
+    const Coefficients zero(Eigen::VectorXd::Zero(space.num_dofs()));
     const Eigen::VectorXd ones = Eigen::VectorXd::Ones(quadrature.num_points());
 
-    assembler.assemble_stiffness(element, quadrature);
-    assembler.assemble_load(element, quadrature, ones);
+    assembler.assemble_tangent(element, quadrature, ones, zero);
+    assembler.assemble_residual(element, quadrature, ones, zero);
 
     const Eigen::MatrixXd stiffness(stiffness_of(assembler));
     const Eigen::VectorXd load = load_of(assembler);
 
     // Assembling again after clearing gives the same system, not twice it
     assembler.clear();
-    assembler.assemble_stiffness(element, quadrature);
-    assembler.assemble_load(element, quadrature, ones);
+    assembler.assemble_tangent(element, quadrature, ones, zero);
+    assembler.assemble_residual(element, quadrature, ones, zero);
 
     const Eigen::MatrixXd again(stiffness_of(assembler));
 
@@ -620,7 +654,7 @@ TEST_CASE("A cleared assembler assembles the same system again",
     REQUIRE((load_of(assembler) - load).cwiseAbs().maxCoeff() < 1e-12);
 }
 
-TEST_CASE("A form adds its integrals in one assembly, with its data as it "
+TEST_CASE("A form adds its integrals in three passes, with its data as it "
           "is then", "[assembler][form]")
 {
     const Basis basis = uneven();
@@ -643,12 +677,15 @@ TEST_CASE("A form adds its integrals in one assembly, with its data as it "
     // built reach the assembly
     source.setLinSpaced(0., 1.);
 
+    const Coefficients zero(Eigen::VectorXd::Zero(space.num_dofs()));
     iguana::Assembler<Basis, 2> by_form(space, patch);
-    form.assemble(by_form);
+    form.assemble_tangent(by_form, zero);
+    form.assemble_residual(by_form, zero);
+    form.assemble_mass(by_form);
 
     iguana::Assembler<Basis, 2> by_terms(space, patch);
-    by_terms.assemble_stiffness(element, quadrature, weights);
-    by_terms.assemble_load(element, quadrature, source, weights);
+    by_terms.assemble_tangent(element, quadrature, source, weights, zero);
+    by_terms.assemble_residual(element, quadrature, source, weights, zero);
     by_terms.assemble_mass(element, quadrature, weights);
 
     REQUIRE((stiffness_of(by_form) - stiffness_of(by_terms)).norm() == 0.);
@@ -668,11 +705,14 @@ TEST_CASE("An assembler needs one source value per point", "[assembler]")
     const iguana::PoissonElement<Basis, 2> element;
 
     iguana::Assembler<Basis, 2> assembler(space, patch);
+    const Coefficients zero(Eigen::VectorXd::Zero(space.num_dofs()));
+
     // One value short of the points
     const Eigen::VectorXd source =
         Eigen::VectorXd::Ones(quadrature.num_points() - 1);
 
-    REQUIRE_THROWS_AS(assembler.assemble_load(element, quadrature, source),
+    REQUIRE_THROWS_AS(assembler.assemble_residual(element, quadrature, source,
+                                                  zero),
                       std::invalid_argument);
 }
 
@@ -707,8 +747,11 @@ TEST_CASE("Cell weights weight the test functions of each cell",
         Eigen::VectorXd::Ones(quadrature.num_points());
 
     iguana::Assembler<Basis, 2> assembler(space, patch);
-    assembler.assemble_stiffness(element, quadrature, cell_weights);
-    assembler.assemble_load(element, quadrature, source, cell_weights);
+    const Coefficients zero(Eigen::VectorXd::Zero(space.num_dofs()));
+    assembler.assemble_tangent(element, quadrature, source, cell_weights,
+                               zero);
+    assembler.assemble_residual(element, quadrature, source, cell_weights,
+                                zero);
 
     // The cells span .2, .4 and .4 along x, scaled by the width, and .7 and
     // .3 along y, scaled by the height
@@ -731,11 +774,11 @@ TEST_CASE("Cell weights weight the test functions of each cell",
     // One weight short of the cells
     const Eigen::VectorXd short_weights = cell_weights.head(5);
 
-    REQUIRE_THROWS_AS(assembler.assemble_stiffness(element, quadrature,
-                                                   short_weights),
+    REQUIRE_THROWS_AS(assembler.assemble_tangent(element, quadrature, source,
+                                                 short_weights, zero),
                       std::invalid_argument);
-    REQUIRE_THROWS_AS(assembler.assemble_load(element, quadrature, source,
-                                              short_weights),
+    REQUIRE_THROWS_AS(assembler.assemble_residual(element, quadrature, source,
+                                                  short_weights, zero),
                       std::invalid_argument);
 }
 
@@ -898,8 +941,9 @@ TEST_CASE("A penalty on an embedded boundary imposes a field of the space",
         + height * b(1) * quadrature.points().col(1);
 
     iguana::Assembler<Basis, 2> assembler(space, patch);
-    assembler.assemble_stiffness(condition, quadrature);
-    assembler.assemble_load(condition, quadrature, data);
+    const Coefficients zero(Eigen::VectorXd::Zero(space.num_dofs()));
+    assembler.assemble_tangent(condition, quadrature, data, zero);
+    assembler.assemble_residual(condition, quadrature, data, zero);
 
     // The functions sum to one, so the penalty on constants is beta times
     // the perimeter
@@ -916,8 +960,9 @@ TEST_CASE("A penalty on an embedded boundary imposes a field of the space",
     REQUIRE((stiffness_of(assembler) * u - load_of(assembler)).cwiseAbs()
                 .maxCoeff() < 1e-12);
 
-    REQUIRE_THROWS_AS(assembler.assemble_load(condition, quadrature,
-                                              data.head(data.size() - 1)),
+    REQUIRE_THROWS_AS(assembler.assemble_residual(condition, quadrature,
+                                                  data.head(data.size() - 1),
+                                                  zero),
                       std::invalid_argument);
 }
 
@@ -949,8 +994,9 @@ TEST_CASE("A penalty on one component of a field of two imposes it and "
         + height * b(1) * quadrature.points().col(1);
 
     iguana::Assembler<Basis, 2> assembler(space, patch);
-    assembler.assemble_stiffness(condition, quadrature);
-    assembler.assemble_load(condition, quadrature, data);
+    const Coefficients zero(Eigen::VectorXd::Zero(space.num_dofs()));
+    assembler.assemble_tangent(condition, quadrature, data, zero);
+    assembler.assemble_residual(condition, quadrature, data, zero);
 
     const Eigen::SparseMatrix<double, Eigen::RowMajor> stiffness =
         stiffness_of(assembler);
@@ -979,12 +1025,12 @@ TEST_CASE("A penalty on one component of a field of two imposes it and "
     // The system tells PETSc which degrees of freedom are the components of
     // one function
     PetscInt block_size = 0;
-    PetscInt load_size = 0;
-    check(MatGetBlockSize(assembler.stiffness(), &block_size));
-    check(VecGetBlockSize(assembler.load(), &load_size));
+    PetscInt residual_size = 0;
+    check(MatGetBlockSize(assembler.tangent(), &block_size));
+    check(VecGetBlockSize(assembler.residual(), &residual_size));
 
     REQUIRE(block_size == 2);
-    REQUIRE(load_size == 2);
+    REQUIRE(residual_size == 2);
 }
 
 TEST_CASE("Local matrices must match the block size of the space",
@@ -1000,6 +1046,7 @@ TEST_CASE("Local matrices must match the block size of the space",
     const iguana::QuadratureBoundary<double, 2> boundary =
         boundary_quadrature(patch, quadrilateral());
     const Eigen::VectorXd ones = Eigen::VectorXd::Ones(domain.num_points());
+    const Eigen::VectorXd data = Eigen::VectorXd::Ones(boundary.num_points());
 
     // The Poisson element and its trace have one component, so their local
     // matrices hold half the degrees of freedom of each cell, and PETSc
@@ -1009,12 +1056,12 @@ TEST_CASE("Local matrices must match the block size of the space",
     const iguana::PenaltyCondition<Basis, 2> condition(trace, 10.);
 
     iguana::Assembler<Basis, 2> assembler(space, patch);
+    const Coefficients zero(Eigen::VectorXd::Zero(space.num_dofs()));
 
-    REQUIRE_THROWS_AS(assembler.assemble_stiffness(element, domain),
+    REQUIRE_THROWS_AS(assembler.assemble_tangent(element, domain, ones, zero),
                       std::invalid_argument);
-    REQUIRE_THROWS_AS(assembler.assemble_load(element, domain, ones),
-                      std::invalid_argument);
-    REQUIRE_THROWS_AS(assembler.assemble_stiffness(condition, boundary),
+    REQUIRE_THROWS_AS(assembler.assemble_tangent(condition, boundary, data,
+                                                 zero),
                       std::invalid_argument);
 }
 
@@ -1041,8 +1088,9 @@ TEST_CASE("A Neumann condition loads a trace with data along a boundary",
         + height * b(1) * quadrature.points().col(1);
 
     iguana::Assembler<Basis, 2> assembler(space, patch);
-    assembler.assemble_stiffness(condition, quadrature);
-    assembler.assemble_load(condition, quadrature, data);
+    const Coefficients zero(Eigen::VectorXd::Zero(space.num_dofs()));
+    assembler.assemble_tangent(condition, quadrature, data, zero);
+    assembler.assemble_residual(condition, quadrature, data, zero);
 
     // The data is known, so the stiffness stays zero
     REQUIRE(stiffness_of(assembler).norm() == 0.);
@@ -1079,8 +1127,9 @@ TEST_CASE("A Neumann condition on one component of a field of two loads "
     const Eigen::VectorXd data = Eigen::VectorXd::Ones(quadrature.num_points());
 
     iguana::Assembler<Basis, 2> assembler(space, patch);
-    assembler.assemble_stiffness(condition, quadrature);
-    assembler.assemble_load(condition, quadrature, data);
+    const Coefficients zero(Eigen::VectorXd::Zero(space.num_dofs()));
+    assembler.assemble_tangent(condition, quadrature, data, zero);
+    assembler.assemble_residual(condition, quadrature, data, zero);
 
     // No stiffness over the two components, and the unit data loads the
     // second alone with the perimeter, as the functions sum to one
@@ -1146,8 +1195,11 @@ TEST_CASE("A shifted penalty imposes a field of the space from its closest "
     // The series of b . x from each point reaches the closest point exactly,
     // so the shifted penalty imposes it consistently
     iguana::Assembler<Basis, 2> assembler(space, patch);
-    assembler.assemble_stiffness(condition, quadrature, projection, 2);
-    assembler.assemble_load(condition, quadrature, projection, 2, data);
+    const Coefficients zero(Eigen::VectorXd::Zero(space.num_dofs()));
+    assembler.assemble_tangent(condition, quadrature, projection, 2, data,
+                               zero);
+    assembler.assemble_residual(condition, quadrature, projection, 2, data,
+                                zero);
 
     REQUIRE((stiffness_of(assembler) * u - load_of(assembler)).cwiseAbs()
                 .maxCoeff() < 1e-12);
@@ -1155,8 +1207,8 @@ TEST_CASE("A shifted penalty imposes a field of the space from its closest "
     // Without the shift, the data is imposed a distance away from where it
     // belongs
     assembler.clear();
-    assembler.assemble_stiffness(condition, quadrature);
-    assembler.assemble_load(condition, quadrature, data);
+    assembler.assemble_tangent(condition, quadrature, data, zero);
+    assembler.assemble_residual(condition, quadrature, data, zero);
 
     REQUIRE((stiffness_of(assembler) * u - load_of(assembler)).cwiseAbs()
                 .maxCoeff() > 1e-2);
@@ -1206,12 +1258,14 @@ TEST_CASE("A shifted Nitsche condition imposes a field of the space "
     const iguana::PoissonElement<Basis, 2>::Q flux;
     const iguana::QuadratureDomain<double, 2> cells =
         inside_quadrature(basis, classification);
+    const Eigen::VectorXd source = Eigen::VectorXd::Zero(cells.num_points());
 
     // With every cell inside, each function keeps its own index, and the
     // coefficients of b . x are b . x_i at the control points
     const Eigen::VectorXd u = patch.coefficients() * b;
     const Eigen::VectorXd constant =
         Eigen::VectorXd::Ones(space.dof_map().num_dofs());
+    const Coefficients zero(Eigen::VectorXd::Zero(space.num_dofs()));
 
     // b . x has no Laplacian, and the method is consistent, so it solves the
     // system of the surrogate domain whatever the penalty. Constants have no
@@ -1223,9 +1277,11 @@ TEST_CASE("A shifted Nitsche condition imposes a field of the space "
         const iguana::NitscheCondition<Basis, 2> condition(trace, flux,
                                                            penalty);
         iguana::Assembler<Basis, 2> assembler(space, patch);
-        assembler.assemble_stiffness(element, cells);
-        assembler.assemble_stiffness(condition, quadrature, projection, 2);
-        assembler.assemble_load(condition, quadrature, projection, 2, data);
+        assembler.assemble_tangent(element, cells, source, zero);
+        assembler.assemble_tangent(condition, quadrature, projection, 2, data,
+                                   zero);
+        assembler.assemble_residual(condition, quadrature, projection, 2, data,
+                                    zero);
 
         REQUIRE((stiffness_of(assembler) * u - load_of(assembler)).cwiseAbs()
                     .maxCoeff() < 1e-12 * penalty);
@@ -1238,9 +1294,10 @@ TEST_CASE("A shifted Nitsche condition imposes a field of the space "
     // unbalanced, however it imposes the data
     const iguana::PenaltyCondition<Basis, 2> penalty(trace, 1e3);
     iguana::Assembler<Basis, 2> assembler(space, patch);
-    assembler.assemble_stiffness(element, cells);
-    assembler.assemble_stiffness(penalty, quadrature, projection, 2);
-    assembler.assemble_load(penalty, quadrature, projection, 2, data);
+    assembler.assemble_tangent(element, cells, source, zero);
+    assembler.assemble_tangent(penalty, quadrature, projection, 2, data, zero);
+    assembler.assemble_residual(penalty, quadrature, projection, 2, data,
+                                zero);
 
     REQUIRE((stiffness_of(assembler) * u - load_of(assembler)).cwiseAbs()
                 .maxCoeff() > 1e-2);
@@ -1287,15 +1344,16 @@ TEST_CASE("A Stokes system with Nitsche conditions holds a divergence-free "
                                               -2. * x.cwiseProduct(y)};
 
     iguana::Assembler<Basis, 2> assembler(space, patch);
-    assembler.assemble_stiffness(element, cells);
-    assembler.assemble_load(element, cells, source);
+    const Coefficients zero(Eigen::VectorXd::Zero(space.num_dofs()));
+    assembler.assemble_tangent(element, cells, source, zero);
+    assembler.assemble_residual(element, cells, source, zero);
 
     for (std::size_t component = 0; component < 2; ++component) {
         const iguana::NitscheCondition<Basis, 2> condition(
             traces[component], fluxes[component], 40. * viscosity);
 
-        assembler.assemble_stiffness(condition, edges);
-        assembler.assemble_load(condition, edges, data[component]);
+        assembler.assemble_tangent(condition, edges, data[component], zero);
+        assembler.assemble_residual(condition, edges, data[component], zero);
     }
 
     const Eigen::VectorXd exact = quadratic_flow(patch);
@@ -1365,15 +1423,16 @@ TEST_CASE("A Stokes system on divergence-conforming spaces holds a "
                                               -2. * x.cwiseProduct(y)};
 
     iguana::Assembler<Basis, 2> assembler(space, patch);
-    assembler.assemble_stiffness(element, cells);
-    assembler.assemble_load(element, cells, source);
+    const Coefficients zero(Eigen::VectorXd::Zero(space.num_dofs()));
+    assembler.assemble_tangent(element, cells, source, zero);
+    assembler.assemble_residual(element, cells, source, zero);
 
     for (std::size_t component = 0; component < 2; ++component) {
         const iguana::NitscheCondition<Basis, 2> condition(
             traces[component], fluxes[component], 40. * viscosity);
 
-        assembler.assemble_stiffness(condition, edges);
-        assembler.assemble_load(condition, edges, data[component]);
+        assembler.assemble_tangent(condition, edges, data[component], zero);
+        assembler.assemble_residual(condition, edges, data[component], zero);
     }
 
     // The coefficients of x^2 and x y from the blossoms of each direction,
@@ -1468,11 +1527,13 @@ TEST_CASE("A ghost penalty penalizes the jumps of the highest derivatives of "
     // The penalty reads the degrees of the space, not of the patch: on the
     // quadratic rectangle, the same map, the third derivatives along the
     // first direction still jump, scaled by h^5
+    const Coefficients zero(Eigen::VectorXd::Zero(space.num_dofs()));
+
     for (const iguana::Patch<Basis, 2>& patch :
          {rectangle(basis), rectangle(uneven())}) {
         iguana::Assembler<Basis, 2> assembler(space, patch, true);
         const Eigen::Index entries = stiffness_of(assembler).nonZeros();
-        assembler.assemble_stiffness(ghost, quadrature);
+        assembler.assemble_tangent(ghost, quadrature, zero);
 
         // The faces were coupled beforehand, so the pattern holds
         REQUIRE(stiffness_of(assembler).nonZeros() == entries);
@@ -1499,6 +1560,7 @@ TEST_CASE("A ghost penalty needs coupled faces, simple interior knots and an "
 
     const iguana::PoissonElement<Basis, 2>::U trace;
     const iguana::SkeletonGhostPenalty<Basis, 2> ghost(trace, 1.);
+    const Coefficients zero(Eigen::VectorXd::Zero(space.num_dofs()));
 
     REQUIRE_THROWS_AS((iguana::SkeletonGhostPenalty<Basis, 2>(trace, 0.)),
                       std::invalid_argument);
@@ -1508,7 +1570,7 @@ TEST_CASE("A ghost penalty needs coupled faces, simple interior knots and an "
     // Faces left out of the pattern
     iguana::Assembler<Basis, 2> uncoupled(space, patch);
 
-    REQUIRE_THROWS_AS(uncoupled.assemble_stiffness(ghost, quadrature),
+    REQUIRE_THROWS_AS(uncoupled.assemble_tangent(ghost, quadrature, zero),
                       std::invalid_argument);
 
     // A control point moved off the rectangle bends the map
@@ -1517,7 +1579,7 @@ TEST_CASE("A ghost penalty needs coupled faces, simple interior knots and an "
     const iguana::Patch<Basis, 2> curved(basis, bent);
     iguana::Assembler<Basis, 2> on_curved(space, curved, true);
 
-    REQUIRE_THROWS_AS(on_curved.assemble_stiffness(ghost, quadrature),
+    REQUIRE_THROWS_AS(on_curved.assemble_tangent(ghost, quadrature, zero),
                       std::invalid_argument);
 
     // A repeated knot of the space, across which the second derivatives jump
@@ -1528,8 +1590,11 @@ TEST_CASE("A ghost penalty needs coupled faces, simple interior knots and an "
     const iguana::FunctionSpace<Basis> repeated_space(
         repeated, all_cells(CellType::inside));
     iguana::Assembler<Basis, 2> on_repeated(repeated_space, patch, true);
+    const Coefficients repeated_zero(
+        Eigen::VectorXd::Zero(repeated_space.num_dofs()));
 
-    REQUIRE_THROWS_AS(on_repeated.assemble_stiffness(ghost, quadrature),
+    REQUIRE_THROWS_AS(on_repeated.assemble_tangent(ghost, quadrature,
+                                                   repeated_zero),
                       std::invalid_argument);
 
     // A NURBS patch, affine with unit weights
@@ -1546,8 +1611,8 @@ TEST_CASE("A ghost penalty needs coupled faces, simple interior knots and an "
     iguana::Assembler<Rational, 2> on_rational(rational_space, rational_patch,
                                                true);
 
-    REQUIRE_THROWS_AS(on_rational.assemble_stiffness(rational_ghost,
-                                                     quadrature),
+    REQUIRE_THROWS_AS(on_rational.assemble_tangent(rational_ghost, quadrature,
+                                                   zero),
                       std::invalid_argument);
 }
 
@@ -1597,17 +1662,23 @@ TEST_CASE("Skeleton Nitsche conditions with binary weights are Nitsche "
     const iguana::SkeletonNitscheCondition<Basis, 2> face(trace, flux, 40.);
     const Eigen::Vector2d b(1., -2.);
 
+    const Eigen::VectorXd surrogate_data =
+        linear_data(surrogate.points(), to_surrogate, b);
+    const Eigen::VectorXd face_data =
+        linear_data(faces.points(), to_faces, b);
+    const Coefficients zero(Eigen::VectorXd::Zero(space.num_dofs()));
+
     iguana::Assembler<Basis, 2> on_surrogate(space, patch, true);
-    on_surrogate.assemble_stiffness(nitsche, surrogate, to_surrogate, 2);
-    on_surrogate.assemble_load(
-        nitsche, surrogate, to_surrogate, 2,
-        linear_data(surrogate.points(), to_surrogate, b));
+    on_surrogate.assemble_tangent(nitsche, surrogate, to_surrogate, 2,
+                                  surrogate_data, zero);
+    on_surrogate.assemble_residual(nitsche, surrogate, to_surrogate, 2,
+                                   surrogate_data, zero);
 
     iguana::Assembler<Basis, 2> on_faces(space, patch, true);
-    on_faces.assemble_stiffness(face, faces, to_faces, 2, cell_weights);
-    on_faces.assemble_load(face, faces, to_faces, 2,
-                           linear_data(faces.points(), to_faces, b),
-                           cell_weights);
+    on_faces.assemble_tangent(face, faces, to_faces, 2, face_data,
+                              cell_weights, zero);
+    on_faces.assemble_residual(face, faces, to_faces, 2, face_data,
+                               cell_weights, zero);
 
     // The jump selects the inside cell of every face of the surrogate
     // boundary, whichever side it lies on, and with it its normal
@@ -1663,16 +1734,18 @@ TEST_CASE("A linear field solves the weighted problem with Nitsche "
     const iguana::SkeletonGhostPenalty<Basis, 2> ghost(trace, .1);
     const Eigen::Vector2d b(1., -2.);
 
+    const Eigen::VectorXd source = Eigen::VectorXd::Zero(cells.num_points());
+    const Eigen::VectorXd data = linear_data(faces.points(), projection, b);
+
     iguana::Assembler<Basis, 2> assembler(space, patch, true);
-    assembler.assemble_stiffness(element, cells, fractions);
-    assembler.assemble_load(element, cells,
-                            Eigen::VectorXd::Zero(cells.num_points()),
-                            fractions);
-    assembler.assemble_stiffness(face, faces, projection, 2, fractions);
-    assembler.assemble_load(face, faces, projection, 2,
-                            linear_data(faces.points(), projection, b),
-                            fractions);
-    assembler.assemble_stiffness(ghost, ghost_faces);
+    const Coefficients zero(Eigen::VectorXd::Zero(space.num_dofs()));
+    assembler.assemble_tangent(element, cells, source, fractions, zero);
+    assembler.assemble_residual(element, cells, source, fractions, zero);
+    assembler.assemble_tangent(face, faces, projection, 2, data, fractions,
+                               zero);
+    assembler.assemble_residual(face, faces, projection, 2, data, fractions,
+                                zero);
+    assembler.assemble_tangent(ghost, ghost_faces, zero);
 
     // Cell by cell, the weighted volume terms of b . x leave the jumps of
     // the weights times its flux on the faces, which the condition cancels,
@@ -1701,12 +1774,13 @@ TEST_CASE("A ghost penalty takes extra powers of the size of the cells and "
                                 std::vector<CellType>(25, CellType::cut))),
         iguana::GaussLegendre<double, 1>(3));
     const iguana::PoissonElement<Basis, 2>::U trace;
+    const Coefficients zero(Eigen::VectorXd::Zero(space.num_dofs()));
 
     const auto stiffness = [&](double penalty, int scaling) {
         const iguana::SkeletonGhostPenalty<Basis, 2> ghost(trace, penalty,
                                                            scaling);
         iguana::Assembler<Basis, 2> assembler(space, patch, true);
-        assembler.assemble_stiffness(ghost, quadrature);
+        assembler.assemble_tangent(ghost, quadrature, zero);
 
         return Eigen::MatrixXd(stiffness_of(assembler));
     };
@@ -1778,8 +1852,9 @@ TEST_CASE("The generalized shifted boundary method holds a divergence-free "
                                               -2. * x.cwiseProduct(y)};
 
     iguana::Assembler<Basis, 2> assembler(space, patch, true);
-    assembler.assemble_stiffness(element, cells, fractions);
-    assembler.assemble_load(element, cells, source, fractions);
+    const Coefficients zero(Eigen::VectorXd::Zero(space.num_dofs()));
+    assembler.assemble_tangent(element, cells, source, fractions, zero);
+    assembler.assemble_residual(element, cells, source, fractions, zero);
 
     for (std::size_t component = 0; component < 2; ++component) {
         const iguana::SkeletonNitscheCondition<Basis, 2> face(
@@ -1787,16 +1862,17 @@ TEST_CASE("The generalized shifted boundary method holds a divergence-free "
         const iguana::SkeletonGhostPenalty<Basis, 2> ghost(
             traces[component], .1 * viscosity);
 
-        assembler.assemble_stiffness(face, faces, projection, 2, fractions);
-        assembler.assemble_load(face, faces, projection, 2, data[component],
-                                fractions);
-        assembler.assemble_stiffness(ghost, ghost_faces);
+        assembler.assemble_tangent(face, faces, projection, 2, data[component],
+                                   fractions, zero);
+        assembler.assemble_residual(face, faces, projection, 2, data[component],
+                                    fractions, zero);
+        assembler.assemble_tangent(ghost, ghost_faces, zero);
     }
 
     // Negative, as the pressure block of the symmetric form is
     const iguana::SkeletonGhostPenalty<Basis, 2> pressure_ghost(
         pressure, -.1 / viscosity, 2);
-    assembler.assemble_stiffness(pressure_ghost, ghost_faces);
+    assembler.assemble_tangent(pressure_ghost, ghost_faces, zero);
 
     // Cell by cell, the weighted volume terms leave the jumps of the
     // weights times the traction on the faces, which the conditions
@@ -1835,6 +1911,7 @@ TEST_CASE("Skeleton conditions need coupled faces, one weight per cell and a "
     const iguana::PoissonElement<Basis, 2>::Q flux;
     const iguana::SkeletonNitscheCondition<Basis, 2> face(trace, flux, 40.);
     const Eigen::VectorXd data = Eigen::VectorXd::Zero(faces.num_points());
+    const Coefficients zero(Eigen::VectorXd::Zero(space.num_dofs()));
 
     REQUIRE_THROWS_AS(
         (iguana::SkeletonNitscheCondition<Basis, 2>(trace, flux, 0.)),
@@ -1843,21 +1920,22 @@ TEST_CASE("Skeleton conditions need coupled faces, one weight per cell and a "
     // Faces left out of the pattern
     iguana::Assembler<Basis, 2> uncoupled(space, patch);
 
-    REQUIRE_THROWS_AS(uncoupled.assemble_stiffness(face, faces, fractions),
+    REQUIRE_THROWS_AS(uncoupled.assemble_tangent(face, faces, data, fractions,
+                                                 zero),
                       std::invalid_argument);
 
     // One weight short of the cells, and one value short of the points
     iguana::Assembler<Basis, 2> assembler(space, patch, true);
     const Eigen::VectorXd short_weights = fractions.head(count - 1);
 
-    REQUIRE_THROWS_AS(assembler.assemble_stiffness(face, faces,
-                                                   short_weights),
+    REQUIRE_THROWS_AS(assembler.assemble_tangent(face, faces, data,
+                                                 short_weights, zero),
                       std::invalid_argument);
-    REQUIRE_THROWS_AS(assembler.assemble_load(face, faces, data,
-                                              short_weights),
+    REQUIRE_THROWS_AS(assembler.assemble_residual(face, faces, data,
+                                                  short_weights, zero),
                       std::invalid_argument);
-    REQUIRE_THROWS_AS(assembler.assemble_load(face, faces, data.head(1),
-                                              fractions),
+    REQUIRE_THROWS_AS(assembler.assemble_residual(face, faces, data.head(1),
+                                                  fractions, zero),
                       std::invalid_argument);
 
     // A negative order, and a projection of other points
@@ -1865,11 +1943,11 @@ TEST_CASE("Skeleton conditions need coupled faces, one weight per cell and a "
         iguana::project_closest_points(patch, boundary,
                                        faces.points().topRows(1));
 
-    REQUIRE_THROWS_AS(assembler.assemble_stiffness(face, faces, projection,
-                                                   -1, fractions),
+    REQUIRE_THROWS_AS(assembler.assemble_tangent(face, faces, projection, -1,
+                                                 data, fractions, zero),
                       std::invalid_argument);
-    REQUIRE_THROWS_AS(assembler.assemble_stiffness(face, faces, other, 2,
-                                                   fractions),
+    REQUIRE_THROWS_AS(assembler.assemble_tangent(face, faces, other, 2, data,
+                                                 fractions, zero),
                       std::invalid_argument);
 
     // Shift weights for the six multi-indices of order 2, given another
@@ -1877,16 +1955,16 @@ TEST_CASE("Skeleton conditions need coupled faces, one weight per cell and a "
     iguana::BoundaryProjection<double> weighted = projection;
     weighted.shift_weights = Eigen::MatrixXd::Zero(faces.num_points(), 6);
 
-    REQUIRE_NOTHROW(assembler.assemble_stiffness(face, faces, weighted, 2,
-                                                 fractions));
-    REQUIRE_THROWS_AS(assembler.assemble_stiffness(face, faces, weighted, 3,
-                                                   fractions),
+    REQUIRE_NOTHROW(assembler.assemble_tangent(face, faces, weighted, 2, data,
+                                               fractions, zero));
+    REQUIRE_THROWS_AS(assembler.assemble_tangent(face, faces, weighted, 3, data,
+                                                 fractions, zero),
                       std::invalid_argument);
 
     weighted.shift_weights.conservativeResize(faces.num_points() - 1, 6);
 
-    REQUIRE_THROWS_AS(assembler.assemble_stiffness(face, faces, weighted, 2,
-                                                   fractions),
+    REQUIRE_THROWS_AS(assembler.assemble_tangent(face, faces, weighted, 2, data,
+                                                 fractions, zero),
                       std::invalid_argument);
 
     // A NURBS patch has no Taylor series for a projection
@@ -1904,9 +1982,9 @@ TEST_CASE("Skeleton conditions need coupled faces, one weight per cell and a "
     iguana::Assembler<Rational, 2> on_rational(rational_space, rational_patch,
                                                true);
 
-    REQUIRE_THROWS_AS(on_rational.assemble_stiffness(rational_face, faces,
-                                                     projection, 2,
-                                                     fractions),
+    REQUIRE_THROWS_AS(on_rational.assemble_tangent(rational_face, faces,
+                                                   projection, 2, data,
+                                                   fractions, zero),
                       std::invalid_argument);
 }
 
@@ -1937,6 +2015,7 @@ TEST_CASE("A term on one field of a mixed space is the term of that field "
                                  - 2. * height * boundary.points().col(1);
 
     iguana::Assembler<Basis, 2> assembler(mixed, patch, true);
+    const Coefficients zero(Eigen::VectorXd::Zero(mixed.num_dofs()));
     const iguana::PoissonElement<Basis, 2>::U trace;
 
     for (std::size_t field = 0; field < 3; ++field) {
@@ -1946,15 +2025,17 @@ TEST_CASE("A term on one field of a mixed space is the term of that field "
             placement(69, offsets[field], space.num_dofs());
         const FieldTrace field_trace(field);
         iguana::Assembler<Basis, 2> alone(space, patch, true);
+        const Coefficients alone_zero(
+            Eigen::VectorXd::Zero(space.num_dofs()));
 
         // A penalty and its data
         const iguana::PenaltyCondition<Basis, 2> penalty(field_trace, 10.);
         const iguana::PenaltyCondition<Basis, 2> alone_penalty(trace, 10.);
         assembler.clear();
-        assembler.assemble_stiffness(penalty, boundary);
-        assembler.assemble_load(penalty, boundary, data);
-        alone.assemble_stiffness(alone_penalty, boundary);
-        alone.assemble_load(alone_penalty, boundary, data);
+        assembler.assemble_tangent(penalty, boundary, data, zero);
+        assembler.assemble_residual(penalty, boundary, data, zero);
+        alone.assemble_tangent(alone_penalty, boundary, data, alone_zero);
+        alone.assemble_residual(alone_penalty, boundary, data, alone_zero);
 
         REQUIRE(near(stiffness_of(assembler).toDense(),
                      place * stiffness_of(alone).toDense()
@@ -1966,8 +2047,8 @@ TEST_CASE("A term on one field of a mixed space is the term of that field "
         const iguana::SkeletonGhostPenalty<Basis, 2> alone_ghost(trace, .3);
         assembler.clear();
         alone.clear();
-        assembler.assemble_stiffness(ghost, skeleton);
-        alone.assemble_stiffness(alone_ghost, skeleton);
+        assembler.assemble_tangent(ghost, skeleton, zero);
+        alone.assemble_tangent(alone_ghost, skeleton, alone_zero);
 
         REQUIRE(near(stiffness_of(assembler).toDense(),
                      place * stiffness_of(alone).toDense()
@@ -1989,7 +2070,7 @@ TEST_CASE("Several fields share no block size, and a ghost penalty needs "
     const iguana::Assembler<Basis, 2> blocks(
         iguana::MixedFunctionSpace<Basis>({vector, scalar}), patch);
     PetscInt block_size = 0;
-    check(MatGetBlockSize(blocks.stiffness(), &block_size));
+    check(MatGetBlockSize(blocks.tangent(), &block_size));
 
     REQUIRE(block_size == 1);
 
@@ -2002,6 +2083,8 @@ TEST_CASE("Several fields share no block size, and a ghost penalty needs "
     iguana::Assembler<Basis, 2> assembler(
         iguana::MixedFunctionSpace<Basis>({repeated_space, scalar}), patch,
         true);
+    const Coefficients zero(Eigen::VectorXd::Zero(repeated_space.num_dofs()
+                                                  + scalar.num_dofs()));
     const iguana::QuadratureSkeleton<double, 2> skeleton(
         patch.basis().grid(),
         iguana::ghost_faces(patch.basis().grid(), all_cells(CellType::cut)),
@@ -2014,9 +2097,9 @@ TEST_CASE("Several fields share no block size, and a ghost penalty needs "
     const iguana::SkeletonGhostPenalty<Basis, 2> on_second(second, 1.);
     const iguana::SkeletonGhostPenalty<Basis, 2> on_missing(missing, 1.);
 
-    REQUIRE_NOTHROW(assembler.assemble_stiffness(on_second, skeleton));
-    REQUIRE_THROWS_AS(assembler.assemble_stiffness(on_first, skeleton),
+    REQUIRE_NOTHROW(assembler.assemble_tangent(on_second, skeleton, zero));
+    REQUIRE_THROWS_AS(assembler.assemble_tangent(on_first, skeleton, zero),
                       std::invalid_argument);
-    REQUIRE_THROWS_AS(assembler.assemble_stiffness(on_missing, skeleton),
+    REQUIRE_THROWS_AS(assembler.assemble_tangent(on_missing, skeleton, zero),
                       std::invalid_argument);
 }

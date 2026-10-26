@@ -124,9 +124,9 @@ void assembly(py::module_& module)
              py::arg("couple_faces") = false, py::keep_alive<1, 2>(),
              py::keep_alive<1, 3>())
         .def("clear", &Assembler2d::clear)
-        .def_property_readonly("stiffness", &Assembler2d::stiffness)
+        .def_property_readonly("tangent", &Assembler2d::tangent)
         .def_property_readonly("mass", &Assembler2d::mass)
-        .def_property_readonly("load", &Assembler2d::load);
+        .def_property_readonly("residual", &Assembler2d::residual);
 
     // A form keeps references to what its integrals read, which Python keeps
     // alive with it. Its data are the arrays themselves, never copies, so
@@ -224,7 +224,11 @@ void assembly(py::module_& module)
              static_cast<AddGhostPenalty2d>(&Form2d::add_skeleton_integral),
              py::arg("penalty"), py::arg("quadrature"),
              py::keep_alive<1, 2>(), py::keep_alive<1, 3>())
-        .def("assemble", &Form2d::assemble, py::arg("assembler"));
+        .def("assemble_tangent", &Form2d::assemble_tangent,
+             py::arg("assembler"), py::arg("coefficients"))
+        .def("assemble_residual", &Form2d::assemble_residual,
+             py::arg("assembler"), py::arg("coefficients"))
+        .def("assemble_mass", &Form2d::assemble_mass, py::arg("assembler"));
 }
 
 } // namespace iguana::bindings
