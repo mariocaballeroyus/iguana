@@ -22,9 +22,11 @@ void NeumannCondition<Basis, n>::local_stiffness(
     const Eigen::VectorX<Scalar>&, const PointMatrix<Scalar, n>&,
     Eigen::MatrixX<Scalar>& stiffness) const
 {
-    // The data is known, so the condition adds no stiffness
-    const Eigen::Index num_active = values.values().rows();
-    stiffness.setZero(num_active, num_active);
+    // The data is known, so the condition adds no stiffness, over every
+    // degree of freedom of the element as the rows of the trace
+    Eigen::MatrixX<Scalar> trace;
+    trace_.local_trace(values, trace);
+    stiffness.setZero(trace.rows(), trace.rows());
 }
 
 template<typename Basis, std::size_t n>

@@ -1062,6 +1062,42 @@ TEST_CASE("A Neumann condition loads a trace with data along a boundary",
     REQUIRE_THAT(load_of(assembler).sum(), WithinRel(integral, 1e-12));
 }
 
+TEST_CASE("A Neumann condition on one component of a field of two loads "
+          "it alone", "[assembler]")
+{
+    const Basis basis = uneven();
+    const iguana::Patch<Basis, 2> patch = rectangle(basis);
+    const iguana::FunctionSpace<Basis> space(basis,
+                                             all_cells(CellType::inside), 2);
+
+    const std::array<Eigen::RowVector2d, 4> corners = quadrilateral();
+    const iguana::QuadratureBoundary<double, 2> quadrature =
+        boundary_quadrature(patch, corners);
+
+    const Component second(1);
+    const iguana::NeumannCondition<Basis, 2> condition(second);
+    const Eigen::VectorXd data = Eigen::VectorXd::Ones(quadrature.num_points());
+
+    iguana::Assembler<Basis, 2> assembler(space, patch);
+    assembler.assemble_stiffness(condition, quadrature);
+    assembler.assemble_load(condition, quadrature, data);
+
+    // No stiffness over the two components, and the unit data loads the
+    // second alone with the perimeter, as the functions sum to one
+    double perimeter = 0.;
+
+    for (std::size_t side = 0; side < 4; ++side)
+        perimeter += (corners[(side + 1) % 4] - corners[side]).norm();
+
+    const Eigen::VectorXd load = load_of(assembler);
+    const int num_functions = basis.num_functions();
+
+    REQUIRE(stiffness_of(assembler).norm() == 0.);
+    REQUIRE(load(Eigen::seqN(0, num_functions, 2)).norm() == 0.);
+    REQUIRE_THAT(load(Eigen::seqN(1, num_functions, 2)).sum(),
+                 WithinRel(perimeter, 1e-12));
+}
+
 TEST_CASE("A shifted penalty imposes a field of the space from its closest "
           "points", "[assembler]")
 {
