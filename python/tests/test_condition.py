@@ -169,17 +169,19 @@ def test_neumann_condition_imposes_a_flux():
 @pytest.mark.petsc
 def test_nitsche_condition_imposes_a_linear_field():
     """On the surrogate domain of the square, Nitsche's method imposes the
-    linear field from the sides exactly, whatever the penalty, where a
-    penalty alone leaves an error of the order of the cells."""
+    linear field from the sides exactly, symmetric whatever the penalty and
+    skew-symmetric without one, where a penalty alone leaves an error of
+    the order of the cells."""
     patch, space, quadrature = surrogate_problem()
     shifted = square_surrogate(patch)
     element = PoissonElement()
     source = np.zeros(quadrature.num_points)
     exact = space.control_points @ GRADIENT
 
-    for penalty in (40., 4e3):
+    for penalty, symmetric in ((40., True), (4e3, True), (0., False)):
         condition = NitscheCondition(element.u, shifted,
-                                     lambda x: x @ GRADIENT, penalty)
+                                     lambda x: x @ GRADIENT, penalty,
+                                     symmetric=symmetric)
         u = LinearProblem(element, space, quadrature, source,
                           conditions=[condition],
                           petsc_options_prefix='nitsche_').solve()
@@ -201,7 +203,8 @@ def test_skeleton_nitsche_condition_imposes_a_linear_field():
     space that keeps every function and a quadrature over every cell,
     Nitsche's condition on the faces where they jump and a ghost penalty
     impose the linear field at every degree of freedom, as the generalized
-    shifted boundary method does."""
+    shifted boundary method does, symmetric with a penalty or
+    skew-symmetric without one."""
     patch = rectangle()
     cell_types, fractions = classify_cells(patch, square_sides())
     space = FunctionSpace(patch, [CellType.inside] * len(cell_types))
@@ -212,18 +215,22 @@ def test_skeleton_nitsche_condition_imposes_a_linear_field():
         quadrature.fill_gauss_legendre(cell_type, 3)
 
     element = PoissonElement()
-    condition = SkeletonNitscheCondition(element.u, patch, cell_types,
-                                         square_sides(),
-                                         lambda x: x @ GRADIENT, 40.)
     ghost = GhostPenalty(element.u, patch, cell_types, .1)
-    u = LinearProblem(element, space, quadrature,
-                      np.zeros(quadrature.num_points), cell_weights=fractions,
-                      conditions=[condition], stabilizations=[ghost],
-                      petsc_options_prefix='skeleton_').solve()
 
-    # Exact to round-off, which the conditioning of the cells the penalty
-    # alone determines amplifies
-    assert np.abs(u - space.control_points @ GRADIENT).max() < 1e-9
+    for penalty, symmetric in ((40., True), (0., False)):
+        condition = SkeletonNitscheCondition(element.u, patch, cell_types,
+                                             square_sides(),
+                                             lambda x: x @ GRADIENT, penalty,
+                                             symmetric=symmetric)
+        u = LinearProblem(element, space, quadrature,
+                          np.zeros(quadrature.num_points),
+                          cell_weights=fractions, conditions=[condition],
+                          stabilizations=[ghost],
+                          petsc_options_prefix='skeleton_').solve()
+
+        # Exact to round-off, which the conditioning of the cells the
+        # ghost penalty alone determines amplifies
+        assert np.abs(u - space.control_points @ GRADIENT).max() < 1e-9
 
 
 @pytest.mark.petsc
@@ -307,6 +314,10 @@ def test_invalid_arguments():
     with pytest.raises(ValueError):
         NitscheCondition(element.u, boundary, values, 0.)
 
+    # The skew-symmetric method needs no penalty, but not a negative one
+    with pytest.raises(ValueError):
+        NitscheCondition(element.u, boundary, values, -1., symmetric=False)
+
     with pytest.raises(TypeError):
         NeumannCondition('u', boundary, values)
 
@@ -388,6 +399,16 @@ def test_invalid_skeleton_nitsche_conditions():
     with pytest.raises(ValueError):
         SkeletonNitscheCondition(element.u, patch, cell_types, sides,
                                  lambda x: x[:, 0], 1., center='inside')
+
+    # The skew-symmetric method needs no penalty, but not a negative one,
+    # and the faces need Gauss points
+    with pytest.raises(ValueError):
+        SkeletonNitscheCondition(element.u, patch, cell_types, sides,
+                                 lambda x: x[:, 0], -1., symmetric=False)
+
+    with pytest.raises(ValueError):
+        SkeletonNitscheCondition(element.u, patch, cell_types, sides,
+                                 lambda x: x[:, 0], 1., num_points=0)
 
     # A source gives the values of the trace at each point, two for the
     # body force of the velocity, and is derivatives or a function of the
