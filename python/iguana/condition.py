@@ -434,6 +434,7 @@ class SkeletonNitscheCondition:
                  | Derivatives | None) = None,
         center: str = 'boundary',
         symmetric: bool = True,
+        num_points: int | None = None,
     ) -> None:
         """Initialize the condition imposing values on a trace.
 
@@ -510,6 +511,8 @@ class SkeletonNitscheCondition:
                 the face points.
             symmetric: Whether the method is symmetric, rather than
                 skew-symmetric.
+            num_points: The Gauss points on each face, positive. Without
+                them, one more than the highest degree of the patch.
 
         Raises:
             TypeError: If the trace is not the trace of an element, if the
@@ -519,12 +522,13 @@ class SkeletonNitscheCondition:
             ValueError: If there is not one cell type per element, if the
                 map of the patch is not affine, if the values are not those
                 of the trace at each point, if the penalty is negative, or
-                zero for the symmetric method,
-                if the order is negative, if the center is neither the
-                boundary nor the surrogate, or, with a source, if it does not
-                give each point the values of the source, its derivatives
-                one per term of their order, or if an interpolated source
-                needs derivatives above the degree of the patch.
+                zero for the symmetric method, if the order is negative, if
+                the center is neither the boundary nor the surrogate, if the
+                number of points is not positive, or, with a source, if it
+                does not give each point the values of the source, its
+                derivatives one per term of their order, or if an
+                interpolated source needs derivatives above the degree of
+                the patch.
         """
         if not isinstance(trace, _TRACES):
             raise TypeError('the trace must be the trace of an element')
@@ -559,19 +563,24 @@ class SkeletonNitscheCondition:
             raise ValueError('the center must be the boundary or the '
                              'surrogate')
 
+        if num_points is None:
+            num_points = max(patch.degrees) + 1
+
+        if num_points < 1:
+            raise ValueError('the number of points must be positive')
+
         if source is not None:
             if not (isinstance(source, Derivatives) or callable(source)):
                 raise TypeError('the source must be derivatives or a function '
                                 'of the points')
 
-        # The faces between cells whose weights may jump, with as many
-        # points as on those of a ghost penalty, projected onto the boundary
+        # The faces between cells whose weights may jump, their points
+        # projected onto the boundary
         faces = _cpp.jump_faces(
             patch=patch._cpp_object,
             classification=_cpp.CellClassification2d(cell_types))
         quadrature = _cpp.QuadratureSkeleton2d(
-            patch=patch._cpp_object, faces=faces,
-            num_points=max(patch.degrees) + 1)
+            patch=patch._cpp_object, faces=faces, num_points=num_points)
         projection = _cpp.project_closest_points(
             patch=patch._cpp_object, boundary=boundary._cpp_object,
             points=quadrature.points)
