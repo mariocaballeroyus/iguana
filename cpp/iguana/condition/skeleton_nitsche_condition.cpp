@@ -46,12 +46,18 @@ Eigen::MatrixX<Scalar> mean_operator(const Eigen::MatrixX<Scalar>& before,
 
 template<typename Basis, std::size_t n>
 SkeletonNitscheCondition<Basis, n>::SkeletonNitscheCondition(
-    const Trace<Basis, n>& trace, const Flux<Basis, n>& flux, Scalar penalty)
-    : trace_(trace), flux_(flux), penalty_(penalty)
+    const Trace<Basis, n>& trace, const Flux<Basis, n>& flux, Scalar penalty,
+    bool symmetric)
+    : trace_(trace), flux_(flux), penalty_(penalty), symmetric_(symmetric)
 {
-    if (penalty <= 0)
+    // Only the symmetric method needs a penalty to be stable
+    if (symmetric && penalty <= 0)
         throw std::invalid_argument("SkeletonNitscheCondition: "
                                     "the penalty must be positive");
+
+    if (penalty < 0)
+        throw std::invalid_argument("SkeletonNitscheCondition: "
+                                    "the penalty must be non-negative");
 }
 
 template<typename Basis, std::size_t n>
@@ -98,14 +104,19 @@ void SkeletonNitscheCondition<Basis, n>::local_tangent(
     const Eigen::VectorX<Scalar> penalized =
         penalty_ * std::abs(jump) * weights.cwiseQuotient(sizes);
 
+    // The sign s of the adjoint term, −1 in the symmetric method and +1 in
+    // the skew-symmetric one
+    const Scalar adjoint = symmetric_ ? -1 : 1;
+
     // K_ij = − j ( T(N_i), {{F(N_j)}}_γ )_Γ
-    //        − j ( {{F(N_i)}}_γ, {{T(S N_j)}}_γ )_Γ
+    //        + s j ( {{F(N_i)}}_γ, {{T(S N_j)}}_γ )_Γ
     //        + β |j| ( {{T(S N_i)}}_γ, {{T(S N_j)}}_γ / h )_Γ
-    //      ≈ Σ_q w_q (β |j| S_iq S_jq / h_q − j T_iq F_jq − j F_iq S_jq)
+    //      ≈ Σ_q w_q (β |j| S_iq S_jq / h_q − j T_iq F_jq + s j F_iq S_jq)
     tangent =
         shifted * penalized.asDiagonal() * shifted.transpose()
         - jump * (trace * weights.asDiagonal() * flux.transpose()
-                  + flux * weights.asDiagonal() * shifted.transpose());
+                  - adjoint * flux * weights.asDiagonal()
+                        * shifted.transpose());
 }
 
 template<typename Basis, std::size_t n>
@@ -151,11 +162,15 @@ void SkeletonNitscheCondition<Basis, n>::local_residual(
     const Eigen::VectorX<Scalar> penalized =
         penalty_ * std::abs(jump) * weights.cwiseQuotient(sizes);
 
-    // F_i = β |j| ( {{T(S N_i)}}_γ / h, g )_Γ − j ( {{F(N_i)}}_γ, g )_Γ
-    //     ≈ Σ_q w_q g(x_q) (β |j| S_iq / h_q − j F_iq)
+    // The sign s of the adjoint term, −1 in the symmetric method and +1 in
+    // the skew-symmetric one
+    const Scalar adjoint = symmetric_ ? -1 : 1;
+
+    // F_i = β |j| ( {{T(S N_i)}}_γ / h, g )_Γ + s j ( {{F(N_i)}}_γ, g )_Γ
+    //     ≈ Σ_q w_q g(x_q) (β |j| S_iq / h_q + s j F_iq)
     const Eigen::VectorX<Scalar> load =
         shifted * penalized.cwiseProduct(data)
-        - jump * flux * weights.cwiseProduct(data);
+        + adjoint * jump * flux * weights.cwiseProduct(data);
 
     // R_i = Σ_j K_ij c_j − F_i
     residual = tangent * coefficients - load;

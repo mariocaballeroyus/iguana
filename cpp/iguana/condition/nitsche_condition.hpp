@@ -26,7 +26,10 @@ namespace iguana
  * @details Unlike a penalty, the method is consistent, so it imposes the
  *          values exactly for any penalty large enough to keep it stable.
  *          With a projection, the values are imposed where the data is
- *          given, as the Shifted Boundary Method needs
+ *          given, as the Shifted Boundary Method needs. The adjoint term
+ *          takes the sign of the symmetric method, or the opposite one of
+ *          the skew-symmetric method, stable without a penalty, whose system
+ *          is not symmetric
  *
  * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
  * @tparam n Dimension of the physical space of the patch
@@ -44,19 +47,28 @@ public:
      * @param trace Trace whose values are imposed
      * @param flux Flux conjugate to @p trace in the weak form of its element
      * @param penalty Penalty beta, which the size of the element scales.
-     *        About 10 p^2 for a basis of degree p keeps the method stable
+     *        About 10 p^2 for a basis of degree p keeps the symmetric method
+     *        stable, and any non-negative one the skew-symmetric method
+     * @param symmetric Whether the method is symmetric, rather than
+     *        skew-symmetric
      *
-     * @throws std::invalid_argument If the penalty is not positive
+     * @throws std::invalid_argument If the penalty is negative, or zero for
+     *         the symmetric method
      *
      * @pre @p trace and @p flux outlive the condition, which keeps
      *      references to them
      */
     NitscheCondition(const Trace<Basis, n>& trace,
-                     const Flux<Basis, n>& flux, Scalar penalty);
+                     const Flux<Basis, n>& flux, Scalar penalty,
+                     bool symmetric = true);
 
     /// @brief Penalty beta
     constexpr Scalar penalty() const noexcept
     { return penalty_; }
+
+    /// @brief Whether the method is symmetric, rather than skew-symmetric
+    constexpr bool symmetric() const noexcept
+    { return symmetric_; }
 
     ValueFlags flags() const noexcept override
     {
@@ -89,6 +101,9 @@ private:
 
     /// @brief Penalty beta
     Scalar penalty_;
+
+    /// @brief Whether the method is symmetric, rather than skew-symmetric
+    bool symmetric_;
 };
 
 } // namespace iguana
