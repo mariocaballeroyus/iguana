@@ -95,14 +95,16 @@ void assembly(py::module_& module)
              py::keep_alive<1, 2>());
 
     py::class_<NitscheCondition2d>(module, "NitscheCondition2d")
-        .def(py::init<const Trace2d&, const Flux2d&, double>(),
+        .def(py::init<const Trace2d&, const Flux2d&, double, bool>(),
              py::arg("trace"), py::arg("flux"), py::arg("penalty"),
-             py::keep_alive<1, 2>(), py::keep_alive<1, 3>());
+             py::arg("symmetric") = true, py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>());
 
     py::class_<SkeletonNitscheCondition2d>(module, "SkeletonNitscheCondition2d")
-        .def(py::init<const Trace2d&, const Flux2d&, double>(),
+        .def(py::init<const Trace2d&, const Flux2d&, double, bool>(),
              py::arg("trace"), py::arg("flux"), py::arg("penalty"),
-             py::keep_alive<1, 2>(), py::keep_alive<1, 3>());
+             py::arg("symmetric") = true, py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>());
 
     py::class_<SkeletonGhostPenalty2d>(module, "SkeletonGhostPenalty2d")
         .def(py::init<const Trace2d&, double, int>(), py::arg("trace"),

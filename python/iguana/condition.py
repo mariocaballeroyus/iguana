@@ -148,6 +148,7 @@ class NitscheCondition:
         values: (npt.ArrayLike
                  | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
         penalty: float,
+        symmetric: bool = True,
     ) -> None:
         """Initialize the condition imposing values on a trace.
 
@@ -159,6 +160,12 @@ class NitscheCondition:
         penalty large enough to keep the method stable, about ten times the
         square of the degree of the patch, and times the viscosity for the
         velocity of a fluid, whose flux is the traction.
+
+        The adjoint may instead take the opposite sign, the skew-symmetric
+        method, which is stable without a penalty and so takes any
+        non-negative one, zero included. Its system is not symmetric, and,
+        not being adjoint consistent, it may lose up to half an order of the
+        L2 rate at low degree.
 
         On a shifted quadrature, the adjoint and the penalty act on the
         Taylor expansion of the trace from each point to its closest point,
@@ -175,14 +182,18 @@ class NitscheCondition:
                 function that takes the points where they apply,
                 `quadrature.projections` of shape `(num_points, 2)`, and
                 returns those values.
-            penalty: The penalty, positive, which the size of the elements
-                scales.
+            penalty: The penalty, which the size of the elements scales,
+                positive for the symmetric method and non-negative for the
+                skew-symmetric one.
+            symmetric: Whether the method is symmetric, rather than
+                skew-symmetric.
 
         Raises:
             TypeError: If the trace is not the trace of an element, or if
                 the quadrature is not a boundary quadrature.
             ValueError: If the values are not those of the trace at each
-                point, or if the penalty is not positive.
+                point, or if the penalty is negative, or zero for the
+                symmetric method.
         """
         if not isinstance(trace, _TRACES):
             raise TypeError('the trace must be the trace of an element')
@@ -192,13 +203,18 @@ class NitscheCondition:
 
         values = _values(quadrature.projections, values, trace._shape)
 
-        if not penalty > 0.:
+        # Only the symmetric method needs a penalty to be stable
+        if symmetric and not penalty > 0.:
             raise ValueError('the penalty must be positive')
+
+        if not penalty >= 0.:
+            raise ValueError('the penalty must be non-negative')
 
         self._trace = trace
         self._quadrature = quadrature
         self._values = values
         self._penalty = float(penalty)
+        self._symmetric = bool(symmetric)
 
     @property
     def trace(self) -> PoissonElement.U | StokesElement.U:
@@ -232,17 +248,25 @@ class NitscheCondition:
         """The penalty."""
         return self._penalty
 
+    @property
+    def symmetric(self) -> bool:
+        """Whether the method is symmetric, rather than skew-symmetric."""
+        return self._symmetric
+
     def _add_to(self, form: _cpp.Form2d) -> None:
         """Add the integral of the condition to the compiled form of a
         planar problem, which reads its values where they lie."""
         for trace, flux, values in zip(self._trace._cpp_traces(),
                                        self._trace._cpp_fluxes(),
                                        self._values):
-            condition = _cpp.NitscheCondition2d(trace, flux, self._penalty)
+            condition = _cpp.NitscheCondition2d(trace, flux, self._penalty,
+                                                self._symmetric)
             _add_along(form, condition, self._quadrature, values)
 
     def __repr__(self) -> str:
-        return f'NitscheCondition({self._trace!r}, penalty={self._penalty})'
+        skew = '' if self._symmetric else ', symmetric=False'
+        return (f'NitscheCondition({self._trace!r}, '
+                f'penalty={self._penalty}{skew})')
 
 
 class NeumannCondition:
@@ -409,6 +433,8 @@ class SkeletonNitscheCondition:
         source: (Callable[[npt.NDArray[np.float64]], npt.ArrayLike]
                  | Derivatives | None) = None,
         center: str = 'boundary',
+        symmetric: bool = True,
+        num_points: int | None = None,
     ) -> None:
         """Initialize the condition imposing values on a trace.
 
@@ -419,7 +445,9 @@ class SkeletonNitscheCondition:
         means of the two cells weighted by them, and each cell expands its
         own functions to the closest point on the boundary of every face
         point, where the values apply. With weights of one inside and zero
-        elsewhere, it is Nitsche's condition on the surrogate boundary.
+        elsewhere, it is Nitsche's condition on the surrogate boundary. As
+        for `NitscheCondition`, the method may instead be skew-symmetric,
+        stable without a penalty.
 
         The expansion is a Taylor series of the functions of each cell.
         With the source of the Poisson equation it is instead the series of
@@ -463,12 +491,14 @@ class SkeletonNitscheCondition:
                 point, one per point or two for the velocity, or a function
                 that takes those closest points, of shape `(num_points, 2)`,
                 and returns their values.
-            penalty: The penalty, positive, which the size of the cells
-                scales, as for `NitscheCondition`.
+            penalty: The penalty, which the size of the cells scales,
+                positive for the symmetric method and non-negative for the
+                skew-symmetric one, as for `NitscheCondition`.
             order: Total order of the Taylor expansion towards the
                 boundary, or of the series rewritten with the equation with
                 a source, nonnegative. Without it, the highest degree of the
-                patch.
+                patch. The sum of the degrees of the patch reproduces the
+                polynomial of each cell at the closest point.
             source: The source f of the Poisson equation −Δu = f, or for
                 the velocity the body force f of the Stokes equation
                 −μ Δu + ∇p = f, as its `Derivatives` or as a function of
@@ -479,6 +509,10 @@ class SkeletonNitscheCondition:
             center: Where the series rewritten with the equation expands
                 from: `'boundary'`, the closest points, or `'surrogate'`,
                 the face points.
+            symmetric: Whether the method is symmetric, rather than
+                skew-symmetric.
+            num_points: The Gauss points on each face, positive. Without
+                them, one more than the highest degree of the patch.
 
         Raises:
             TypeError: If the trace is not the trace of an element, if the
@@ -487,12 +521,14 @@ class SkeletonNitscheCondition:
                 function of the points.
             ValueError: If there is not one cell type per element, if the
                 map of the patch is not affine, if the values are not those
-                of the trace at each point, if the penalty is not positive,
-                if the order is negative, if the center is neither the
-                boundary nor the surrogate, or, with a source, if it does not
-                give each point the values of the source, its derivatives
-                one per term of their order, or if an interpolated source
-                needs derivatives above the degree of the patch.
+                of the trace at each point, if the penalty is negative, or
+                zero for the symmetric method, if the order is negative, if
+                the center is neither the boundary nor the surrogate, if the
+                number of points is not positive, or, with a source, if it
+                does not give each point the values of the source, its
+                derivatives one per term of their order, or if an
+                interpolated source needs derivatives above the degree of
+                the patch.
         """
         if not isinstance(trace, _TRACES):
             raise TypeError('the trace must be the trace of an element')
@@ -510,8 +546,12 @@ class SkeletonNitscheCondition:
         if len(cell_types) != num_elements:
             raise ValueError('there must be one cell type per cell')
 
-        if not penalty > 0.:
+        # Only the symmetric method needs a penalty to be stable
+        if symmetric and not penalty > 0.:
             raise ValueError('the penalty must be positive')
+
+        if not penalty >= 0.:
+            raise ValueError('the penalty must be non-negative')
 
         if order is None:
             order = max(patch.degrees)
@@ -523,19 +563,24 @@ class SkeletonNitscheCondition:
             raise ValueError('the center must be the boundary or the '
                              'surrogate')
 
+        if num_points is None:
+            num_points = max(patch.degrees) + 1
+
+        if num_points < 1:
+            raise ValueError('the number of points must be positive')
+
         if source is not None:
             if not (isinstance(source, Derivatives) or callable(source)):
                 raise TypeError('the source must be derivatives or a function '
                                 'of the points')
 
-        # The faces between cells whose weights may jump, with as many
-        # points as on those of a ghost penalty, projected onto the boundary
+        # The faces between cells whose weights may jump, their points
+        # projected onto the boundary
         faces = _cpp.jump_faces(
             patch=patch._cpp_object,
             classification=_cpp.CellClassification2d(cell_types))
         quadrature = _cpp.QuadratureSkeleton2d(
-            patch=patch._cpp_object, faces=faces,
-            num_points=max(patch.degrees) + 1)
+            patch=patch._cpp_object, faces=faces, num_points=num_points)
         projection = _cpp.project_closest_points(
             patch=patch._cpp_object, boundary=boundary._cpp_object,
             points=quadrature.points)
@@ -547,6 +592,7 @@ class SkeletonNitscheCondition:
         self._projection = projection
         self._order = order
         self._penalty = float(penalty)
+        self._symmetric = bool(symmetric)
         self._source = source
         self._center = (_cpp.ShiftCenter.surrogate if center == 'surrogate'
                         else _cpp.ShiftCenter.boundary)
@@ -619,6 +665,11 @@ class SkeletonNitscheCondition:
         """The penalty."""
         return self._penalty
 
+    @property
+    def symmetric(self) -> bool:
+        """Whether the method is symmetric, rather than skew-symmetric."""
+        return self._symmetric
+
     def _source_derivatives(self) -> npt.NDArray[np.float64]:
         """Cartesian derivatives of the source at the closest points, or at
         the face points from the surrogate, of the order of the series less
@@ -658,15 +709,16 @@ class SkeletonNitscheCondition:
         for trace, flux, values in zip(self._trace._cpp_traces(),
                                        self._trace._cpp_fluxes(),
                                        self._imposed):
-            condition = _cpp.SkeletonNitscheCondition2d(trace, flux,
-                                                        self._penalty)
+            condition = _cpp.SkeletonNitscheCondition2d(
+                trace, flux, self._penalty, self._symmetric)
             form.add_skeleton_integral(condition, self._quadrature,
                                        self._projection, self._order, values,
                                        cell_weights)
 
     def __repr__(self) -> str:
+        skew = '' if self._symmetric else ', symmetric=False'
         return (f'SkeletonNitscheCondition({self._trace!r}, '
-                f'penalty={self._penalty})')
+                f'penalty={self._penalty}{skew})')
 
 
 def _add_along(

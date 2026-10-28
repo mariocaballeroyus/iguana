@@ -1356,8 +1356,25 @@ TEST_CASE("A shifted Nitsche condition imposes a field of the space "
     REQUIRE((stiffness_of(assembler) * u - load_of(assembler)).cwiseAbs()
                 .maxCoeff() > 1e-2);
 
+    // Unshifted and without a penalty, the skew-symmetric method adds no
+    // energy: its adjoint term cancels the boundary term of the weak form
+    const iguana::NitscheCondition<Basis, 2> skew(trace, flux, 0., false);
+    iguana::Assembler<Basis, 2> unshifted(space, patch);
+    unshifted.assemble_tangent(skew, quadrature, data, zero);
+    const Eigen::MatrixXd tangent = stiffness_of(unshifted).toDense();
+
+    REQUIRE((tangent + tangent.transpose()).cwiseAbs().maxCoeff()
+            < 1e-12 * tangent.cwiseAbs().maxCoeff());
+
+    // The symmetric method needs a penalty, the skew-symmetric one none,
+    // but neither takes a negative one
     REQUIRE_THROWS_AS((iguana::NitscheCondition<Basis, 2>(trace, flux, 0.)),
                       std::invalid_argument);
+    REQUIRE_NOTHROW(
+        (iguana::NitscheCondition<Basis, 2>(trace, flux, 0., false)));
+    REQUIRE_THROWS_AS(
+        (iguana::NitscheCondition<Basis, 2>(trace, flux, -1., false)),
+        std::invalid_argument);
 }
 
 TEST_CASE("A Stokes system with Nitsche conditions holds a divergence-free "
@@ -1729,8 +1746,6 @@ TEST_CASE("Skeleton Nitsche conditions with binary weights are Nitsche "
 
     const iguana::PoissonElement<Basis, 2>::U trace;
     const iguana::PoissonElement<Basis, 2>::Q flux;
-    const iguana::NitscheCondition<Basis, 2> nitsche(trace, flux, 40.);
-    const iguana::SkeletonNitscheCondition<Basis, 2> face(trace, flux, 40.);
     const Eigen::Vector2d b(1., -2.);
 
     const Eigen::VectorXd surrogate_data =
@@ -1739,28 +1754,41 @@ TEST_CASE("Skeleton Nitsche conditions with binary weights are Nitsche "
         linear_data(faces.points(), to_faces, b);
     const Coefficients zero(Eigen::VectorXd::Zero(space.num_dofs()));
 
-    iguana::Assembler<Basis, 2> on_surrogate(space, patch, true);
-    on_surrogate.assemble_tangent(nitsche, surrogate, to_surrogate, 2,
-                                  surrogate_data, zero);
-    on_surrogate.assemble_residual(nitsche, surrogate, to_surrogate, 2,
-                                   surrogate_data, zero);
+    // The symmetric method with a penalty, and the skew-symmetric one
+    // without
+    for (const bool symmetric : {true, false}) {
+        INFO("symmetric " << symmetric);
+        const double penalty = symmetric ? 40. : 0.;
+        const iguana::NitscheCondition<Basis, 2> nitsche(trace, flux, penalty,
+                                                         symmetric);
+        const iguana::SkeletonNitscheCondition<Basis, 2> face(
+            trace, flux, penalty, symmetric);
 
-    iguana::Assembler<Basis, 2> on_faces(space, patch, true);
-    on_faces.assemble_tangent(face, faces, to_faces, 2, face_data,
-                              cell_weights, zero);
-    on_faces.assemble_residual(face, faces, to_faces, 2, face_data,
-                               cell_weights, zero);
+        iguana::Assembler<Basis, 2> on_surrogate(space, patch, true);
+        on_surrogate.assemble_tangent(nitsche, surrogate, to_surrogate, 2,
+                                      surrogate_data, zero);
+        on_surrogate.assemble_residual(nitsche, surrogate, to_surrogate, 2,
+                                       surrogate_data, zero);
 
-    // The jump selects the inside cell of every face of the surrogate
-    // boundary, whichever side it lies on, and with it its normal
-    const Eigen::MatrixXd stiffness = stiffness_of(on_surrogate).toDense();
-    const Eigen::MatrixXd difference =
-        (stiffness_of(on_surrogate) - stiffness_of(on_faces)).toDense();
+        iguana::Assembler<Basis, 2> on_faces(space, patch, true);
+        on_faces.assemble_tangent(face, faces, to_faces, 2, face_data,
+                                  cell_weights, zero);
+        on_faces.assemble_residual(face, faces, to_faces, 2, face_data,
+                                   cell_weights, zero);
 
-    REQUIRE(difference.cwiseAbs().maxCoeff()
-            < 1e-12 * stiffness.cwiseAbs().maxCoeff());
-    REQUIRE((load_of(on_surrogate) - load_of(on_faces)).cwiseAbs().maxCoeff()
-            < 1e-12 * load_of(on_surrogate).cwiseAbs().maxCoeff());
+        // The jump selects the inside cell of every face of the surrogate
+        // boundary, whichever side it lies on, and with it its normal
+        const Eigen::MatrixXd stiffness =
+            stiffness_of(on_surrogate).toDense();
+        const Eigen::MatrixXd difference =
+            (stiffness_of(on_surrogate) - stiffness_of(on_faces)).toDense();
+        const Eigen::VectorXd load = load_of(on_surrogate);
+
+        REQUIRE(difference.cwiseAbs().maxCoeff()
+                < 1e-12 * stiffness.cwiseAbs().maxCoeff());
+        REQUIRE((load - load_of(on_faces)).cwiseAbs().maxCoeff()
+                < 1e-12 * load.cwiseAbs().maxCoeff());
+    }
 }
 
 TEST_CASE("A linear field solves the weighted problem with Nitsche "
@@ -1801,32 +1829,39 @@ TEST_CASE("A linear field solves the weighted problem with Nitsche "
     const iguana::PoissonElement<Basis, 2> element;
     const iguana::PoissonElement<Basis, 2>::U trace;
     const iguana::PoissonElement<Basis, 2>::Q flux;
-    const iguana::SkeletonNitscheCondition<Basis, 2> face(trace, flux, 40.);
     const iguana::SkeletonGhostPenalty<Basis, 2> ghost(trace, .1);
     const Eigen::Vector2d b(1., -2.);
 
     const Eigen::VectorXd source = Eigen::VectorXd::Zero(cells.num_points());
     const Eigen::VectorXd data = linear_data(faces.points(), projection, b);
-
-    iguana::Assembler<Basis, 2> assembler(space, patch, true);
     const Coefficients zero(Eigen::VectorXd::Zero(space.num_dofs()));
-    assembler.assemble_tangent(element, cells, source, fractions, zero);
-    assembler.assemble_residual(element, cells, source, fractions, zero);
-    assembler.assemble_tangent(face, faces, projection, 2, data, fractions,
-                               zero);
-    assembler.assemble_residual(face, faces, projection, 2, data, fractions,
-                                zero);
-    assembler.assemble_tangent(ghost, ghost_faces, zero);
 
-    // Cell by cell, the weighted volume terms of b . x leave the jumps of
-    // the weights times its flux on the faces, which the condition cancels,
-    // and its expansions reach the data exactly. With every cell inside,
-    // each function keeps its own index
+    // With every cell inside, each function keeps its own index
     const Eigen::VectorXd u = patch.coefficients() * b;
 
-    REQUIRE((stiffness_of(assembler) * u - load_of(assembler)).cwiseAbs()
-                .maxCoeff()
-            < 1e-12 * load_of(assembler).cwiseAbs().maxCoeff());
+    // The symmetric method with a penalty, and the skew-symmetric one
+    // without
+    for (const bool symmetric : {true, false}) {
+        INFO("symmetric " << symmetric);
+        const iguana::SkeletonNitscheCondition<Basis, 2> face(
+            trace, flux, symmetric ? 40. : 0., symmetric);
+
+        iguana::Assembler<Basis, 2> assembler(space, patch, true);
+        assembler.assemble_tangent(element, cells, source, fractions, zero);
+        assembler.assemble_residual(element, cells, source, fractions, zero);
+        assembler.assemble_tangent(face, faces, projection, 2, data,
+                                   fractions, zero);
+        assembler.assemble_residual(face, faces, projection, 2, data,
+                                    fractions, zero);
+        assembler.assemble_tangent(ghost, ghost_faces, zero);
+
+        // Cell by cell, the weighted volume terms of b . x leave the jumps
+        // of the weights times its flux on the faces, which the condition
+        // cancels, and its expansions reach the data exactly
+        REQUIRE((stiffness_of(assembler) * u - load_of(assembler)).cwiseAbs()
+                    .maxCoeff()
+                < 1e-12 * load_of(assembler).cwiseAbs().maxCoeff());
+    }
 }
 
 TEST_CASE("A ghost penalty takes extra powers of the size of the cells and "
@@ -1999,8 +2034,15 @@ TEST_CASE("Skeleton conditions need coupled faces, one weight per cell and a "
     const Eigen::VectorXd data = Eigen::VectorXd::Zero(faces.num_points());
     const Coefficients zero(Eigen::VectorXd::Zero(space.num_dofs()));
 
+    // The symmetric method needs a penalty, the skew-symmetric one none,
+    // but neither takes a negative one
     REQUIRE_THROWS_AS(
         (iguana::SkeletonNitscheCondition<Basis, 2>(trace, flux, 0.)),
+        std::invalid_argument);
+    REQUIRE_NOTHROW(
+        (iguana::SkeletonNitscheCondition<Basis, 2>(trace, flux, 0., false)));
+    REQUIRE_THROWS_AS(
+        (iguana::SkeletonNitscheCondition<Basis, 2>(trace, flux, -1., false)),
         std::invalid_argument);
 
     // Faces left out of the pattern
