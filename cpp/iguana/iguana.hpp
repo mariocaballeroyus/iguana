@@ -56,6 +56,7 @@
 #include "condition/neumann_condition.hpp"
 #include "condition/skeleton_nitsche_condition.hpp"
 #include "condition/skeleton_ghost_penalty.hpp"
+#include "condition/volume_ghost_penalty.hpp"
 
 #ifdef IGUANA_WITH_PETSC
 #include "assembly/assembler.hpp"

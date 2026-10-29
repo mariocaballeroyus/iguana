@@ -1634,6 +1634,106 @@ TEST_CASE("A ghost penalty penalizes the jumps of the highest derivatives of "
     }
 }
 
+TEST_CASE("A volume ghost penalty is the face one on equal cells of "
+          "maximal continuity", "[assembler]")
+{
+    // Cubic along both directions over two by three equal spans, unit
+    // squares on the rectangle two by three
+    const Basis basis(TensorGrid<double, 2>(
+        {KnotVector<double>(3, {0., 0., 0., 0., .5, 1., 1., 1., 1.}),
+         KnotVector<double>(3, {0., 0., 0., 0., 1. / 3., 2. / 3., 1., 1., 1.,
+                                1.})}));
+    const iguana::Patch<Basis, 2> patch = rectangle(basis);
+    const CellClassification<double, 2> cut(
+        std::vector<CellType>(6, CellType::cut));
+    const iguana::FunctionSpace<Basis> space(
+        basis, CellClassification<double, 2>(
+                   std::vector<CellType>(6, CellType::inside)));
+
+    // Four points integrate the squared differences of cubic polynomials,
+    // along a face and over a cell
+    const iguana::QuadratureSkeleton<double, 2> faces(
+        basis.grid(), iguana::ghost_faces(basis.grid(), cut),
+        iguana::GaussLegendre<double, 1>(4));
+    iguana::QuadratureDomain<double, 2> cells;
+    cells.fill(basis.grid(), cut, CellType::cut,
+               iguana::GaussLegendre<double, 2>(4));
+
+    // The difference of the polynomials of two cells of side h across a
+    // face, [[d^p u]] (x - x_F)^p / p!, integrated over both cells and
+    // scaled by h^-2, gives the jump over the face scaled by
+    // 2 h^(2p - 1) / ((p!)^2 (2p + 1))
+    const iguana::PoissonElement<Basis, 2>::U trace;
+    const double penalty = .3;
+    const iguana::VolumeGhostPenalty<Basis, 2> volume(trace, penalty);
+    const iguana::SkeletonGhostPenalty<Basis, 2> face(
+        trace, 2. * penalty / (36. * 7.));
+    const Coefficients zero(Eigen::VectorXd::Zero(space.num_dofs()));
+
+    iguana::Assembler<Basis, 2> by_volume(space, patch, true);
+    by_volume.assemble_tangent(volume, faces, cells, zero);
+    iguana::Assembler<Basis, 2> by_face(space, patch, true);
+    by_face.assemble_tangent(face, faces, zero);
+
+    const Eigen::MatrixXd expected = Eigen::MatrixXd(stiffness_of(by_face));
+    const Eigen::MatrixXd computed = Eigen::MatrixXd(stiffness_of(by_volume));
+
+    REQUIRE((computed - expected).cwiseAbs().maxCoeff()
+            < 1e-12 * expected.cwiseAbs().maxCoeff());
+}
+
+TEST_CASE("A volume ghost penalty extends a field of any continuity",
+          "[assembler]")
+{
+    // Quadratic along both directions, continuous only across xi = .5,
+    // where the knot repeats, which the face penalty refuses
+    const Basis basis(TensorGrid<double, 2>(
+        {KnotVector<double>(2, {0., 0., 0., .5, .5, 1., 1., 1.}),
+         KnotVector<double>(2, {0., 0., 0., .5, 1., 1., 1.})}));
+    const iguana::Patch<Basis, 2> patch = rectangle(basis);
+    const CellClassification<double, 2> cut(
+        std::vector<CellType>(4, CellType::cut));
+    const iguana::FunctionSpace<Basis> space(
+        basis, CellClassification<double, 2>(
+                   std::vector<CellType>(4, CellType::inside)));
+
+    const iguana::QuadratureSkeleton<double, 2> faces(
+        basis.grid(), iguana::ghost_faces(basis.grid(), cut),
+        iguana::GaussLegendre<double, 1>(3));
+    iguana::QuadratureDomain<double, 2> cells;
+    cells.fill(basis.grid(), cut, CellType::cut,
+               iguana::GaussLegendre<double, 2>(3));
+
+    const iguana::PoissonElement<Basis, 2>::U trace;
+    const iguana::VolumeGhostPenalty<Basis, 2> ghost(trace, .3);
+    const Coefficients zero(Eigen::VectorXd::Zero(space.num_dofs()));
+    iguana::Assembler<Basis, 2> assembler(space, patch, true);
+    assembler.assemble_tangent(ghost, faces, cells, zero);
+    const Eigen::SparseMatrix<double, Eigen::RowMajor> stiffness =
+        stiffness_of(assembler);
+
+    // xi eta, at the products of the Greville abscissae, is one polynomial
+    // across every face, which costs nothing
+    const KnotVector<double>& along_x = basis.axis(0).knots();
+    const KnotVector<double>& along_y = basis.axis(1).knots();
+    const int count = basis.axis(0).num_functions();
+    Eigen::VectorXd u(basis.num_functions());
+
+    for (int function = 0; function < basis.num_functions(); ++function)
+        u(function) = greville(along_x, function % count)
+                      * greville(along_y, function / count);
+
+    REQUIRE((stiffness * u).cwiseAbs().maxCoeff()
+            < 1e-12 * stiffness.diagonal().maxCoeff());
+
+    // The function of the double knot, at its peak there, has a kink
+    // across xi = .5, which the penalty sees
+    Eigen::VectorXd v = Eigen::VectorXd::Zero(basis.num_functions());
+    v(2) = 1.;
+
+    REQUIRE(v.dot(stiffness * v) > 1e-3 * stiffness.diagonal().maxCoeff());
+}
+
 TEST_CASE("A ghost penalty needs coupled faces, simple interior knots and an "
           "affine B-spline patch", "[assembler]")
 {

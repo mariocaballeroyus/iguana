@@ -17,6 +17,7 @@
 #include "iguana/condition/condition.hpp"
 #include "iguana/condition/skeleton_condition.hpp"
 #include "iguana/condition/skeleton_ghost_penalty.hpp"
+#include "iguana/condition/volume_ghost_penalty.hpp"
 #include "iguana/element/element.hpp"
 #include "iguana/geometry/boundary_projection.hpp"
 #include "iguana/quadrature/quadrature_boundary.hpp"
@@ -280,6 +281,35 @@ public:
                                  Assembler<Basis, n>& assembler,
                                  Vec coefficients) {
             assembler.assemble_residual(penalty, quadrature, coefficients);
+        });
+    }
+
+    /**
+     * @brief Adds the tangent and residual of a volume ghost penalty across
+     *        the faces of a skeleton quadrature, integrated on their cells
+     *
+     * @param penalty Volume ghost penalty whose local tangent and residual
+     *        are added
+     * @param faces Quadrature over interior faces of the grid of the basis
+     * @param cells Quadrature holding points on both cells of every face
+     *
+     * @pre @p penalty and both quadratures outlive the form. The assembly
+     *      checks them as Assembler::assemble_tangent() does
+     */
+    void add_skeleton_integral(
+        const VolumeGhostPenalty<Basis, n>& penalty,
+        const QuadratureSkeleton<Scalar, dim>& faces,
+        const QuadratureDomain<Scalar, dim>& cells) requires (dim == 2)
+    {
+        tangents_.push_back([&penalty, &faces, &cells](
+                                Assembler<Basis, n>& assembler,
+                                Vec coefficients) {
+            assembler.assemble_tangent(penalty, faces, cells, coefficients);
+        });
+        residuals_.push_back([&penalty, &faces, &cells](
+                                 Assembler<Basis, n>& assembler,
+                                 Vec coefficients) {
+            assembler.assemble_residual(penalty, faces, cells, coefficients);
         });
     }
 

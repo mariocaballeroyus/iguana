@@ -17,6 +17,7 @@
 #include "iguana/condition/condition.hpp"
 #include "iguana/condition/skeleton_condition.hpp"
 #include "iguana/condition/skeleton_ghost_penalty.hpp"
+#include "iguana/condition/volume_ghost_penalty.hpp"
 #include "iguana/element/element.hpp"
 #include "iguana/fspace/function_space.hpp"
 #include "iguana/fspace/mixed_function_space.hpp"
@@ -473,6 +474,60 @@ public:
      */
     void assemble_residual(const SkeletonGhostPenalty<Basis, n>& penalty,
                            const QuadratureSkeleton<Scalar, dim>& quadrature,
+                           Vec coefficients) requires (dim == 2);
+
+    /**
+     * @brief Adds the tangent of a volume ghost penalty over the faces of a
+     *        skeleton quadrature, integrated at the points of a domain
+     *        quadrature on their cells, at coefficients
+     *
+     * On each face, the values of both of its cells are filled at the
+     * points of each, every cell with its own polynomial, extended into the
+     * other. The patch maps the weights of the domain quadrature into
+     * volume weights
+     *
+     * @param penalty Volume ghost penalty whose local tangent is added
+     * @param faces Quadrature over interior faces of the grid of the basis,
+     *        whose points are not used
+     * @param cells Quadrature holding points on both cells of every face
+     * @param coefficients Coefficients of the degrees of freedom of the
+     *        space, one each
+     *
+     * @throws std::invalid_argument If the faces are not coupled, if the
+     *         field of @p penalty is not one of the space, if a cell of a
+     *         face holds no points of @p cells, if @p coefficients does not
+     *         have one entry per degree of freedom, or if the local matrices
+     *         of @p penalty do not match the degrees of freedom of the space
+     *
+     * @pre @p faces and @p cells are built on the grid of the basis, every
+     *      cell of a face has its degrees of freedom in the space, and
+     *      @p coefficients is not the residual
+     */
+    void assemble_tangent(const VolumeGhostPenalty<Basis, n>& penalty,
+                          const QuadratureSkeleton<Scalar, dim>& faces,
+                          const QuadratureDomain<Scalar, dim>& cells,
+                          Vec coefficients) requires (dim == 2);
+
+    /**
+     * @brief Adds the residual of a volume ghost penalty over the faces of a
+     *        skeleton quadrature, integrated at the points of a domain
+     *        quadrature on their cells, at coefficients
+     *
+     * @param penalty Volume ghost penalty whose local residual is added
+     * @param faces Quadrature over interior faces of the grid of the basis,
+     *        whose points are not used
+     * @param cells Quadrature holding points on both cells of every face
+     * @param coefficients Coefficients of the degrees of freedom of the
+     *        space, one each
+     *
+     * @throws std::invalid_argument As for the tangent of a volume ghost
+     *         penalty
+     *
+     * @pre As for the tangent of a volume ghost penalty
+     */
+    void assemble_residual(const VolumeGhostPenalty<Basis, n>& penalty,
+                           const QuadratureSkeleton<Scalar, dim>& faces,
+                           const QuadratureDomain<Scalar, dim>& cells,
                            Vec coefficients) requires (dim == 2);
 
     /**
