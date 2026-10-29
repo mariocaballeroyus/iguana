@@ -10,7 +10,8 @@ import iguana
 from iguana import (Boundary, CellType, FunctionSpace, GhostPenalty,
                     NitscheCondition, PoissonElement, QuadratureBoundary,
                     QuadratureDomain, SkeletonNitscheCondition,
-                    StokesElement, SurrogateBoundary, classify_cells, cpp)
+                    StokesElement, SurrogateBoundary, VolumeGhostPenalty,
+                    classify_cells, cpp)
 
 try:
     from iguana.petsc import LinearProblem
@@ -51,7 +52,8 @@ def test_ghost_penalty_extends_a_shifted_problem():
     shifted boundary method and the ghost penalty extends its solution over
     the rest, so that a linear field is recovered at every degree of
     freedom, those of the cells outside the circle included. So it is with
-    two penalties sharing the faces, a weaker one between outside cells."""
+    two penalties sharing the faces, a weaker one between outside cells,
+    and with the volume penalty."""
     patch = rectangle()
     cell_types = classify_cells(patch, circle()).cell_types
     inside = [CellType.inside if cell == CellType.inside
@@ -70,9 +72,11 @@ def test_ghost_penalty_extends_a_shifted_problem():
     cut = GhostPenalty(element.u, patch, cell_types, .1, faces='cut')
     void = GhostPenalty(element.u, patch, cell_types, .01, faces='outside')
 
+    volume = VolumeGhostPenalty(element.u, patch, cell_types, .1)
+
     assert cut.num_faces + void.num_faces == ghost.num_faces
 
-    for stabilizations in ([ghost], [cut, void]):
+    for stabilizations in ([ghost], [cut, void], [volume]):
         u = LinearProblem(element, space, quadrature,
                           np.zeros(quadrature.num_points),
                           conditions=[condition],
@@ -160,6 +164,13 @@ def test_invalid_ghost_penalties():
 
     with pytest.raises(ValueError):
         GhostPenalty(element.u, patch, cell_types, 1., faces='void')
+
+    # The volume penalty checks its arguments as the face one does
+    with pytest.raises(TypeError):
+        VolumeGhostPenalty('u', patch, cell_types, 1.)
+
+    with pytest.raises(ValueError):
+        VolumeGhostPenalty(element.u, patch, cell_types, 0.)
 
     quadrature = QuadratureDomain(patch)
     quadrature.fill_gauss_legendre(CellType.inside, 3)
