@@ -668,6 +668,83 @@ void visit_ghost_faces(
 }
 
 /**
+ * @brief Visits the faces of a skeleton quadrature with the values of both
+ *        of their cells at the points a domain quadrature holds on each,
+ *        every cell with its own polynomial, extended into the other, and
+ *        the volume weights of each cell
+ *
+ * @param visit Called with the cells before and after the face, the values
+ *        of the cell before and of the cell after at the points of the cell
+ *        before, those of the cell before and of the cell after at the
+ *        points of the cell after, and the weights of each cell
+ *
+ * @throws std::invalid_argument If a cell of a face holds no points of the
+ *         domain quadrature
+ */
+template<typename Basis, std::size_t n, typename Visit>
+void visit_ghost_patches(
+    const Patch<Basis, n>& patch, const MixedFunctionSpace<Basis>& space,
+    ValueFlags flags,
+    const QuadratureSkeleton<typename Basis::Scalar, Basis::dimension>& faces,
+    const QuadratureDomain<typename Basis::Scalar, Basis::dimension>& cells,
+    Visit&& visit)
+{
+    using Scalar = typename Basis::Scalar;
+
+    // The position of each cell among those the domain quadrature holds,
+    // -1 for none
+    std::vector<int> held(static_cast<std::size_t>(space.num_elements()), -1);
+
+    for (int index = 0; index < cells.num_elements(); ++index)
+        held[static_cast<std::size_t>(cells.elements()(index))] = index;
+
+    ElementValues<Basis, n> before(patch, space.bases(), flags);
+    ElementValues<Basis, n> after_in_before(patch, space.bases(), flags);
+    ElementValues<Basis, n> before_in_after(patch, space.bases(), flags);
+    ElementValues<Basis, n> after(patch, space.bases(), flags);
+    Eigen::MatrixX<Scalar> points;
+    Eigen::VectorX<Scalar> weights_before;
+    Eigen::VectorX<Scalar> weights_after;
+
+    // The points and weights the domain quadrature holds on a cell
+    const auto rule = [&cells, &held](int cell, Eigen::MatrixX<Scalar>& at,
+                                      Eigen::VectorX<Scalar>& weights) {
+        const int index = held[static_cast<std::size_t>(cell)];
+
+        if (index < 0)
+            throw std::invalid_argument("Assembler: "
+                                        "a volume ghost penalty needs points "
+                                        "on the cells of its faces");
+
+        const int first = cells.offsets()(index);
+        const int count = cells.offsets()(index + 1) - first;
+        at = cells.points().middleRows(first, count);
+        weights = cells.weights().segment(first, count);
+    };
+
+    for (int face = 0; face < faces.num_faces(); ++face) {
+        const int cell_before = faces.cells()(face, 0);
+        const int cell_after = faces.cells()(face, 1);
+
+        // At the points of each cell, its own values and those of the other
+        // cell, whose polynomial an evaluation on it extends, and the volume
+        // weights of the cell through the map
+        rule(cell_before, points, weights_before);
+        before.reinit(cell_before, points);
+        after_in_before.reinit(cell_after, points);
+        weights_before = weights_before.cwiseProduct(before.measures());
+
+        rule(cell_after, points, weights_after);
+        before_in_after.reinit(cell_before, points);
+        after.reinit(cell_after, points);
+        weights_after = weights_after.cwiseProduct(after.measures());
+
+        visit(cell_before, cell_after, before, after_in_before,
+              before_in_after, after, weights_before, weights_after);
+    }
+}
+
+/**
  * @brief Read access to the entries of a PETSc vector for the length of a
  *        pass, given back even when the pass throws
  */
@@ -764,6 +841,28 @@ const Basis& ghost_basis(bool couple_faces, const Patch<Basis, n>& patch,
     }
 
     return basis;
+}
+
+/**
+ * @brief Checks that a volume ghost penalty suits the assembly
+ *
+ * @throws std::invalid_argument If the faces are not coupled, or if the
+ *         field of the penalty is not one of the space
+ */
+template<typename Basis, std::size_t n>
+void check_volume_ghost(bool couple_faces,
+                        const MixedFunctionSpace<Basis>& space,
+                        const VolumeGhostPenalty<Basis, n>& penalty)
+{
+    // Without the faces coupled, the pattern would grow with each new face
+    if (!couple_faces)
+        throw std::invalid_argument("Assembler: "
+                                    "a ghost penalty needs the faces coupled");
+
+    if (penalty.field(space.num_fields()) >= space.num_fields())
+        throw std::invalid_argument("Assembler: "
+                                    "a ghost penalty must act on a field of "
+                                    "the space");
 }
 
 } // namespace
@@ -1127,6 +1226,78 @@ void Assembler<Basis, n>::assemble_residual(
             face_dofs(cell_before, cell_after, dofs, positions);
             entries.gather(dofs, positions, face_coefficients);
             penalty.local_residual(before, after, weights, degree,
+                                   face_coefficients, local);
+
+            fold_face(local, positions, std::ssize(dofs), folded);
+            add_to_residual(dofs, folded);
+        });
+
+    finalize(residual_);
+}
+
+template<typename Basis, std::size_t n>
+void Assembler<Basis, n>::assemble_tangent(
+    const VolumeGhostPenalty<Basis, n>& penalty,
+    const QuadratureSkeleton<Scalar, dim>& faces,
+    const QuadratureDomain<Scalar, dim>& cells, Vec coefficients)
+    requires (dim == 2)
+{
+    check_volume_ghost(couple_faces_, space_, penalty);
+    check_coefficients(coefficients);
+
+    const Entries entries(coefficients);
+    Eigen::VectorX<Scalar> face_coefficients;
+    Eigen::MatrixX<Scalar> local;
+    Eigen::MatrixX<Scalar> folded;
+    std::vector<int> dofs;
+    std::vector<int> positions;
+
+    visit_ghost_patches(
+        patch_, space_, penalty.flags(), faces, cells,
+        [&](int cell_before, int cell_after, const auto& before,
+            const auto& after_in_before, const auto& before_in_after,
+            const auto& after, const auto& weights_before,
+            const auto& weights_after) {
+            face_dofs(cell_before, cell_after, dofs, positions);
+            entries.gather(dofs, positions, face_coefficients);
+            penalty.local_tangent(before, after_in_before, before_in_after,
+                                  after, weights_before, weights_after,
+                                  face_coefficients, local);
+
+            fold_face(local, positions, std::ssize(dofs), folded);
+            add_to_matrix(tangent_, dofs, folded);
+        });
+
+    finalize(tangent_);
+}
+
+template<typename Basis, std::size_t n>
+void Assembler<Basis, n>::assemble_residual(
+    const VolumeGhostPenalty<Basis, n>& penalty,
+    const QuadratureSkeleton<Scalar, dim>& faces,
+    const QuadratureDomain<Scalar, dim>& cells, Vec coefficients)
+    requires (dim == 2)
+{
+    check_volume_ghost(couple_faces_, space_, penalty);
+    check_coefficients(coefficients);
+
+    const Entries entries(coefficients);
+    Eigen::VectorX<Scalar> face_coefficients;
+    Eigen::VectorX<Scalar> local;
+    Eigen::VectorX<Scalar> folded;
+    std::vector<int> dofs;
+    std::vector<int> positions;
+
+    visit_ghost_patches(
+        patch_, space_, penalty.flags(), faces, cells,
+        [&](int cell_before, int cell_after, const auto& before,
+            const auto& after_in_before, const auto& before_in_after,
+            const auto& after, const auto& weights_before,
+            const auto& weights_after) {
+            face_dofs(cell_before, cell_after, dofs, positions);
+            entries.gather(dofs, positions, face_coefficients);
+            penalty.local_residual(before, after_in_before, before_in_after,
+                                   after, weights_before, weights_after,
                                    face_coefficients, local);
 
             fold_face(local, positions, std::ssize(dofs), folded);

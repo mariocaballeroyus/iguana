@@ -133,9 +133,10 @@ public:
      *        basis
      * @param points Points in parameter space, with size (num_points, dim)
      *
-     * @pre @p element lies in the grid and every point lies inside it. With
-     *      physical gradients or Hessians flagged, J is also invertible at
-     *      the points
+     * @pre @p element lies in the grid and every point lies inside it, or
+     *      in a neighbouring element, where the values extend the
+     *      polynomial of @p element. With physical gradients or Hessians
+     *      flagged, J is also invertible at the points
      */
     void reinit(int element, const Eigen::MatrixX<Scalar>& points);
 
