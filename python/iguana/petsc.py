@@ -29,7 +29,7 @@ from iguana.element import PoissonElement, StokesElement
 from iguana.fspace import FunctionSpace, MixedFunctionSpace
 from iguana.patch import PlanarPatch
 from iguana.quadrature import QuadratureDomain
-from iguana.stabilization import GhostPenalty
+from iguana.stabilization import GhostPenalty, VolumeGhostPenalty
 
 
 class _Problem:
@@ -47,7 +47,7 @@ class _Problem:
         cell_weights: npt.ArrayLike | None,
         conditions: Sequence[PenaltyCondition | NitscheCondition
                              | NeumannCondition | SkeletonNitscheCondition],
-        stabilizations: Sequence[GhostPenalty],
+        stabilizations: Sequence[GhostPenalty | VolumeGhostPenalty],
         pressure_reference: npt.ArrayLike | None,
     ) -> None:
         """Initialize the form and the assembler of the problem, checking
@@ -176,7 +176,7 @@ class LinearProblem(_Problem):
         conditions: Sequence[PenaltyCondition | NitscheCondition
                              | NeumannCondition
                              | SkeletonNitscheCondition] = (),
-        stabilizations: Sequence[GhostPenalty] = (),
+        stabilizations: Sequence[GhostPenalty | VolumeGhostPenalty] = (),
         step: float | None = None,
         pressure_reference: npt.ArrayLike | None = None,
         petsc_options: dict[str, object] | None = None,
@@ -357,7 +357,7 @@ class LinearProblem(_Problem):
             each field, in its order.
 
         Raises:
-            ValueError: If a stabilization is given on a patch whose map is
+            ValueError: If a `GhostPenalty` is given on a patch whose map is
                 not affine, or that repeats an interior knot.
             RuntimeError: If the linear solver does not converge.
         """
@@ -410,7 +410,7 @@ class NonlinearProblem(_Problem):
         conditions: Sequence[PenaltyCondition | NitscheCondition
                              | NeumannCondition
                              | SkeletonNitscheCondition] = (),
-        stabilizations: Sequence[GhostPenalty] = (),
+        stabilizations: Sequence[GhostPenalty | VolumeGhostPenalty] = (),
         pressure_reference: npt.ArrayLike | None = None,
         petsc_options: dict[str, object] | None = None,
     ) -> None:
@@ -533,7 +533,7 @@ class NonlinearProblem(_Problem):
             a linear problem.
 
         Raises:
-            ValueError: If a stabilization is given on a patch whose map is
+            ValueError: If a `GhostPenalty` is given on a patch whose map is
                 not affine, or that repeats an interior knot.
             RuntimeError: If the nonlinear solver does not converge.
         """
@@ -590,7 +590,7 @@ def _check_terms(
     patch: PlanarPatch,
     conditions: list[PenaltyCondition | NitscheCondition | NeumannCondition
                      | SkeletonNitscheCondition],
-    stabilizations: list[GhostPenalty],
+    stabilizations: list[GhostPenalty | VolumeGhostPenalty],
 ) -> None:
     """Check that the conditions and stabilizations of a problem are of the
     kinds it assembles, act on traces of its element and lie on the patch of
@@ -619,7 +619,7 @@ def _check_terms(
                              'patch of the space')
 
     for stabilization in stabilizations:
-        if not isinstance(stabilization, GhostPenalty):
+        if not isinstance(stabilization, (GhostPenalty, VolumeGhostPenalty)):
             raise TypeError('the stabilizations must be ghost penalties')
 
         if not isinstance(stabilization.trace, traces):

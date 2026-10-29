@@ -21,7 +21,7 @@ from iguana.patch import (CurvePatch, PlanarPatch, SurfacePatch, VolumePatch,
                           create_box, create_curve, create_rectangle,
                           create_surface)
 from iguana.quadrature import QuadratureBoundary, QuadratureDomain
-from iguana.stabilization import GhostPenalty
+from iguana.stabilization import GhostPenalty, VolumeGhostPenalty
 
 __version__ = cpp.__version__
 
@@ -31,5 +31,6 @@ __all__ = ['Boundary', 'CellType', 'CurvePatch', 'Derivatives',
            'PenaltyCondition', 'PlanarPatch', 'PoissonElement',
            'QuadratureBoundary', 'QuadratureDomain',
            'SkeletonNitscheCondition', 'StokesElement', 'SurfacePatch',
-           'SurrogateBoundary', 'VolumePatch', 'classify_cells', 'create_box',
-           'create_curve', 'create_rectangle', 'create_surface']
+           'SurrogateBoundary', 'VolumeGhostPenalty', 'VolumePatch',
+           'classify_cells', 'create_box', 'create_curve', 'create_rectangle',
+           'create_surface']
