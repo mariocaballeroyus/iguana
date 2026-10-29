@@ -13,14 +13,15 @@ namespace iguana
 
 template<std::floating_point T, std::size_t d>
 std::vector<int> ghost_faces(const TensorGrid<T, d>& grid,
-                             const CellClassification<T, d>& classification)
+                             const CellClassification<T, d>& classification,
+                             GhostFaces faces)
 {
     if (classification.num_elements() != grid.num_elements())
         throw std::invalid_argument("ghost_faces: "
                                     "the classification must have one cell "
                                     "type per element");
 
-    std::vector<int> faces;
+    std::vector<int> selected;
 
     for (int face = 0; face < grid.num_faces(); ++face) {
         const std::array<int, 2> cells = grid.face_elements(face);
@@ -31,11 +32,13 @@ std::vector<int> ghost_faces(const TensorGrid<T, d>& grid,
         const bool outside = before == CellType::outside
                              && after == CellType::outside;
 
-        if (cut || outside)
-            faces.push_back(face);
+        // A face of either kind, unless only the other one is selected
+        if ((cut && faces != GhostFaces::outside)
+            || (outside && faces != GhostFaces::cut))
+            selected.push_back(face);
     }
 
-    return faces;
+    return selected;
 }
 
 template<std::floating_point T, std::size_t d>
@@ -63,9 +66,11 @@ std::vector<int> jump_faces(const TensorGrid<T, d>& grid,
 }
 
 template std::vector<int> ghost_faces(const TensorGrid<double, 2>&,
-                                      const CellClassification<double, 2>&);
+                                      const CellClassification<double, 2>&,
+                                      GhostFaces);
 template std::vector<int> ghost_faces(const TensorGrid<double, 3>&,
-                                      const CellClassification<double, 3>&);
+                                      const CellClassification<double, 3>&,
+                                      GhostFaces);
 
 template std::vector<int> jump_faces(const TensorGrid<double, 2>&,
                                      const CellClassification<double, 2>&);

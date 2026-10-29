@@ -17,18 +17,39 @@ namespace iguana
 {
 
 /**
+ * @brief Kind of the faces a ghost penalty acts on
+ *
+ * The faces of the cut cells and those between two outside cells partition
+ * the faces of a ghost penalty, so that two penalties of different
+ * strengths may act on each
+ */
+enum class GhostFaces
+{
+    /// @brief The faces of the cut cells and those between outside cells
+    all,
+
+    /// @brief The faces of the cut cells
+    cut,
+
+    /// @brief The faces between two outside cells
+    outside
+};
+
+/**
  * @brief Interior faces of a grid along which a ghost penalty extends the
  *        solution beyond the physical domain
  *
  * @details Used in the Generalized Shifted Boundary Method to penalize the
  *          derivative jumps on faces with mean volume fraction below one and
- *          volume fraction jump below one in magnitude
+ *          volume fraction jump below one in magnitude: the faces of the cut
+ *          cells and those between two outside cells, or either kind alone
  *
  * @tparam T Floating-point type
  * @tparam d Number of parametric directions
  *
  * @param grid Grid whose elements are the cells
  * @param classification Cell type of each element of the grid
+ * @param faces Kind of the faces selected
  * @return Indices of the faces in the numbering of the grid, increasing
  *
  * @throws std::invalid_argument If the classification does not have one
@@ -36,7 +57,8 @@ namespace iguana
  */
 template<std::floating_point T, std::size_t d>
 std::vector<int> ghost_faces(const TensorGrid<T, d>& grid,
-                             const CellClassification<T, d>& classification);
+                             const CellClassification<T, d>& classification,
+                             GhostFaces faces = GhostFaces::all);
 
 /**
  * @brief Interior faces of a grid across which the volume fraction of the

@@ -39,24 +39,38 @@ TEST_CASE("The ghost faces surround the cut and outside cells",
          CellType::inside, CellType::cut, CellType::outside,
          CellType::outside, CellType::outside, CellType::outside});
 
-    const std::vector<int> ghost = iguana::ghost_faces(grid, classification);
+    // Each face as direction, cell before and cell after, in the numbering
+    // of the grid
+    const auto described = [&grid](const std::vector<int>& faces)
+    {
+        std::vector<std::array<int, 3>> found;
+
+        for (const int face : faces) {
+            const std::array<int, 2> cells = grid.face_elements(face);
+
+            found.push_back({static_cast<int>(grid.face_direction(face)),
+                             cells[0], cells[1]});
+        }
+
+        return found;
+    };
 
     // The faces of the cut cell and those between outside cells, but none
-    // between inside cells, nor between an inside and an outside cell, as
-    // direction, cell before and cell after, in the numbering of the grid
-    const std::vector<std::array<int, 3>> expected{
-        {0, 3, 4}, {0, 4, 5}, {0, 6, 7}, {0, 7, 8},
-        {1, 1, 4}, {1, 2, 5}, {1, 4, 7}, {1, 5, 8}};
-    std::vector<std::array<int, 3>> found;
+    // between inside cells, nor between an inside and an outside cell
+    REQUIRE(described(iguana::ghost_faces(grid, classification))
+            == std::vector<std::array<int, 3>>{
+                {0, 3, 4}, {0, 4, 5}, {0, 6, 7}, {0, 7, 8},
+                {1, 1, 4}, {1, 2, 5}, {1, 4, 7}, {1, 5, 8}});
 
-    for (const int face : ghost) {
-        const std::array<int, 2> cells = grid.face_elements(face);
-
-        found.push_back({static_cast<int>(grid.face_direction(face)),
-                         cells[0], cells[1]});
-    }
-
-    REQUIRE(found == expected);
+    // Either kind alone, the two sharing them
+    REQUIRE(described(iguana::ghost_faces(grid, classification,
+                                          iguana::GhostFaces::cut))
+            == std::vector<std::array<int, 3>>{
+                {0, 3, 4}, {0, 4, 5}, {1, 1, 4}, {1, 4, 7}});
+    REQUIRE(described(iguana::ghost_faces(grid, classification,
+                                          iguana::GhostFaces::outside))
+            == std::vector<std::array<int, 3>>{
+                {0, 6, 7}, {0, 7, 8}, {1, 2, 5}, {1, 5, 8}});
 
     // One cell type for nine elements
     const CellClassification<double, 2> one_cell({CellType::inside});
