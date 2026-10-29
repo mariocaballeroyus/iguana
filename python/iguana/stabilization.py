@@ -35,6 +35,7 @@ class GhostPenalty:
         patch: PlanarPatch,
         cell_types: Sequence[CellType],
         penalty: float,
+        faces: str = 'all',
     ) -> None:
         """Initialize the ghost penalty on a trace.
 
@@ -49,6 +50,11 @@ class GhostPenalty:
         physical domain over every function the cells beyond it keep. The
         patch must have simple interior knots, or lower derivatives would
         jump too, which its problem rejects when it solves.
+
+        The penalty may instead act on either kind of face alone, so that
+        two penalties of different strengths share the faces, such as a
+        weaker one deep in the void. Without one on the faces between
+        outside cells, the functions of those cells alone are left free.
 
         The traces of a fluid scale the penalty as their fields need: the
         velocity by the viscosity, on each of its components, and the
@@ -67,12 +73,15 @@ class GhostPenalty:
                 first direction running fastest.
             penalty: The penalty, positive, which the size of the cells
                 scales.
+            faces: The faces it acts on: `'all'`, `'cut'`, those of the cut
+                cells, or `'outside'`, those between two outside cells.
 
         Raises:
             TypeError: If the trace is not the trace of an element, or if
                 the patch is not a planar patch.
-            ValueError: If there is not one cell type per element, or if
-                the penalty is not positive.
+            ValueError: If there is not one cell type per element, if the
+                penalty is not positive, or if the faces are not all, cut
+                or outside.
         """
         if not isinstance(trace, _TRACES):
             raise TypeError('the trace must be the trace of an element')
@@ -90,19 +99,24 @@ class GhostPenalty:
         if not penalty > 0.:
             raise ValueError('the penalty must be positive')
 
+        if faces not in ('all', 'cut', 'outside'):
+            raise ValueError('the faces must be all, cut or outside')
+
         # Along a face, the squared jumps are polynomials of twice the degree
         # along it, which one point more than the degree integrates exactly
         # on an affine map, for fields up to one degree above the patch, as
         # those of a divergence-conforming space
-        faces = _cpp.ghost_faces(
+        selected = _cpp.ghost_faces(
             patch=patch._cpp_object,
-            classification=_cpp.CellClassification2d(cell_types))
+            classification=_cpp.CellClassification2d(cell_types),
+            faces=getattr(_cpp.GhostFaces, faces))
 
         self._trace = trace
         self._patch = patch
         self._penalty = float(penalty)
+        self._faces = faces
         self._quadrature = _cpp.QuadratureSkeleton2d(
-            patch=patch._cpp_object, faces=faces,
+            patch=patch._cpp_object, faces=selected,
             num_points=max(patch.degrees) + 2)
 
     @property
@@ -125,6 +139,11 @@ class GhostPenalty:
         """The penalty."""
         return self._penalty
 
+    @property
+    def faces(self) -> str:
+        """The faces it acts on, `'all'`, `'cut'` or `'outside'`."""
+        return self._faces
+
     def _add_to(self, form: _cpp.Form2d) -> None:
         """Add the integral of the penalty to the compiled form of a planar
         problem, assembled with its faces coupled."""
@@ -137,4 +156,6 @@ class GhostPenalty:
             form.add_skeleton_integral(penalty, self._quadrature)
 
     def __repr__(self) -> str:
-        return f'GhostPenalty({self._trace!r}, penalty={self._penalty})'
+        faces = '' if self._faces == 'all' else f', faces={self._faces!r}'
+        return (f'GhostPenalty({self._trace!r}, '
+                f'penalty={self._penalty}{faces})')

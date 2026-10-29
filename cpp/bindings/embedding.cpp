@@ -80,12 +80,13 @@ SurrogateBoundary2d surrogate_boundary(
     return {patch.basis().grid(), classification};
 }
 
-/// @brief Faces where a ghost penalty acts among the elements of a patch,
-///        in the numbering of its grid
+/// @brief Faces of a kind where a ghost penalty acts among the elements of
+///        a patch, in the numbering of its grid
 std::vector<int> ghost_faces(const PlanarPatch& patch,
-                             const CellClassification2d& classification)
+                             const CellClassification2d& classification,
+                             GhostFaces faces)
 {
-    return iguana::ghost_faces(patch.basis().grid(), classification);
+    return iguana::ghost_faces(patch.basis().grid(), classification, faces);
 }
 
 /// @brief Faces across which the volume fraction may jump among the
@@ -122,6 +123,12 @@ void embedding(py::module_& module)
         .value("inside", CellType::inside)
         .value("cut", CellType::cut);
 
+    // The kind of the faces a ghost penalty acts on
+    py::enum_<GhostFaces>(module, "GhostFaces")
+        .value("all", GhostFaces::all)
+        .value("cut", GhostFaces::cut)
+        .value("outside", GhostFaces::outside);
+
     py::class_<CellClassification2d>(module, "CellClassification2d")
         .def(py::init<std::vector<CellType>>(), py::arg("cell_types"));
 
@@ -151,7 +158,8 @@ void embedding(py::module_& module)
         .def_property_readonly("elements", &face_elements);
 
     module.def("ghost_faces", &ghost_faces, py::arg("patch"),
-               py::arg("classification"));
+               py::arg("classification"),
+               py::arg("faces") = GhostFaces::all);
     module.def("jump_faces", &jump_faces, py::arg("patch"),
                py::arg("classification"));
 }
