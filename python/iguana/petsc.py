@@ -9,8 +9,10 @@ matrices and vectors, each pass over its integrals in one compiled call,
 and solves the system with a PETSc solver set up from options, linear or
 nonlinear. Its data, the source, the values of its conditions and the
 previous solution of a transient problem, change in place between solves,
-where the form reads them, so that a time loop keeps one problem. It needs
-a build of iguana with PETSc.
+where the form reads them, so that a time loop keeps one problem. A moving
+boundary, which changes the cells, builds a problem per step instead:
+building or solving one frees the PETSc objects of those discarded, which
+keeps the memory of the loop bounded. It needs a build of iguana with PETSc.
 """
 
 from __future__ import annotations
@@ -52,6 +54,9 @@ class _Problem:
     ) -> None:
         """Initialize the form and the assembler of the problem, checking
         its terms as the problems document."""
+        # Before the new system takes its memory
+        _free_discarded()
+
         if not isinstance(element, (PoissonElement, StokesElement)):
             raise TypeError('the element must be a Poisson or a Stokes '
                             'element')
@@ -361,6 +366,10 @@ class LinearProblem(_Problem):
                 not affine, or that repeats an interior knot.
             RuntimeError: If the linear solver does not converge.
         """
+        # Before factorizing, so as not to hold the factors of a problem this
+        # one replaced at the same time
+        _free_discarded()
+
         # Anew from the current data, each pass over every integral in one
         # call. At zero coefficients the tangent is the stiffness K and the
         # residual K 0 - F, so that its negative is the load
@@ -537,6 +546,10 @@ class NonlinearProblem(_Problem):
                 not affine, or that repeats an interior knot.
             RuntimeError: If the nonlinear solver does not converge.
         """
+        # Before factorizing, so as not to hold the factors of a problem this
+        # one replaced at the same time
+        _free_discarded()
+
         # Zero from the start, so that the steps keep it there, the row and
         # column of the tangent leaving it out of the other equations
         if self._pinned is not None:
@@ -716,6 +729,13 @@ def _cell_weights(
         raise ValueError('the cell weights must give one value per cell')
 
     return cell_weights
+
+
+def _free_discarded() -> None:
+    """Free the PETSc objects of the problems discarded so far, which PETSc
+    keeps in a queue after Python collects them until asked to destroy them.
+    Those of the problems here lie on the communicator of one process."""
+    PETSc.garbage_cleanup(PETSc.COMM_SELF)
 
 
 def _linear_solver(
