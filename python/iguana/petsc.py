@@ -9,8 +9,10 @@ matrices and vectors, each pass over its integrals in one compiled call,
 and solves the system with a PETSc solver set up from options, linear or
 nonlinear. Its data, the source, the values of its conditions and the
 previous solution of a transient problem, change in place between solves,
-where the form reads them, so that a time loop keeps one problem. It needs
-a build of iguana with PETSc.
+where the form reads them, so that a time loop keeps one problem. A moving
+boundary, which changes the cells, builds a problem per step instead:
+building or solving one frees the PETSc objects of those discarded, which
+keeps the memory of the loop bounded. It needs a build of iguana with PETSc.
 """
 
 from __future__ import annotations
@@ -52,6 +54,9 @@ class _Problem:
     ) -> None:
         """Initialize the form and the assembler of the problem, checking
         its terms as the problems document."""
+        # Before the new system takes its memory
+        _free_discarded()
+
         if not isinstance(element, (PoissonElement, StokesElement)):
             raise TypeError('the element must be a Poisson or a Stokes '
                             'element')
@@ -361,6 +366,10 @@ class LinearProblem(_Problem):
                 not affine, or that repeats an interior knot.
             RuntimeError: If the linear solver does not converge.
         """
+        # Before factorizing, so as not to hold the factors of a problem this
+        # one replaced at the same time
+        _free_discarded()
+
         # Anew from the current data, each pass over every integral in one
         # call. At zero coefficients the tangent is the stiffness K and the
         # residual K 0 - F, so that its negative is the load
@@ -537,6 +546,10 @@ class NonlinearProblem(_Problem):
                 not affine, or that repeats an interior knot.
             RuntimeError: If the nonlinear solver does not converge.
         """
+        # Before factorizing, so as not to hold the factors of a problem this
+        # one replaced at the same time
+        _free_discarded()
+
         # Zero from the start, so that the steps keep it there, the row and
         # column of the tangent leaving it out of the other equations
         if self._pinned is not None:
@@ -549,40 +562,6 @@ class NonlinearProblem(_Problem):
             raise RuntimeError('the nonlinear solver did not converge')
 
         return _coefficients(self._space, self._x.getArray())
-
-    def _evaluate_residual(
-        self,
-        solver: PETSc.SNES,
-        x: PETSc.Vec,
-        residual: PETSc.Vec,
-    ) -> None:
-        """Assemble the residual at coefficients into the vector the solver
-        gives, which its line search may change for one of its own."""
-        self._residual.zeroEntries()
-        self._form.assemble_residual(self._assembler, x)
-        self._residual.copy(residual)
-
-        # The equation of the pinned pressure keeps it at zero
-        if self._pinned is not None:
-            residual.setValue(self._pinned, x.getValue(self._pinned))
-            residual.assemble()
-
-    def _evaluate_tangent(
-        self,
-        solver: PETSc.SNES,
-        x: PETSc.Vec,
-        tangent: PETSc.Mat,
-        preconditioner: PETSc.Mat,
-    ) -> None:
-        """Assemble the tangent at coefficients, the matrix the solver was
-        given."""
-        self._tangent.zeroEntries()
-        self._form.assemble_tangent(self._assembler, x)
-
-        # Rows and columns rather than rows, whose structure PETSc would
-        # drop for the next assembly
-        if self._pinned is not None:
-            self._tangent.zeroRowsColumns([self._pinned], diag=1.)
 
 
 def _check_terms(
@@ -752,6 +731,13 @@ def _cell_weights(
     return cell_weights
 
 
+def _free_discarded() -> None:
+    """Free the PETSc objects of the problems discarded so far, which PETSc
+    keeps in a queue after Python collects them until asked to destroy them.
+    Those of the problems here lie on the communicator of one process."""
+    PETSc.garbage_cleanup(PETSc.COMM_SELF)
+
+
 def _linear_solver(
     operator: PETSc.Mat,
     prefix: str,
@@ -776,14 +762,60 @@ def _nonlinear_solver(
     prefix, which reach its linear solver too. Without them, the Newton's
     method of PETSc, with its line search, factorizes each tangent."""
     solver = PETSc.SNES().create(PETSc.COMM_SELF)
-    solver.setFunction(problem._evaluate_residual, problem._b)
-    solver.setJacobian(problem._evaluate_tangent, problem._tangent)
+
+    # What the assembly reads rather than the problem, which holds the solver:
+    # a discarded problem then leaves at once, not when Python seeks cycles
+    assembly = (problem._form, problem._assembler, problem._pinned)
+    solver.setFunction(_evaluate_residual, problem._b, args=assembly)
+    solver.setJacobian(_evaluate_tangent, problem._tangent, args=assembly)
 
     # After the function and the tangent, which the options may act on
     _set_from_options(solver, prefix,
                       _direct_options() if options is None else options)
 
     return solver
+
+
+def _evaluate_residual(
+    solver: PETSc.SNES,
+    x: PETSc.Vec,
+    residual: PETSc.Vec,
+    form: _cpp.Form2d,
+    assembler: _cpp.Assembler2d,
+    pinned: int | None,
+) -> None:
+    """Assemble the residual at coefficients into the vector the solver
+    gives, which its line search may change for one of its own."""
+    assembled = assembler.residual
+    assembled.zeroEntries()
+    form.assemble_residual(assembler, x)
+    assembled.copy(residual)
+
+    # The equation of the pinned pressure keeps it at zero
+    if pinned is not None:
+        residual.setValue(pinned, x.getValue(pinned))
+        residual.assemble()
+
+
+def _evaluate_tangent(
+    solver: PETSc.SNES,
+    x: PETSc.Vec,
+    tangent: PETSc.Mat,
+    preconditioner: PETSc.Mat,
+    form: _cpp.Form2d,
+    assembler: _cpp.Assembler2d,
+    pinned: int | None,
+) -> None:
+    """Assemble the tangent at coefficients, the matrix the solver was
+    given."""
+    assembled = assembler.tangent
+    assembled.zeroEntries()
+    form.assemble_tangent(assembler, x)
+
+    # Rows and columns rather than rows, whose structure PETSc would drop for
+    # the next assembly
+    if pinned is not None:
+        assembled.zeroRowsColumns([pinned], diag=1.)
 
 
 def _direct_options() -> dict[str, object]:
