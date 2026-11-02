@@ -6,6 +6,8 @@ with PETSc"""
 
 import itertools
 import math
+import re
+import weakref
 
 import numpy as np
 import pytest
@@ -685,6 +687,62 @@ def test_petsc_options_set_up_the_nonlinear_solver():
 
     with pytest.raises(RuntimeError):
         stopped.solve()
+
+
+def garbage_entries(capfd):
+    """Number of discarded PETSc objects still waiting to be freed, from the
+    report PETSc prints."""
+    capfd.readouterr()
+    PETSc.garbage_view(PETSc.COMM_SELF)
+    report = capfd.readouterr().out
+
+    return int(re.search(r'Total entries: (\d+)', report).group(1))
+
+
+@pytest.mark.parametrize('problem_type', [LinearProblem, NonlinearProblem],
+                         ids=['linear', 'nonlinear'])
+def test_rebuilding_a_problem_frees_those_discarded(problem_type, capfd):
+    """A moving boundary builds a problem per step, so one discarded leaves
+    Python at once and the next build or solve frees its PETSc objects,
+    while what a caller kept of it goes on working."""
+    arguments, keywords = poisson_problem()
+
+    def build():
+        return problem_type(*arguments, **keywords,
+                            petsc_options_prefix='rebuilt_')
+
+    problem = build()
+    expected = problem.solve()
+    A, b, solver = problem.A, problem.b, problem.solver
+
+    # By its references alone, without a collection of cycles
+    discarded = weakref.ref(problem)
+    del problem
+
+    assert discarded() is None
+
+    # Each solve frees the problem its build replaced
+    for _ in range(3):
+        problem = build()
+        problem.solve()
+
+        assert garbage_entries(capfd) == 0
+
+    # And a build alone frees one discarded before it
+    del problem
+    problem = build()
+
+    assert garbage_entries(capfd) == 0
+
+    # The kept solver finds the first solution again, a nonlinear one through
+    # the assembly of a problem that is gone
+    x = b.duplicate()
+    x.zeroEntries()
+    solver.solve(b if problem_type is LinearProblem else None, x)
+
+    assert np.allclose(x.getArray(), expected, rtol=0., atol=1e-12)
+    assert A.norm() > 0.
+    assert A.getSize() == (b.getSize(), b.getSize())
 
 
 def test_invalid_arguments():
