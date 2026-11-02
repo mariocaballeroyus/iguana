@@ -550,40 +550,6 @@ class NonlinearProblem(_Problem):
 
         return _coefficients(self._space, self._x.getArray())
 
-    def _evaluate_residual(
-        self,
-        solver: PETSc.SNES,
-        x: PETSc.Vec,
-        residual: PETSc.Vec,
-    ) -> None:
-        """Assemble the residual at coefficients into the vector the solver
-        gives, which its line search may change for one of its own."""
-        self._residual.zeroEntries()
-        self._form.assemble_residual(self._assembler, x)
-        self._residual.copy(residual)
-
-        # The equation of the pinned pressure keeps it at zero
-        if self._pinned is not None:
-            residual.setValue(self._pinned, x.getValue(self._pinned))
-            residual.assemble()
-
-    def _evaluate_tangent(
-        self,
-        solver: PETSc.SNES,
-        x: PETSc.Vec,
-        tangent: PETSc.Mat,
-        preconditioner: PETSc.Mat,
-    ) -> None:
-        """Assemble the tangent at coefficients, the matrix the solver was
-        given."""
-        self._tangent.zeroEntries()
-        self._form.assemble_tangent(self._assembler, x)
-
-        # Rows and columns rather than rows, whose structure PETSc would
-        # drop for the next assembly
-        if self._pinned is not None:
-            self._tangent.zeroRowsColumns([self._pinned], diag=1.)
-
 
 def _check_terms(
     element: PoissonElement | StokesElement,
@@ -776,14 +742,60 @@ def _nonlinear_solver(
     prefix, which reach its linear solver too. Without them, the Newton's
     method of PETSc, with its line search, factorizes each tangent."""
     solver = PETSc.SNES().create(PETSc.COMM_SELF)
-    solver.setFunction(problem._evaluate_residual, problem._b)
-    solver.setJacobian(problem._evaluate_tangent, problem._tangent)
+
+    # What the assembly reads rather than the problem, which holds the solver:
+    # a discarded problem then leaves at once, not when Python seeks cycles
+    assembly = (problem._form, problem._assembler, problem._pinned)
+    solver.setFunction(_evaluate_residual, problem._b, args=assembly)
+    solver.setJacobian(_evaluate_tangent, problem._tangent, args=assembly)
 
     # After the function and the tangent, which the options may act on
     _set_from_options(solver, prefix,
                       _direct_options() if options is None else options)
 
     return solver
+
+
+def _evaluate_residual(
+    solver: PETSc.SNES,
+    x: PETSc.Vec,
+    residual: PETSc.Vec,
+    form: _cpp.Form2d,
+    assembler: _cpp.Assembler2d,
+    pinned: int | None,
+) -> None:
+    """Assemble the residual at coefficients into the vector the solver
+    gives, which its line search may change for one of its own."""
+    assembled = assembler.residual
+    assembled.zeroEntries()
+    form.assemble_residual(assembler, x)
+    assembled.copy(residual)
+
+    # The equation of the pinned pressure keeps it at zero
+    if pinned is not None:
+        residual.setValue(pinned, x.getValue(pinned))
+        residual.assemble()
+
+
+def _evaluate_tangent(
+    solver: PETSc.SNES,
+    x: PETSc.Vec,
+    tangent: PETSc.Mat,
+    preconditioner: PETSc.Mat,
+    form: _cpp.Form2d,
+    assembler: _cpp.Assembler2d,
+    pinned: int | None,
+) -> None:
+    """Assemble the tangent at coefficients, the matrix the solver was
+    given."""
+    assembled = assembler.tangent
+    assembled.zeroEntries()
+    form.assemble_tangent(assembler, x)
+
+    # Rows and columns rather than rows, whose structure PETSc would drop for
+    # the next assembly
+    if pinned is not None:
+        assembled.zeroRowsColumns([pinned], diag=1.)
 
 
 def _direct_options() -> dict[str, object]:
