@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef IGUANA_ELEMENT_ELASTICITY_LINEAR_ELASTICITY_TRACES_HPP
-#define IGUANA_ELEMENT_ELASTICITY_LINEAR_ELASTICITY_TRACES_HPP
+#ifndef IGUANA_ELEMENT_ELASTICITY_ELASTICITY_TRACES_HPP
+#define IGUANA_ELEMENT_ELASTICITY_ELASTICITY_TRACES_HPP
 
 #include <array>
 #include <cstddef>
@@ -13,7 +13,7 @@
 #include <Eigen/Core>
 
 #include "iguana/assembly/element_values.hpp"
-#include "iguana/element/elasticity/linear_elasticity_element.hpp"
+#include "iguana/element/elasticity/elasticity_element.hpp"
 #include "iguana/element/flux.hpp"
 #include "iguana/element/trace.hpp"
 #include "iguana/geometry/patch.hpp"
@@ -34,7 +34,7 @@ namespace iguana
  *         directions
  */
 template<typename Basis, std::size_t n>
-class LinearElasticityElement<Basis, n>::U final : public Trace<Basis, n>
+class ElasticityElement<Basis, n>::U final : public Trace<Basis, n>
 {
 public:
     /**
@@ -48,7 +48,7 @@ public:
     explicit U(std::size_t component) : component_(component)
     {
         if (component >= n)
-            throw std::invalid_argument("LinearElasticityElement::U: "
+            throw std::invalid_argument("ElasticityElement::U: "
                                         "the component must be one of the "
                                         "displacement");
     }
@@ -93,7 +93,7 @@ private:
  *         directions
  */
 template<typename Basis, std::size_t n>
-class LinearElasticityElement<Basis, n>::T final : public Flux<Basis, n>
+class ElasticityElement<Basis, n>::T final : public Flux<Basis, n>
 {
 public:
     /**
@@ -111,15 +111,15 @@ public:
         : lame_(lame), shear_modulus_(shear_modulus), component_(component)
     {
         if (shear_modulus <= 0)
-            throw std::invalid_argument("LinearElasticityElement::T: "
+            throw std::invalid_argument("ElasticityElement::T: "
                                         "the shear modulus must be positive");
 
         if (lame + 2 * shear_modulus / static_cast<Scalar>(n) <= 0)
-            throw std::invalid_argument("LinearElasticityElement::T: "
+            throw std::invalid_argument("ElasticityElement::T: "
                                         "the bulk modulus must be positive");
 
         if (component >= n)
-            throw std::invalid_argument("LinearElasticityElement::T: "
+            throw std::invalid_argument("ElasticityElement::T: "
                                         "the component must be one of the "
                                         "displacement");
     }
@@ -183,4 +183,4 @@ private:
 
 } // namespace iguana
 
-#endif // IGUANA_ELEMENT_ELASTICITY_LINEAR_ELASTICITY_TRACES_HPP
+#endif // IGUANA_ELEMENT_ELASTICITY_ELASTICITY_TRACES_HPP

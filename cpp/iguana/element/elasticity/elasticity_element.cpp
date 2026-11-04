@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-#include "linear_elasticity_element.hpp"
+#include "elasticity_element.hpp"
 
 #include <array>
 #include <cstddef>
@@ -16,21 +16,21 @@ namespace iguana
 {
 
 template<typename Basis, std::size_t n>
-LinearElasticityElement<Basis, n>::LinearElasticityElement(
+ElasticityElement<Basis, n>::ElasticityElement(
     Scalar lame, Scalar shear_modulus)
     : lame_(lame), shear_modulus_(shear_modulus)
 {
     if (shear_modulus <= 0)
-        throw std::invalid_argument("LinearElasticityElement: "
+        throw std::invalid_argument("ElasticityElement: "
                                     "the shear modulus must be positive");
 
     if (lame + 2 * shear_modulus / static_cast<Scalar>(n) <= 0)
-        throw std::invalid_argument("LinearElasticityElement: "
+        throw std::invalid_argument("ElasticityElement: "
                                     "the bulk modulus must be positive");
 }
 
 template<typename Basis, std::size_t n>
-void LinearElasticityElement<Basis, n>::local_tangent(
+void ElasticityElement<Basis, n>::local_tangent(
     const ElementValues<Basis, n>& values,
     const Eigen::VectorX<Scalar>& weights, const Eigen::MatrixX<Scalar>&,
     const Eigen::VectorX<Scalar>&, Eigen::MatrixX<Scalar>& tangent) const
@@ -71,7 +71,7 @@ void LinearElasticityElement<Basis, n>::local_tangent(
 }
 
 template<typename Basis, std::size_t n>
-void LinearElasticityElement<Basis, n>::local_residual(
+void ElasticityElement<Basis, n>::local_residual(
     const ElementValues<Basis, n>& values,
     const Eigen::VectorX<Scalar>& weights,
     const Eigen::MatrixX<Scalar>& source,
@@ -98,7 +98,7 @@ void LinearElasticityElement<Basis, n>::local_residual(
 }
 
 template<typename Basis, std::size_t n>
-void LinearElasticityElement<Basis, n>::local_mass(
+void ElasticityElement<Basis, n>::local_mass(
     const ElementValues<Basis, n>& values,
     const Eigen::VectorX<Scalar>& weights,
     Eigen::MatrixX<Scalar>& mass) const
@@ -119,9 +119,9 @@ void LinearElasticityElement<Basis, n>::local_mass(
     }
 }
 
-template class LinearElasticityElement<TensorBSpline<double, 2>, 2>;
-template class LinearElasticityElement<TensorBSpline<double, 3>, 3>;
-template class LinearElasticityElement<TensorNURBS<double, 2>, 2>;
-template class LinearElasticityElement<TensorNURBS<double, 3>, 3>;
+template class ElasticityElement<TensorBSpline<double, 2>, 2>;
+template class ElasticityElement<TensorBSpline<double, 3>, 3>;
+template class ElasticityElement<TensorNURBS<double, 2>, 2>;
+template class ElasticityElement<TensorNURBS<double, 3>, 3>;
 
 } // namespace iguana

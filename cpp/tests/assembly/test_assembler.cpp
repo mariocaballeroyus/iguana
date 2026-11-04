@@ -588,8 +588,7 @@ void check_elastic_system()
     cells.fill(basis.grid(), classification, CellType::inside,
                iguana::GaussLegendre<double, n>(3));
 
-    const iguana::LinearElasticityElement<Spline, n> element(lame,
-                                                             shear_modulus);
+    const iguana::ElasticityElement<Spline, n> element(lame, shear_modulus);
     const Eigen::VectorXd force = Eigen::VectorXd::LinSpaced(n, 1., 2.);
     const Eigen::MatrixXd source =
         force.transpose().replicate(cells.num_points(), 1);

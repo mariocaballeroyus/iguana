@@ -25,7 +25,7 @@ template<std::size_t n>
 using Basis = iguana::TensorBSpline<double, n>;
 
 template<std::size_t n>
-using Element = iguana::LinearElasticityElement<Basis<n>, n>;
+using Element = iguana::ElasticityElement<Basis<n>, n>;
 
 /// @brief First Lamé parameter and shear modulus of the elements
 constexpr double lame = 1.2;
@@ -270,14 +270,14 @@ void check_invalid()
 } // namespace
 
 TEST_CASE("The forms of a linear elasticity element are exact and leave "
-          "rigid motions free", "[linear_elasticity_element]")
+          "rigid motions free", "[elasticity_element]")
 {
     check_forms<2>();
     check_forms<3>();
 }
 
 TEST_CASE("The traces and fluxes of linear elasticity give the displacement "
-          "and the traction", "[linear_elasticity_element]")
+          "and the traction", "[elasticity_element]")
 {
     check_traces<2>();
     check_traces<3>();
@@ -285,7 +285,7 @@ TEST_CASE("The traces and fluxes of linear elasticity give the displacement "
 
 TEST_CASE("A linear elasticity element needs a positive shear and bulk "
           "modulus, and its traces a component of the displacement",
-          "[linear_elasticity_element]")
+          "[elasticity_element]")
 {
     check_invalid<2>();
     check_invalid<3>();

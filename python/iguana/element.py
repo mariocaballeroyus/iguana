@@ -228,7 +228,7 @@ class StokesElement:
                 f'stabilization={self._stabilization})')
 
 
-class LinearElasticityElement:
+class ElasticityElement:
     """Element of the linear elasticity problem of an isotropic solid under
     small displacements on a planar patch, −div σ(u) = f with
     σ(u) = 2μ ε(u) + λ (div u) I. Its unknowns are the two components of the
@@ -248,7 +248,7 @@ class LinearElasticityElement:
 
         _shape: tuple[int, ...] = (2,)
 
-        def __init__(self, element: LinearElasticityElement) -> None:
+        def __init__(self, element: ElasticityElement) -> None:
             """Initialize the trace of the displacement of an element.
 
             Args:
@@ -257,24 +257,24 @@ class LinearElasticityElement:
             """
             self._element = element
 
-        def _cpp_traces(self) -> list[_cpp.LinearElasticityElement2d.U]:
+        def _cpp_traces(self) -> list[_cpp.ElasticityElement2d.U]:
             """The compiled traces of the components of the displacement, on
             a planar patch."""
-            return [_cpp.LinearElasticityElement2d.U(component)
+            return [_cpp.ElasticityElement2d.U(component)
                     for component in (0, 1)]
 
-        def _cpp_fluxes(self) -> list[_cpp.LinearElasticityElement2d.T]:
+        def _cpp_fluxes(self) -> list[_cpp.ElasticityElement2d.T]:
             """The compiled fluxes conjugate to the traces, the components of
             the traction, which Nitsche's method pairs with them."""
             element = self._element
 
-            return [_cpp.LinearElasticityElement2d.T(element.lame,
-                                                     element.shear_modulus,
-                                                     component)
+            return [_cpp.ElasticityElement2d.T(element.lame,
+                                               element.shear_modulus,
+                                               component)
                     for component in (0, 1)]
 
         def __repr__(self) -> str:
-            return 'LinearElasticityElement.U()'
+            return 'ElasticityElement.U()'
 
     def __init__(self, young_modulus: float, poisson_ratio: float,
                  plane_stress: bool = False) -> None:
@@ -342,18 +342,18 @@ class LinearElasticityElement:
         return self._young_modulus / (2. * (1. + self._poisson_ratio))
 
     @property
-    def u(self) -> LinearElasticityElement.U:
+    def u(self) -> ElasticityElement.U:
         """Trace of the displacement u, on which a condition imposes
         values."""
-        return LinearElasticityElement.U(self)
+        return ElasticityElement.U(self)
 
-    def _cpp_element(self) -> _cpp.LinearElasticityElement2d:
+    def _cpp_element(self) -> _cpp.ElasticityElement2d:
         """The compiled element, on a planar patch, the only one problems
         lie on so far."""
-        return _cpp.LinearElasticityElement2d(self.lame, self.shear_modulus)
+        return _cpp.ElasticityElement2d(self.lame, self.shear_modulus)
 
     def __repr__(self) -> str:
         plane_stress = ', plane_stress=True' if self._plane_stress else ''
-        return (f'LinearElasticityElement('
+        return (f'ElasticityElement('
                 f'young_modulus={self._young_modulus}, '
                 f'poisson_ratio={self._poisson_ratio}{plane_stress})')

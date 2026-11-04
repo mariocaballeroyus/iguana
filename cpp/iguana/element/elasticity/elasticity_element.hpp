@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef IGUANA_ELEMENT_ELASTICITY_LINEAR_ELASTICITY_ELEMENT_HPP
-#define IGUANA_ELEMENT_ELASTICITY_LINEAR_ELASTICITY_ELEMENT_HPP
+#ifndef IGUANA_ELEMENT_ELASTICITY_ELASTICITY_ELEMENT_HPP
+#define IGUANA_ELEMENT_ELASTICITY_ELASTICITY_ELEMENT_HPP
 
 #include <cstddef>
 
@@ -37,10 +37,10 @@ namespace iguana
  *         directions
  */
 template<typename Basis, std::size_t n>
-class LinearElasticityElement : public Element<Basis, n>
+class ElasticityElement : public Element<Basis, n>
 {
     static_assert(Basis::dimension == n,
-                  "LinearElasticityElement: "
+                  "ElasticityElement: "
                   "the patch must be a domain");
 
 public:
@@ -57,7 +57,7 @@ public:
      *         if the bulk modulus λ + 2 μ / n is not, as the energy of every
      *         strain needs them to be
      */
-    LinearElasticityElement(Scalar lame, Scalar shear_modulus);
+    ElasticityElement(Scalar lame, Scalar shear_modulus);
 
     /// @brief First Lamé parameter λ
     constexpr Scalar lame() const noexcept
@@ -87,11 +87,11 @@ public:
                     Eigen::MatrixX<Scalar>& mass) const override;
 
     /// @brief Trace of a component of the displacement, defined in
-    ///        linear_elasticity_traces.hpp
+    ///        elasticity_traces.hpp
     class U;
 
     /// @brief Flux of a component of the displacement, that component of the
-    ///        traction, defined in linear_elasticity_traces.hpp
+    ///        traction, defined in elasticity_traces.hpp
     class T;
 
 private:
@@ -104,4 +104,4 @@ private:
 
 } // namespace iguana
 
-#endif // IGUANA_ELEMENT_ELASTICITY_LINEAR_ELASTICITY_ELEMENT_HPP
+#endif // IGUANA_ELEMENT_ELASTICITY_ELASTICITY_ELEMENT_HPP

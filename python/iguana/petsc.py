@@ -27,8 +27,7 @@ from petsc4py import PETSc
 from iguana import cpp as _cpp
 from iguana.condition import (NeumannCondition, NitscheCondition,
                               PenaltyCondition, SkeletonNitscheCondition)
-from iguana.element import (LinearElasticityElement, PoissonElement,
-                            StokesElement)
+from iguana.element import ElasticityElement, PoissonElement, StokesElement
 from iguana.fspace import FunctionSpace, MixedFunctionSpace
 from iguana.patch import PlanarPatch
 from iguana.quadrature import QuadratureDomain
@@ -41,7 +40,7 @@ class _Problem:
 
     def __init__(
         self,
-        element: PoissonElement | StokesElement | LinearElasticityElement,
+        element: PoissonElement | StokesElement | ElasticityElement,
         space: FunctionSpace | MixedFunctionSpace,
         quadrature: QuadratureDomain,
         source: (npt.ArrayLike
@@ -59,7 +58,7 @@ class _Problem:
         _free_discarded()
 
         if not isinstance(element, (PoissonElement, StokesElement,
-                                    LinearElasticityElement)):
+                                    ElasticityElement)):
             raise TypeError('the element must be a Poisson, a Stokes or a '
                             'linear elasticity element')
 
@@ -75,7 +74,7 @@ class _Problem:
                              'of its own')
 
         # Its local matrices read the components of one field
-        if (isinstance(element, LinearElasticityElement)
+        if (isinstance(element, ElasticityElement)
                 and isinstance(space, MixedFunctionSpace)):
             raise ValueError('a solid takes the components of one field')
 
@@ -177,7 +176,7 @@ class LinearProblem(_Problem):
 
     def __init__(
         self,
-        element: PoissonElement | StokesElement | LinearElasticityElement,
+        element: PoissonElement | StokesElement | ElasticityElement,
         space: FunctionSpace | MixedFunctionSpace,
         quadrature: QuadratureDomain,
         source: (npt.ArrayLike
@@ -417,7 +416,7 @@ class NonlinearProblem(_Problem):
 
     def __init__(
         self,
-        element: PoissonElement | StokesElement | LinearElasticityElement,
+        element: PoissonElement | StokesElement | ElasticityElement,
         space: FunctionSpace | MixedFunctionSpace,
         quadrature: QuadratureDomain,
         source: (npt.ArrayLike
@@ -576,7 +575,7 @@ class NonlinearProblem(_Problem):
 
 
 def _check_terms(
-    element: PoissonElement | StokesElement | LinearElasticityElement,
+    element: PoissonElement | StokesElement | ElasticityElement,
     patch: PlanarPatch,
     conditions: list[PenaltyCondition | NitscheCondition | NeumannCondition
                      | SkeletonNitscheCondition],
@@ -682,7 +681,7 @@ def _entries(
 
 
 def _pinned(
-    element: PoissonElement | StokesElement | LinearElasticityElement,
+    element: PoissonElement | StokesElement | ElasticityElement,
     space: FunctionSpace | MixedFunctionSpace,
     pressure_reference: npt.ArrayLike | None,
 ) -> int | None:

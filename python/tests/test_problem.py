@@ -13,8 +13,8 @@ import numpy as np
 import pytest
 
 import iguana
-from iguana import (Boundary, CellType, Derivatives, FunctionSpace,
-                    GhostPenalty, HierarchicalGrid, LinearElasticityElement,
+from iguana import (Boundary, CellType, Derivatives, ElasticityElement,
+                    FunctionSpace, GhostPenalty, HierarchicalGrid,
                     MixedFunctionSpace, NeumannCondition, NitscheCondition,
                     PoissonElement, QuadratureBoundary, QuadratureDomain,
                     SkeletonNitscheCondition, StokesElement,
@@ -188,7 +188,7 @@ def elastic_problem():
     """Arguments and keywords of the linear elasticity problem of a linear
     displacement, imposed by Nitsche's method."""
     patch = rectangle()
-    element = LinearElasticityElement(10., .3)
+    element = ElasticityElement(10., .3)
     quadrature = gauss_quadrature(patch)
     condition = NitscheCondition(element.u, edges(patch),
                                  lambda x: x @ np.array([[1., -2.], [.5, 3.]]),
@@ -559,7 +559,7 @@ def test_quadratic_displacement_is_exact():
     f = −μ Δu − (λ + μ) ∇ div u."""
     width, height = 2., 3.
     patch = iguana.create_rectangle(lengths=(width, height), elements=(4, 3))
-    element = LinearElasticityElement(10., .3)
+    element = ElasticityElement(10., .3)
     lame, shear = element.lame, element.shear_modulus
 
     def displacement(points):
@@ -593,7 +593,7 @@ def test_uniaxial_tension_is_exact(plane_stress):
     with E / (1 − ν²) and ν / (1 − ν) in plane strain, a linear field the
     splines hold, its values imposed on the two other sides."""
     young, nu, stress = 10., .3, 2.
-    element = LinearElasticityElement(young, nu, plane_stress=plane_stress)
+    element = ElasticityElement(young, nu, plane_stress=plane_stress)
     stiffness = young if plane_stress else young / (1. - nu ** 2)
     ratio = nu if plane_stress else nu / (1. - nu)
     width, height = 2., 3.
@@ -625,16 +625,16 @@ def test_uniaxial_tension_is_exact(plane_stress):
                        atol=1e-11)
 
 
-def test_invalid_linear_elasticity():
+def test_invalid_elasticity():
     with pytest.raises(ValueError):
-        LinearElasticityElement(0., .3)
+        ElasticityElement(0., .3)
 
     for nu in (-1., .5):
         with pytest.raises(ValueError):
-            LinearElasticityElement(1., nu)
+            ElasticityElement(1., nu)
 
     patch = rectangle()
-    element = LinearElasticityElement(1., .3)
+    element = ElasticityElement(1., .3)
     quadrature = gauss_quadrature(patch)
     force = np.zeros((quadrature.num_points, 2))
 

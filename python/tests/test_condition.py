@@ -7,12 +7,12 @@ import numpy as np
 import pytest
 
 import iguana
-from iguana import (Boundary, CellType, FunctionSpace, GhostPenalty,
-                    HierarchicalGrid, LinearElasticityElement,
-                    NeumannCondition, NitscheCondition, PenaltyCondition,
-                    PoissonElement, QuadratureBoundary, QuadratureDomain,
-                    SkeletonNitscheCondition, StokesElement,
-                    SurrogateBoundary, classify_cells, cpp)
+from iguana import (Boundary, CellType, ElasticityElement, FunctionSpace,
+                    GhostPenalty, HierarchicalGrid, NeumannCondition,
+                    NitscheCondition, PenaltyCondition, PoissonElement,
+                    QuadratureBoundary, QuadratureDomain,
+                    SkeletonNitscheCondition, StokesElement, SurrogateBoundary,
+                    classify_cells, cpp)
 
 try:
     from iguana.petsc import LinearProblem
@@ -418,7 +418,7 @@ def test_invalid_skeleton_nitsche_conditions():
 
     # A solid has no shift rewritten with the equation
     with pytest.raises(ValueError):
-        SkeletonNitscheCondition(LinearElasticityElement(1., .3).u, patch,
+        SkeletonNitscheCondition(ElasticityElement(1., .3).u, patch,
                                  cell_types, sides,
                                  lambda x: np.zeros((len(x), 2)), 1.,
                                  source=lambda x: np.zeros((len(x), 2)))
