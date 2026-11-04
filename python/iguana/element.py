@@ -226,3 +226,134 @@ class StokesElement:
 
         return (f'StokesElement(viscosity={self._viscosity}, '
                 f'stabilization={self._stabilization})')
+
+
+class LinearElasticityElement:
+    """Element of the linear elasticity problem of an isotropic solid under
+    small displacements on a planar patch, −div σ(u) = f with
+    σ(u) = 2μ ε(u) + λ (div u) I. Its unknowns are the two components of the
+    displacement, those of one field, its source is the body force, of two
+    values per point, and its trace the displacement."""
+
+    # The two components of the displacement, with a body force of two values
+    # per point, and no pressure
+    _num_unknowns = 2
+    _source_shape: tuple[int, ...] = (2,)
+    _pressure_component: int | None = None
+
+    class U:
+        """Trace of the displacement u of the linear elasticity problem, on
+        which a condition imposes values such as a clamped side, two per
+        point."""
+
+        _shape: tuple[int, ...] = (2,)
+
+        def __init__(self, element: LinearElasticityElement) -> None:
+            """Initialize the trace of the displacement of an element.
+
+            Args:
+                element: The element of the solid, whose moduli the traction
+                    conjugate to the trace takes.
+            """
+            self._element = element
+
+        def _cpp_traces(self) -> list[_cpp.LinearElasticityElement2d.U]:
+            """The compiled traces of the components of the displacement, on
+            a planar patch."""
+            return [_cpp.LinearElasticityElement2d.U(component)
+                    for component in (0, 1)]
+
+        def _cpp_fluxes(self) -> list[_cpp.LinearElasticityElement2d.T]:
+            """The compiled fluxes conjugate to the traces, the components of
+            the traction, which Nitsche's method pairs with them."""
+            element = self._element
+
+            return [_cpp.LinearElasticityElement2d.T(element.lame,
+                                                     element.shear_modulus,
+                                                     component)
+                    for component in (0, 1)]
+
+        def __repr__(self) -> str:
+            return 'LinearElasticityElement.U()'
+
+    def __init__(self, young_modulus: float, poisson_ratio: float,
+                 plane_stress: bool = False) -> None:
+        """Initialize the element of a solid.
+
+        The problem lies in the plane, in plane strain by default, the state
+        of a solid long across the plane, or in plane stress, that of a thin
+        plate. The moduli give the Lamé parameters μ = E / (2 (1 + ν)) and
+        λ = E ν / ((1 + ν) (1 − 2 ν)), or λ = E ν / (1 − ν²) in plane stress.
+
+        The mass of the element has unit density and is the matrix of a first
+        derivative in time. A time step of a problem therefore does not give
+        elastodynamics, whose second derivative has no time scheme yet.
+
+        Args:
+            young_modulus: Young's modulus E of the solid, positive.
+            poisson_ratio: Poisson's ratio ν of the solid, above −1 and below
+                1/2.
+            plane_stress: Whether the solid is in plane stress, rather than
+                plane strain.
+
+        Raises:
+            ValueError: If Young's modulus is not positive, or if Poisson's
+                ratio is not above −1 and below 1/2.
+        """
+        if not young_modulus > 0.:
+            raise ValueError('the Young modulus must be positive')
+
+        if not -1. < poisson_ratio < .5:
+            raise ValueError('the Poisson ratio must lie above -1 and below '
+                             '1/2')
+
+        self._young_modulus = float(young_modulus)
+        self._poisson_ratio = float(poisson_ratio)
+        self._plane_stress = bool(plane_stress)
+
+    @property
+    def young_modulus(self) -> float:
+        """Young's modulus E of the solid."""
+        return self._young_modulus
+
+    @property
+    def poisson_ratio(self) -> float:
+        """Poisson's ratio ν of the solid."""
+        return self._poisson_ratio
+
+    @property
+    def plane_stress(self) -> bool:
+        """Whether the solid is in plane stress, rather than plane strain."""
+        return self._plane_stress
+
+    @property
+    def lame(self) -> float:
+        """First Lamé parameter λ of the solid, in its state in the plane."""
+        young, nu = self._young_modulus, self._poisson_ratio
+
+        if self._plane_stress:
+            return young * nu / (1. - nu * nu)
+
+        return young * nu / ((1. + nu) * (1. - 2. * nu))
+
+    @property
+    def shear_modulus(self) -> float:
+        """Shear modulus μ of the solid, the second Lamé parameter."""
+        return self._young_modulus / (2. * (1. + self._poisson_ratio))
+
+    @property
+    def u(self) -> LinearElasticityElement.U:
+        """Trace of the displacement u, on which a condition imposes
+        values."""
+        return LinearElasticityElement.U(self)
+
+    def _cpp_element(self) -> _cpp.LinearElasticityElement2d:
+        """The compiled element, on a planar patch, the only one problems
+        lie on so far."""
+        return _cpp.LinearElasticityElement2d(self.lame, self.shear_modulus)
+
+    def __repr__(self) -> str:
+        plane_stress = ', plane_stress=True' if self._plane_stress else ''
+        return (f'LinearElasticityElement('
+                f'young_modulus={self._young_modulus}, '
+                f'poisson_ratio={self._poisson_ratio}{plane_stress})')
