@@ -15,7 +15,17 @@ template<typename Basis, std::size_t n>
 NitscheCondition<Basis, n>::NitscheCondition(const Trace<Basis, n>& trace,
                                              const Flux<Basis, n>& flux,
                                              Scalar penalty, bool symmetric)
-    : trace_(trace), flux_(flux), penalty_(penalty), symmetric_(symmetric)
+    : NitscheCondition(trace, flux, trace, flux, penalty, symmetric)
+{
+}
+
+template<typename Basis, std::size_t n>
+NitscheCondition<Basis, n>::NitscheCondition(
+    const Trace<Basis, n>& trace, const Flux<Basis, n>& flux,
+    const Trace<Basis, n>& test_trace, const Flux<Basis, n>& test_flux,
+    Scalar penalty, bool symmetric)
+    : trace_(trace), flux_(flux), test_trace_(test_trace),
+      test_flux_(test_flux), penalty_(penalty), symmetric_(symmetric)
 {
     // Only the symmetric method needs a penalty to be stable
     if (symmetric && penalty <= 0)
@@ -35,17 +45,23 @@ void NitscheCondition<Basis, n>::local_tangent(
     const PointMatrix<Scalar, n>& normals, const Eigen::VectorX<Scalar>&,
     const Eigen::VectorX<Scalar>&, Eigen::MatrixX<Scalar>& tangent) const
 {
-    // T(N_i), traces of the test functions
+    // Tᵗ(N_i), traces of the test functions
     Eigen::MatrixX<Scalar> trace;
-    trace_.local_trace(values, trace);
+    test_trace_.local_trace(values, trace);
 
-    // T(S N_i), traces where the data is given
+    // T(S N_j) and Tᵗ(S N_i), traces where the data is given
     Eigen::MatrixX<Scalar> shifted_trace;
     trace_.local_trace(shifted, shifted_trace);
 
-    // F(N_i), fluxes along the normal
+    Eigen::MatrixX<Scalar> test_shifted;
+    test_trace_.local_trace(shifted, test_shifted);
+
+    // F(N_j) and Fᵗ(N_i), fluxes along the normal
     Eigen::MatrixX<Scalar> flux;
     flux_.local_flux(values, normals, flux);
+
+    Eigen::MatrixX<Scalar> test_flux;
+    test_flux_.local_flux(values, normals, test_flux);
 
     // Penalty over the size h of the element
     const Eigen::VectorX<Scalar> penalized =
@@ -55,14 +71,15 @@ void NitscheCondition<Basis, n>::local_tangent(
     // the skew-symmetric one
     const Scalar adjoint = symmetric_ ? -1 : 1;
 
-    // K_ij = − ( T(N_i), F(N_j) )_Γ
-    //        + s ( F(N_i), T(S N_j) )_Γ
-    //        + β ( T(S N_i), T(S N_j) / h )_Γ
-    //      ≈ Σ_q w_q (β B̃_iq B̃_jq / h_q − B_iq F_jq + s F_iq B̃_jq)
+    // K_ij = − ( Tᵗ(N_i), F(N_j) )_Γ
+    //        + s ( Fᵗ(N_i), T(S N_j) )_Γ
+    //        + β ( Tᵗ(S N_i), T(S N_j) / h )_Γ
+    //      ≈ Σ_q w_q (β B̃ᵗ_iq B̃_jq / h_q − Bᵗ_iq F_jq + s Fᵗ_iq B̃_jq)
     tangent =
-        shifted_trace * penalized.asDiagonal() * shifted_trace.transpose()
+        test_shifted * penalized.asDiagonal() * shifted_trace.transpose()
         - trace * weights.asDiagonal() * flux.transpose()
-        + adjoint * flux * weights.asDiagonal() * shifted_trace.transpose();
+        + adjoint * test_flux * weights.asDiagonal()
+              * shifted_trace.transpose();
 }
 
 template<typename Basis, std::size_t n>
@@ -79,13 +96,13 @@ void NitscheCondition<Basis, n>::local_residual(
     local_tangent(values, shifted, weights, normals, data, coefficients,
                   tangent);
 
-    // T(S N_i), traces where the data is given
-    Eigen::MatrixX<Scalar> shifted_trace;
-    trace_.local_trace(shifted, shifted_trace);
+    // Tᵗ(S N_i), traces of the test functions where the data is given
+    Eigen::MatrixX<Scalar> test_shifted;
+    test_trace_.local_trace(shifted, test_shifted);
 
-    // F(N_i), fluxes along the normal
-    Eigen::MatrixX<Scalar> flux;
-    flux_.local_flux(values, normals, flux);
+    // Fᵗ(N_i), fluxes of the test functions along the normal
+    Eigen::MatrixX<Scalar> test_flux;
+    test_flux_.local_flux(values, normals, test_flux);
 
     // Penalty over the size h of the element
     const Eigen::VectorX<Scalar> penalized =
@@ -95,11 +112,11 @@ void NitscheCondition<Basis, n>::local_residual(
     // the skew-symmetric one
     const Scalar adjoint = symmetric_ ? -1 : 1;
 
-    // F_i = β ( T(S N_i) / h, g )_Γ + s ( F(N_i), g )_Γ
-    //     ≈ Σ_q w_q g(x_q) (β B̃_iq / h_q + s F_iq)
+    // F_i = β ( Tᵗ(S N_i) / h, g )_Γ + s ( Fᵗ(N_i), g )_Γ
+    //     ≈ Σ_q w_q g(x_q) (β B̃ᵗ_iq / h_q + s Fᵗ_iq)
     const Eigen::VectorX<Scalar> load =
-        shifted_trace * penalized.cwiseProduct(data)
-        + adjoint * flux * weights.cwiseProduct(data);
+        test_shifted * penalized.cwiseProduct(data)
+        + adjoint * test_flux * weights.cwiseProduct(data);
 
     // R_i = Σ_j K_ij c_j − F_i
     residual = tangent * coefficients - load;

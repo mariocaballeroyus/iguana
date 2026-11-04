@@ -44,11 +44,15 @@ public:
      * @brief Constructs the trace of a component of the velocity
      *
      * @param component Component of the velocity, below n
+     * @param pressure Whether the rows of the pressure hold the pressure
+     *        gradient of a shift, which a test side keeping the velocity
+     *        divergence-free leaves out
      *
      * @throws std::invalid_argument If the component is not one of the
      *         velocity
      */
-    explicit U(std::size_t component) : component_(component)
+    explicit U(std::size_t component, bool pressure = true)
+        : component_(component), pressure_(pressure)
     {
         if (component >= n)
             throw std::invalid_argument("StokesElement::U: "
@@ -79,7 +83,7 @@ public:
 
         // The pressure gradient of the shift of the component, in the rows
         // of the pressure
-        if (values.num_combinations() > component_) {
+        if (pressure_ && values.num_combinations() > component_) {
             const Eigen::MatrixX<Scalar>& gradient = values.combination(
                 field_of(values.num_fields(), n), component_);
             trace.middleRows(first_row(values, n), gradient.rows()) =
@@ -90,6 +94,9 @@ public:
 private:
     /// @brief Component of the velocity
     std::size_t component_;
+
+    /// @brief Whether the rows of the pressure hold its gradient of a shift
+    bool pressure_;
 };
 
 /**
@@ -148,12 +155,14 @@ public:
      * @param viscosity Dynamic viscosity μ of the fluid, that of the
      *        element
      * @param component Component of the traction, below n
+     * @param pressure Whether the traction holds the pressure, which a test
+     *        side keeping the velocity divergence-free leaves out
      *
      * @throws std::invalid_argument If the viscosity is not positive, or if
      *         the component is not one of the velocity
      */
-    T(Scalar viscosity, std::size_t component)
-        : viscosity_(viscosity), component_(component)
+    T(Scalar viscosity, std::size_t component, bool pressure = true)
+        : viscosity_(viscosity), component_(component), pressure_(pressure)
     {
         if (viscosity <= 0)
             throw std::invalid_argument("StokesElement::T: "
@@ -206,8 +215,10 @@ public:
         }
 
         // F_iq = −N_i(x_q) n_a(x_q) in the rows of the pressure
-        flux.middleRows(first_row(values, n), pressure.rows()) =
-            -pressure * normals.col(component_).asDiagonal();
+        if (pressure_) {
+            flux.middleRows(first_row(values, n), pressure.rows()) =
+                -pressure * normals.col(component_).asDiagonal();
+        }
     }
 
 private:
@@ -216,6 +227,9 @@ private:
 
     /// @brief Component of the traction
     std::size_t component_;
+
+    /// @brief Whether the traction holds the pressure
+    bool pressure_;
 };
 
 } // namespace iguana

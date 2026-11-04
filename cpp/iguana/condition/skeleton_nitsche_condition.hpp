@@ -64,6 +64,35 @@ public:
                              const Flux<Basis, n>& flux, Scalar penalty,
                              bool symmetric = true);
 
+    /**
+     * @brief Constructs the condition with a trace and a flux of their own
+     *        for the test functions
+     *
+     * @details The velocity of a fluid on a divergence-conforming space stays
+     *          free of divergence when its test side leaves the pressure out,
+     *          as nothing but the continuity equation then tests the pressure
+     *          functions
+     *
+     * @param trace Trace whose values are imposed, of the trial functions
+     * @param flux Flux conjugate to @p trace, of the trial functions
+     * @param test_trace Trace of the test functions
+     * @param test_flux Flux of the test functions
+     * @param penalty Penalty beta, as for the other constructor
+     * @param symmetric Whether the method is symmetric, rather than
+     *        skew-symmetric
+     *
+     * @throws std::invalid_argument If the penalty is negative, or zero for
+     *         the symmetric method
+     *
+     * @pre The traces and fluxes outlive the condition, which keeps
+     *      references to them
+     */
+    SkeletonNitscheCondition(const Trace<Basis, n>& trace,
+                             const Flux<Basis, n>& flux,
+                             const Trace<Basis, n>& test_trace,
+                             const Flux<Basis, n>& test_flux, Scalar penalty,
+                             bool symmetric = true);
+
     /// @brief Penalty beta
     constexpr Scalar penalty() const noexcept
     { return penalty_; }
@@ -74,8 +103,11 @@ public:
 
     ValueFlags flags() const noexcept override
     {
-        return {.physical_gradients = trace_.flags().physical_gradients
-                                      || flux_.flags().physical_gradients};
+        return {.physical_gradients =
+                    trace_.flags().physical_gradients
+                    || flux_.flags().physical_gradients
+                    || test_trace_.flags().physical_gradients
+                    || test_flux_.flags().physical_gradients};
     }
 
     /// @pre The cell weights are not both zero
@@ -108,6 +140,12 @@ private:
 
     /// @brief Flux conjugate to the trace
     const Flux<Basis, n>& flux_;
+
+    /// @brief Trace of the test functions
+    const Trace<Basis, n>& test_trace_;
+
+    /// @brief Flux of the test functions
+    const Flux<Basis, n>& test_flux_;
 
     /// @brief Penalty beta
     Scalar penalty_;

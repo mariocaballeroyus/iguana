@@ -48,7 +48,17 @@ template<typename Basis, std::size_t n>
 SkeletonNitscheCondition<Basis, n>::SkeletonNitscheCondition(
     const Trace<Basis, n>& trace, const Flux<Basis, n>& flux, Scalar penalty,
     bool symmetric)
-    : trace_(trace), flux_(flux), penalty_(penalty), symmetric_(symmetric)
+    : SkeletonNitscheCondition(trace, flux, trace, flux, penalty, symmetric)
+{
+}
+
+template<typename Basis, std::size_t n>
+SkeletonNitscheCondition<Basis, n>::SkeletonNitscheCondition(
+    const Trace<Basis, n>& trace, const Flux<Basis, n>& flux,
+    const Trace<Basis, n>& test_trace, const Flux<Basis, n>& test_flux,
+    Scalar penalty, bool symmetric)
+    : trace_(trace), flux_(flux), test_trace_(test_trace),
+      test_flux_(test_flux), penalty_(penalty), symmetric_(symmetric)
 {
     // Only the symmetric method needs a penalty to be stable
     if (symmetric && penalty <= 0)
@@ -79,23 +89,35 @@ void SkeletonNitscheCondition<Basis, n>::local_tangent(
     Eigen::MatrixX<Scalar> before_rows;
     Eigen::MatrixX<Scalar> after_rows;
 
-    // T(N_i), the traces of the test functions, continuous across the face,
+    // Tᵗ(N_i), the traces of the test functions, continuous across the face,
     // so that their mean is the traces themselves
-    trace_.local_trace(before, before_rows);
-    trace_.local_trace(after, after_rows);
+    test_trace_.local_trace(before, before_rows);
+    test_trace_.local_trace(after, after_rows);
     const Eigen::MatrixX<Scalar> trace =
         mean_operator(before_rows, after_rows, gamma);
 
-    // {{F(N_i)}}_γ, mean fluxes along the normal of the functions of each cell
+    // {{F(N_j)}}_γ, mean fluxes along the normal of the functions of each cell
     flux_.local_flux(before, normals, before_rows);
     flux_.local_flux(after, normals, after_rows);
     const Eigen::MatrixX<Scalar> flux =
         mean_operator(before_rows, after_rows, gamma);
 
-    // {{T(S N_i)}}_γ, mean traces of the functions of each cell
+    // {{Fᵗ(N_i)}}_γ, the same of the test functions
+    test_flux_.local_flux(before, normals, before_rows);
+    test_flux_.local_flux(after, normals, after_rows);
+    const Eigen::MatrixX<Scalar> test_flux =
+        mean_operator(before_rows, after_rows, gamma);
+
+    // {{T(S N_j)}}_γ, mean traces of the functions of each cell
     trace_.local_trace(shifted_before, before_rows);
     trace_.local_trace(shifted_after, after_rows);
     const Eigen::MatrixX<Scalar> shifted =
+        mean_operator(before_rows, after_rows, gamma);
+
+    // {{Tᵗ(S N_i)}}_γ, the same of the test functions
+    test_trace_.local_trace(shifted_before, before_rows);
+    test_trace_.local_trace(shifted_after, after_rows);
+    const Eigen::MatrixX<Scalar> test_shifted =
         mean_operator(before_rows, after_rows, gamma);
 
     // h = {{h}}, the weighted mean of the sizes of the two cells
@@ -108,14 +130,14 @@ void SkeletonNitscheCondition<Basis, n>::local_tangent(
     // the skew-symmetric one
     const Scalar adjoint = symmetric_ ? -1 : 1;
 
-    // K_ij = − j ( T(N_i), {{F(N_j)}}_γ )_Γ
-    //        + s j ( {{F(N_i)}}_γ, {{T(S N_j)}}_γ )_Γ
-    //        + β |j| ( {{T(S N_i)}}_γ, {{T(S N_j)}}_γ / h )_Γ
-    //      ≈ Σ_q w_q (β |j| S_iq S_jq / h_q − j T_iq F_jq + s j F_iq S_jq)
+    // K_ij = − j ( Tᵗ(N_i), {{F(N_j)}}_γ )_Γ
+    //        + s j ( {{Fᵗ(N_i)}}_γ, {{T(S N_j)}}_γ )_Γ
+    //        + β |j| ( {{Tᵗ(S N_i)}}_γ, {{T(S N_j)}}_γ / h )_Γ
+    //      ≈ Σ_q w_q (β |j| Sᵗ_iq S_jq / h_q − j Tᵗ_iq F_jq + s j Fᵗ_iq S_jq)
     tangent =
-        shifted * penalized.asDiagonal() * shifted.transpose()
+        test_shifted * penalized.asDiagonal() * shifted.transpose()
         - jump * (trace * weights.asDiagonal() * flux.transpose()
-                  - adjoint * flux * weights.asDiagonal()
+                  - adjoint * test_flux * weights.asDiagonal()
                         * shifted.transpose());
 }
 
@@ -144,16 +166,17 @@ void SkeletonNitscheCondition<Basis, n>::local_residual(
     Eigen::MatrixX<Scalar> before_rows;
     Eigen::MatrixX<Scalar> after_rows;
 
-    // {{F(N_i)}}_γ, mean fluxes along the normal of the functions of each cell
-    flux_.local_flux(before, normals, before_rows);
-    flux_.local_flux(after, normals, after_rows);
-    const Eigen::MatrixX<Scalar> flux =
+    // {{Fᵗ(N_i)}}_γ, mean fluxes along the normal of the test functions of
+    // each cell
+    test_flux_.local_flux(before, normals, before_rows);
+    test_flux_.local_flux(after, normals, after_rows);
+    const Eigen::MatrixX<Scalar> test_flux =
         mean_operator(before_rows, after_rows, gamma);
 
-    // {{T(S N_i)}}_γ, mean traces of the functions of each cell
-    trace_.local_trace(shifted_before, before_rows);
-    trace_.local_trace(shifted_after, after_rows);
-    const Eigen::MatrixX<Scalar> shifted =
+    // {{Tᵗ(S N_i)}}_γ, mean traces of the test functions of each cell
+    test_trace_.local_trace(shifted_before, before_rows);
+    test_trace_.local_trace(shifted_after, after_rows);
+    const Eigen::MatrixX<Scalar> test_shifted =
         mean_operator(before_rows, after_rows, gamma);
 
     // h = {{h}}, the weighted mean of the sizes of the two cells
@@ -166,11 +189,11 @@ void SkeletonNitscheCondition<Basis, n>::local_residual(
     // the skew-symmetric one
     const Scalar adjoint = symmetric_ ? -1 : 1;
 
-    // F_i = β |j| ( {{T(S N_i)}}_γ / h, g )_Γ + s j ( {{F(N_i)}}_γ, g )_Γ
-    //     ≈ Σ_q w_q g(x_q) (β |j| S_iq / h_q + s j F_iq)
+    // F_i = β |j| ( {{Tᵗ(S N_i)}}_γ / h, g )_Γ + s j ( {{Fᵗ(N_i)}}_γ, g )_Γ
+    //     ≈ Σ_q w_q g(x_q) (β |j| Sᵗ_iq / h_q + s j Fᵗ_iq)
     const Eigen::VectorX<Scalar> load =
-        shifted * penalized.cwiseProduct(data)
-        + adjoint * jump * flux * weights.cwiseProduct(data);
+        test_shifted * penalized.cwiseProduct(data)
+        + adjoint * jump * test_flux * weights.cwiseProduct(data);
 
     // R_i = Σ_j K_ij c_j − F_i
     residual = tangent * coefficients - load;

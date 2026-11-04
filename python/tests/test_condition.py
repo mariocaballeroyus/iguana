@@ -318,6 +318,10 @@ def test_invalid_arguments():
     with pytest.raises(ValueError):
         NitscheCondition(element.u, boundary, values, -1., symmetric=False)
 
+    # Only the velocity of a fluid has a pressure to leave out
+    with pytest.raises(ValueError):
+        NitscheCondition(element.u, boundary, values, 1., test_pressure=False)
+
     with pytest.raises(TypeError):
         NeumannCondition('u', boundary, values)
 
@@ -405,6 +409,11 @@ def test_invalid_skeleton_nitsche_conditions():
     with pytest.raises(ValueError):
         SkeletonNitscheCondition(element.u, patch, cell_types, sides,
                                  lambda x: x[:, 0], -1., symmetric=False)
+
+    # Only the velocity of a fluid has a pressure to leave out
+    with pytest.raises(ValueError):
+        SkeletonNitscheCondition(element.u, patch, cell_types, sides,
+                                 lambda x: x[:, 0], 1., test_pressure=False)
 
     with pytest.raises(ValueError):
         SkeletonNitscheCondition(element.u, patch, cell_types, sides,

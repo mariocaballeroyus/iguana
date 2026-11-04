@@ -95,17 +95,26 @@ class StokesElement:
             """
             self._element = element
 
-        def _cpp_traces(self) -> list[_cpp.StokesElement2d.U]:
+        def _cpp_traces(
+            self,
+            pressure: bool = True,
+        ) -> list[_cpp.StokesElement2d.U]:
             """The compiled traces of the components of the velocity, on a
-            planar patch."""
-            return [_cpp.StokesElement2d.U(component) for component in (0, 1)]
+            planar patch, without the pressure gradient of a shift with the
+            equation unless `pressure`."""
+            return [_cpp.StokesElement2d.U(component, pressure)
+                    for component in (0, 1)]
 
-        def _cpp_fluxes(self) -> list[_cpp.StokesElement2d.T]:
+        def _cpp_fluxes(
+            self,
+            pressure: bool = True,
+        ) -> list[_cpp.StokesElement2d.T]:
             """The compiled fluxes conjugate to the traces, the components of
-            the traction, which Nitsche's method pairs with them."""
+            the traction, which Nitsche's method pairs with them, without
+            the pressure unless `pressure`."""
             viscosity = self._element.viscosity
 
-            return [_cpp.StokesElement2d.T(viscosity, component)
+            return [_cpp.StokesElement2d.T(viscosity, component, pressure)
                     for component in (0, 1)]
 
         def _ghost_scaling(self) -> tuple[float, int]:

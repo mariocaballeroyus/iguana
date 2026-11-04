@@ -149,6 +149,7 @@ class NitscheCondition:
                  | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
         penalty: float,
         symmetric: bool = True,
+        test_pressure: bool = True,
     ) -> None:
         """Initialize the condition imposing values on a trace.
 
@@ -172,6 +173,12 @@ class NitscheCondition:
         while the boundary term stays at the points, as the shifted boundary
         method needs.
 
+        The velocity of a fluid may leave the pressure out of its test side,
+        so that only the continuity equation tests the pressure functions,
+        which keeps a velocity on a divergence-conforming space free of
+        divergence. The pressure stays in the momentum equation, through the
+        boundary term.
+
         Args:
             trace: The trace whose values are imposed, such as the field u
                 of `PoissonElement` or the velocity u of `StokesElement`.
@@ -187,13 +194,16 @@ class NitscheCondition:
                 skew-symmetric one.
             symmetric: Whether the method is symmetric, rather than
                 skew-symmetric.
+            test_pressure: Whether the pressure functions take part in the
+                test side, as they do unless a velocity leaves them out.
 
         Raises:
             TypeError: If the trace is not the trace of an element, or if
                 the quadrature is not a boundary quadrature.
             ValueError: If the values are not those of the trace at each
-                point, or if the penalty is negative, or zero for the
-                symmetric method.
+                point, if the penalty is negative, or zero for the symmetric
+                method, or if a trace other than the velocity of a fluid
+                leaves out the pressure.
         """
         if not isinstance(trace, _TRACES):
             raise TypeError('the trace must be the trace of an element')
@@ -210,11 +220,14 @@ class NitscheCondition:
         if not penalty >= 0.:
             raise ValueError('the penalty must be non-negative')
 
+        _check_test_pressure(trace, test_pressure)
+
         self._trace = trace
         self._quadrature = quadrature
         self._values = values
         self._penalty = float(penalty)
         self._symmetric = bool(symmetric)
+        self._test_pressure = bool(test_pressure)
 
     @property
     def trace(self) -> PoissonElement.U | StokesElement.U:
@@ -253,20 +266,29 @@ class NitscheCondition:
         """Whether the method is symmetric, rather than skew-symmetric."""
         return self._symmetric
 
+    @property
+    def test_pressure(self) -> bool:
+        """Whether the pressure functions take part in the test side."""
+        return self._test_pressure
+
     def _add_to(self, form: _cpp.Form2d) -> None:
         """Add the integral of the condition to the compiled form of a
         planar problem, which reads its values where they lie."""
-        for trace, flux, values in zip(self._trace._cpp_traces(),
-                                       self._trace._cpp_fluxes(),
-                                       self._values):
-            condition = _cpp.NitscheCondition2d(trace, flux, self._penalty,
+        test_traces, test_fluxes = _test_side(self._trace, self._test_pressure)
+
+        for trace, flux, test_trace, test_flux, values in zip(
+                self._trace._cpp_traces(), self._trace._cpp_fluxes(),
+                test_traces, test_fluxes, self._values):
+            condition = _cpp.NitscheCondition2d(trace, flux, test_trace,
+                                                test_flux, self._penalty,
                                                 self._symmetric)
             _add_along(form, condition, self._quadrature, values)
 
     def __repr__(self) -> str:
         skew = '' if self._symmetric else ', symmetric=False'
+        pressure = '' if self._test_pressure else ', test_pressure=False'
         return (f'NitscheCondition({self._trace!r}, '
-                f'penalty={self._penalty}{skew})')
+                f'penalty={self._penalty}{skew}{pressure})')
 
 
 class NeumannCondition:
@@ -435,6 +457,7 @@ class SkeletonNitscheCondition:
         center: str = 'boundary',
         symmetric: bool = True,
         num_points: int | None = None,
+        test_pressure: bool = True,
     ) -> None:
         """Initialize the condition imposing values on a trace.
 
@@ -478,6 +501,10 @@ class SkeletonNitscheCondition:
         Only faces between two cells carry it, so the cells of non-zero
         weight must stay off the edge of the patch.
 
+        The velocity of a fluid may leave the pressure out of its test side,
+        as for `NitscheCondition`: from the traction of its adjoint, and from
+        the pressure gradient of a shift rewritten with the equation.
+
         Args:
             trace: The trace whose values are imposed, such as the field u
                 of `PoissonElement` or the velocity u of `StokesElement`.
@@ -513,6 +540,8 @@ class SkeletonNitscheCondition:
                 skew-symmetric.
             num_points: The Gauss points on each face, positive. Without
                 them, one more than the highest degree of the patch.
+            test_pressure: Whether the pressure functions take part in the
+                test side, as they do unless a velocity leaves them out.
 
         Raises:
             TypeError: If the trace is not the trace of an element, if the
@@ -524,10 +553,11 @@ class SkeletonNitscheCondition:
                 of the trace at each point, if the penalty is negative, or
                 zero for the symmetric method, if the order is negative, if
                 the center is neither the boundary nor the surrogate, if the
-                number of points is not positive, or, with a source, if it
-                does not give each point the values of the source, its
-                derivatives one per term of their order, or if an
-                interpolated source needs derivatives above the degree of
+                number of points is not positive, if a trace other than the
+                velocity of a fluid leaves out the pressure, or, with a
+                source, if it does not give each point the values of the
+                source, its derivatives one per term of their order, or if
+                an interpolated source needs derivatives above the degree of
                 the patch.
         """
         if not isinstance(trace, _TRACES):
@@ -552,6 +582,8 @@ class SkeletonNitscheCondition:
 
         if not penalty >= 0.:
             raise ValueError('the penalty must be non-negative')
+
+        _check_test_pressure(trace, test_pressure)
 
         if order is None:
             order = max(patch.degrees)
@@ -593,6 +625,7 @@ class SkeletonNitscheCondition:
         self._order = order
         self._penalty = float(penalty)
         self._symmetric = bool(symmetric)
+        self._test_pressure = bool(test_pressure)
         self._source = source
         self._center = (_cpp.ShiftCenter.surrogate if center == 'surrogate'
                         else _cpp.ShiftCenter.boundary)
@@ -670,6 +703,11 @@ class SkeletonNitscheCondition:
         """Whether the method is symmetric, rather than skew-symmetric."""
         return self._symmetric
 
+    @property
+    def test_pressure(self) -> bool:
+        """Whether the pressure functions take part in the test side."""
+        return self._test_pressure
+
     def _source_derivatives(self) -> npt.NDArray[np.float64]:
         """Cartesian derivatives of the source at the closest points, or at
         the face points from the surrogate, of the order of the series less
@@ -706,19 +744,46 @@ class SkeletonNitscheCondition:
         problem, assembled with its faces coupled, with the weights of the
         cells. The form reads the imposed data and weights where they
         lie."""
-        for trace, flux, values in zip(self._trace._cpp_traces(),
-                                       self._trace._cpp_fluxes(),
-                                       self._imposed):
+        test_traces, test_fluxes = _test_side(self._trace, self._test_pressure)
+
+        for trace, flux, test_trace, test_flux, values in zip(
+                self._trace._cpp_traces(), self._trace._cpp_fluxes(),
+                test_traces, test_fluxes, self._imposed):
             condition = _cpp.SkeletonNitscheCondition2d(
-                trace, flux, self._penalty, self._symmetric)
+                trace, flux, test_trace, test_flux, self._penalty,
+                self._symmetric)
             form.add_skeleton_integral(condition, self._quadrature,
                                        self._projection, self._order, values,
                                        cell_weights)
 
     def __repr__(self) -> str:
         skew = '' if self._symmetric else ', symmetric=False'
+        pressure = '' if self._test_pressure else ', test_pressure=False'
         return (f'SkeletonNitscheCondition({self._trace!r}, '
-                f'penalty={self._penalty}{skew})')
+                f'penalty={self._penalty}{skew}{pressure})')
+
+
+def _check_test_pressure(
+    trace: PoissonElement.U | StokesElement.U,
+    test_pressure: bool,
+) -> None:
+    """Check that a test side leaving out the pressure has one to leave
+    out, as only the velocity of a fluid does."""
+    if not test_pressure and not isinstance(trace, StokesElement.U):
+        raise ValueError('only the velocity of a fluid has a pressure to '
+                         'leave out')
+
+
+def _test_side(
+    trace: PoissonElement.U | StokesElement.U,
+    test_pressure: bool,
+) -> tuple[list[_cpp.Trace2d], list[_cpp.Flux2d]]:
+    """Compiled traces and fluxes of the test functions of a condition, those
+    of its trace, less the pressure unless `test_pressure`."""
+    if test_pressure:
+        return trace._cpp_traces(), trace._cpp_fluxes()
+
+    return trace._cpp_traces(pressure=False), trace._cpp_fluxes(pressure=False)
 
 
 def _add_along(
