@@ -59,8 +59,8 @@ class _Problem:
 
         if not isinstance(element, (PoissonElement, StokesElement,
                                     ElasticityElement)):
-            raise TypeError('the element must be a Poisson, a Stokes or a '
-                            'linear elasticity element')
+            raise TypeError('the element must be a Poisson, a Stokes or an '
+                            'elasticity element')
 
         if not isinstance(space, (FunctionSpace, MixedFunctionSpace)):
             raise TypeError('the space must be a function space or a mixed '
@@ -211,7 +211,7 @@ class LinearProblem(_Problem):
 
         Args:
             element: The element stating the problem, a Poisson, a Stokes
-                or a linear elasticity element.
+                or an elasticity element, the last under small displacements.
             space: The space of the solution, on a planar patch: a function
                 space with a component per unknown of the element, or a
                 mixed space with a field of one component each, such as
@@ -252,8 +252,8 @@ class LinearProblem(_Problem):
                 solver factorizes the system, with MUMPS when PETSc has it.
 
         Raises:
-            TypeError: If the element is not a Poisson, a Stokes or a
-                linear elasticity element, if the space is neither a
+            TypeError: If the element is not a Poisson, a Stokes or an
+                elasticity element, if the space is neither a
                 function space nor a mixed space on a planar patch, if the
                 quadrature is not a domain quadrature, if a condition is
                 neither a penalty, a Nitsche, a Neumann nor a skeleton
@@ -261,7 +261,7 @@ class LinearProblem(_Problem):
                 penalty.
             ValueError: If the space does not give each unknown of the
                 element a component of one field or a field of its own, or
-                is a mixed space for a linear elasticity element, if
+                is a mixed space for an elasticity element, if
                 the quadrature, the boundary of a condition or
                 the cells of a stabilization do not lie on the elements of
                 the patch of the space, if a condition or a stabilization
@@ -440,13 +440,17 @@ class NonlinearProblem(_Problem):
         coefficients. A linear problem has the residual K u - F, which one
         step solves.
 
+        A solid is solved under large displacements, and its values imposed
+        by penalties, as the traction of a Nitsche condition is that of small
+        displacements.
+
         A pressure reference fixes the constant pressure as for a linear
         problem: the pinned pressure stays zero, its row and column of the
         tangent those of the identity.
 
         Args:
             element: The element stating the problem, a Poisson, a Stokes
-                or a linear elasticity element.
+                or an elasticity element, the last under large displacements.
             space: The space of the solution, on a planar patch, as for a
                 linear problem.
             quadrature: A quadrature over the elements of the patch of the
@@ -477,8 +481,8 @@ class NonlinearProblem(_Problem):
                 with MUMPS when PETSc has it.
 
         Raises:
-            TypeError: If the element is not a Poisson, a Stokes or a
-                linear elasticity element, if the space is neither a
+            TypeError: If the element is not a Poisson, a Stokes or an
+                elasticity element, if the space is neither a
                 function space nor a mixed space on a planar patch, if the
                 quadrature is not a domain quadrature, if a condition is
                 neither a penalty, a Nitsche, a Neumann nor a skeleton
@@ -486,7 +490,8 @@ class NonlinearProblem(_Problem):
                 penalty.
             ValueError: If the space does not give each unknown of the
                 element a component of one field or a field of its own, or
-                is a mixed space for a linear elasticity element, if
+                is a mixed space for an elasticity element, if a
+                Nitsche condition acts on the displacement of a solid, if
                 the quadrature, the boundary of a condition or the cells of
                 a stabilization do not lie on the elements of the patch of
                 the space, if a condition or a stabilization acts on a
@@ -496,6 +501,17 @@ class NonlinearProblem(_Problem):
                 without them, or if a pressure reference is given for an
                 element without a pressure or is not a point of the plane.
         """
+        conditions = list(conditions)
+
+        # A flux is linear in the coefficients, so the traction of a solid is
+        # that of small displacements
+        if isinstance(element, ElasticityElement) and any(
+                isinstance(condition, (NitscheCondition,
+                                       SkeletonNitscheCondition))
+                for condition in conditions):
+            raise ValueError('a nonlinear problem of a solid takes no Nitsche '
+                             'condition')
+
         super().__init__(element, space, quadrature, source,
                          cell_weights=cell_weights, conditions=conditions,
                          stabilizations=stabilizations,

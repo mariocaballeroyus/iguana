@@ -164,7 +164,9 @@ class NitscheCondition:
         penalty large enough to keep the method stable, about ten times the
         square of the degree of the patch, times the viscosity for the
         velocity of a fluid and about λ + 2 μ for the displacement of a
-        solid, whose fluxes are the tractions.
+        solid, whose fluxes are the tractions. That of a solid holds under
+        small displacements, so that only a `LinearProblem` takes the
+        condition on it.
 
         The adjoint may instead take the opposite sign, the skew-symmetric
         method, which is stable without a penalty and so takes any
@@ -515,6 +517,9 @@ class SkeletonNitscheCondition:
         The velocity of a fluid may leave the pressure out of its test side,
         as for `NitscheCondition`: from the traction of its adjoint, and from
         the pressure gradient of a shift rewritten with the equation.
+
+        As for `NitscheCondition`, only a `LinearProblem` takes the condition
+        on the displacement of a solid.
 
         Args:
             trace: The trace whose values are imposed, such as the field u

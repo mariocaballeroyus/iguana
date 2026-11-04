@@ -229,11 +229,16 @@ class StokesElement:
 
 
 class ElasticityElement:
-    """Element of the linear elasticity problem of an isotropic solid under
-    small displacements on a planar patch, −div σ(u) = f with
-    σ(u) = 2μ ε(u) + λ (div u) I. Its unknowns are the two components of the
-    displacement, those of one field, its source is the body force, of two
-    values per point, and its trace the displacement."""
+    """Element of an isotropic elastic solid on a planar patch, which maps its
+    reference configuration. The problem chooses the theory. A `LinearProblem`
+    solves linear elasticity, for small displacements, −div σ(u) = f with
+    σ(u) = 2μ ε(u) + λ (div u) I. A `NonlinearProblem` solves the
+    St. Venant-Kirchhoff problem, for large displacements and moderate
+    strains, −div(F S) = f with F = I + ∇u, S = 2μ E + λ tr(E) I and
+    E = (FᵀF − I) / 2, its body force and the data of its Neumann conditions
+    per unit of reference volume and length. Its unknowns are the two
+    components of the displacement, those of one field, its source is the body
+    force, of two values per point, and its trace the displacement."""
 
     # The two components of the displacement, with a body force of two values
     # per point, and no pressure
@@ -242,9 +247,8 @@ class ElasticityElement:
     _pressure_component: int | None = None
 
     class U:
-        """Trace of the displacement u of the linear elasticity problem, on
-        which a condition imposes values such as a clamped side, two per
-        point."""
+        """Trace of the displacement u of a solid, on which a condition
+        imposes values such as a clamped side, two per point."""
 
         _shape: tuple[int, ...] = (2,)
 
@@ -265,7 +269,8 @@ class ElasticityElement:
 
         def _cpp_fluxes(self) -> list[_cpp.ElasticityElement2d.T]:
             """The compiled fluxes conjugate to the traces, the components of
-            the traction, which Nitsche's method pairs with them."""
+            the traction under small displacements, which Nitsche's method
+            pairs with them."""
             element = self._element
 
             return [_cpp.ElasticityElement2d.T(element.lame,
