@@ -53,7 +53,8 @@ int element_holding_point(const TensorGrid<T, d>& grid,
             throw std::invalid_argument("field_evaluation: "
                                         "the points must lie in the patch");
 
-        index[direction] = element_holding(knots, parameter);
+        // On a knot line, the element after it, however the map rounded it
+        index[direction] = element_holding(knots, parameter + rounding);
         counts[direction] = knots.num_elements();
     }
 
