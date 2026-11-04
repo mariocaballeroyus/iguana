@@ -13,11 +13,11 @@ import numpy as np
 import pytest
 
 import iguana
-from iguana import (Boundary, CellType, Derivatives, FunctionSpace,
-                    GhostPenalty, HierarchicalGrid, LinearElasticityElement,
+from iguana import (Boundary, CellType, Derivatives, ElasticityElement,
+                    FunctionSpace, GhostPenalty, HierarchicalGrid,
                     MixedFunctionSpace, NeumannCondition, NitscheCondition,
-                    PoissonElement, QuadratureBoundary, QuadratureDomain,
-                    SkeletonNitscheCondition, StokesElement,
+                    PenaltyCondition, PoissonElement, QuadratureBoundary,
+                    QuadratureDomain, SkeletonNitscheCondition, StokesElement,
                     SurrogateBoundary, classify_cells)
 
 try:
@@ -181,22 +181,6 @@ def poisson_problem():
 
     return ((element, FunctionSpace(patch), quadrature,
              np.zeros(quadrature.num_points)),
-            {'conditions': [condition]})
-
-
-def elastic_problem():
-    """Arguments and keywords of the linear elasticity problem of a linear
-    displacement, imposed by Nitsche's method."""
-    patch = rectangle()
-    element = LinearElasticityElement(10., .3)
-    quadrature = gauss_quadrature(patch)
-    condition = NitscheCondition(element.u, edges(patch),
-                                 lambda x: x @ np.array([[1., -2.], [.5, 3.]]),
-                                 40. * (element.lame
-                                        + 2. * element.shear_modulus))
-
-    return ((element, FunctionSpace(patch, block_size=2), quadrature,
-             np.zeros((quadrature.num_points, 2))),
             {'conditions': [condition]})
 
 
@@ -559,7 +543,7 @@ def test_quadratic_displacement_is_exact():
     f = −μ Δu − (λ + μ) ∇ div u."""
     width, height = 2., 3.
     patch = iguana.create_rectangle(lengths=(width, height), elements=(4, 3))
-    element = LinearElasticityElement(10., .3)
+    element = ElasticityElement(10., .3)
     lame, shear = element.lame, element.shear_modulus
 
     def displacement(points):
@@ -593,7 +577,7 @@ def test_uniaxial_tension_is_exact(plane_stress):
     with E / (1 − ν²) and ν / (1 − ν) in plane strain, a linear field the
     splines hold, its values imposed on the two other sides."""
     young, nu, stress = 10., .3, 2.
-    element = LinearElasticityElement(young, nu, plane_stress=plane_stress)
+    element = ElasticityElement(young, nu, plane_stress=plane_stress)
     stiffness = young if plane_stress else young / (1. - nu ** 2)
     ratio = nu if plane_stress else nu / (1. - nu)
     width, height = 2., 3.
@@ -625,16 +609,96 @@ def test_uniaxial_tension_is_exact(plane_stress):
                        atol=1e-11)
 
 
-def test_invalid_linear_elasticity():
+def tension(element, stretch):
+    """Problem of a rectangle stretched along x, and its displacement, under
+    large displacements. The nominal traction P = F_xx S_xx on its left and
+    right sides, with S_yy = 0 as its top and bottom are free, makes the
+    deformation homogeneous, E_yy = −λ / (λ + 2μ) E_xx, a linear field the
+    splines hold. Penalties on its values along the left side and the bottom
+    leave out only the rigid motions, as those sides carry no reaction, so that
+    they do not disturb it."""
+    lame, shear = element.lame, element.shear_modulus
+    strain = (stretch ** 2 - 1.) / 2.
+    contraction = lame / (lame + 2. * shear)
+    stress = (2. * shear + lame * (1. - contraction)) * strain
+    across = math.sqrt(1. - 2. * contraction * strain)
+
+    width, height = 2., 3.
+    patch = iguana.create_rectangle(lengths=(width, height), elements=(3, 2))
+
+    def displacement(points):
+        return points * [stretch - 1., across - 1.]
+
+    def side(start, end):
+        return QuadratureBoundary(patch, Boundary([iguana.create_curve(
+            degree=1, knots=[0., 0., 1., 1.], control_points=[start, end])]),
+            3)
+
+    penalty = 1e3 * (lame + 2. * shear)
+    conditions = [
+        PenaltyCondition(element.u, side((0., 0.), (width, 0.)), displacement,
+                         penalty),
+        PenaltyCondition(element.u, side((0., height), (0., 0.)), displacement,
+                         penalty),
+        NeumannCondition(element.u, side((width, 0.), (width, height)),
+                         lambda x: np.tile([stretch * stress, 0.],
+                                           (len(x), 1))),
+        NeumannCondition(element.u, side((0., height), (0., 0.)),
+                         lambda x: np.tile([-stretch * stress, 0.],
+                                           (len(x), 1)))]
+    arguments = (element, FunctionSpace(patch, block_size=2),
+                 gauss_quadrature(patch), lambda x: np.zeros((len(x), 2)))
+
+    return arguments, {'conditions': conditions}, displacement
+
+
+@pytest.mark.parametrize('plane_stress', [False, True],
+                         ids=['plane_strain', 'plane_stress'])
+def test_uniaxial_tension_under_large_displacements(plane_stress):
+    """Newton's method finds the exact stretch of a large strain, in several
+    steps, as the residual of a solid is not affine. Its tolerance is tight, as
+    the penalties make the first residual a large one to be relative to."""
+    element = ElasticityElement(10., .3, plane_stress=plane_stress)
+    arguments, keywords, displacement = tension(element, 1.3)
+    problem = NonlinearProblem(*arguments, **keywords,
+                               petsc_options_prefix='large_',
+                               petsc_options={'snes_rtol': 1e-13,
+                                              'ksp_type': 'preonly',
+                                              'pc_type': 'lu'})
+    u = problem.solve()
+
+    assert problem.solver.getIterationNumber() > 1
+    assert np.allclose(u, displacement(arguments[1].control_points), rtol=0.,
+                       atol=1e-9)
+
+
+def test_problem_chooses_the_theory_of_a_solid():
+    """One element gives the theory of small displacements in a linear problem
+    and that of large ones in a nonlinear problem, which agree for a small
+    load and differ for a large one."""
+    element = ElasticityElement(10., .3)
+
+    for stretch, agree in ((1. + 1e-6, True), (1.3, False)):
+        arguments, keywords, _ = tension(element, stretch)
+        small = LinearProblem(*arguments, **keywords,
+                              petsc_options_prefix='small_').solve()
+        large = NonlinearProblem(*arguments, **keywords,
+                                 petsc_options_prefix='large_').solve()
+        difference = np.abs(small - large).max() / np.abs(large).max()
+
+        assert difference < 1e-5 if agree else difference > 1e-2
+
+
+def test_invalid_elasticity():
     with pytest.raises(ValueError):
-        LinearElasticityElement(0., .3)
+        ElasticityElement(0., .3)
 
     for nu in (-1., .5):
         with pytest.raises(ValueError):
-            LinearElasticityElement(1., nu)
+            ElasticityElement(1., nu)
 
     patch = rectangle()
-    element = LinearElasticityElement(1., .3)
+    element = ElasticityElement(1., .3)
     quadrature = gauss_quadrature(patch)
     force = np.zeros((quadrature.num_points, 2))
 
@@ -653,6 +717,20 @@ def test_invalid_linear_elasticity():
 
     with pytest.raises(TypeError):
         GhostPenalty(element.u, patch, [CellType.inside] * 6, .1)
+
+    # The traction of Nitsche's method is that of small displacements
+    zero = lambda x: np.zeros_like(x)
+    space = FunctionSpace(patch, block_size=2)
+    boundary = square()
+    cell_types, _ = classify_cells(patch, boundary)
+
+    for condition in (NitscheCondition(element.u, edges(patch), zero, 40.),
+                      SkeletonNitscheCondition(element.u, patch, cell_types,
+                                               boundary, zero, 40.)):
+        with pytest.raises(ValueError, match='no Nitsche'):
+            NonlinearProblem(element, space, quadrature, force,
+                             conditions=[condition],
+                             petsc_options_prefix='invalid_')
 
 
 def test_invalid_equation_shifts():
@@ -798,10 +876,9 @@ def test_petsc_options_set_up_the_solver():
 
 
 @pytest.mark.parametrize('linear_problem',
-                         [poisson_problem, elastic_problem, stokes_problem,
+                         [poisson_problem, stokes_problem,
                           shifted_stokes_problem],
-                         ids=['poisson', 'elastic', 'stokes',
-                              'shifted_stokes'])
+                         ids=['poisson', 'stokes', 'shifted_stokes'])
 def test_newton_solves_a_linear_problem_in_one_step(linear_problem):
     """The residual of a linear problem is affine, with its tangent as the
     slope, so one Newton step finds the solution of the linear solver, from

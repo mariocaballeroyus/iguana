@@ -26,8 +26,7 @@ using PoissonElement2d = PoissonElement<TensorBSpline<double, 2>, 2>;
 using StokesElement2d = StokesElement<TensorBSpline<double, 2>, 2>;
 using StokesStabilizedElement2d =
     StokesStabilizedElement<TensorBSpline<double, 2>, 2>;
-using LinearElasticityElement2d =
-    LinearElasticityElement<TensorBSpline<double, 2>, 2>;
+using ElasticityElement2d = ElasticityElement<TensorBSpline<double, 2>, 2>;
 using PenaltyCondition2d = PenaltyCondition<TensorBSpline<double, 2>, 2>;
 using NeumannCondition2d = NeumannCondition<TensorBSpline<double, 2>, 2>;
 using NitscheCondition2d = NitscheCondition<TensorBSpline<double, 2>, 2>;
@@ -92,18 +91,15 @@ void assembly(py::module_& module)
         .def(py::init<double, std::size_t, bool>(), py::arg("viscosity"),
              py::arg("component"), py::arg("pressure") = true);
 
-    py::class_<LinearElasticityElement2d> linear_elasticity_element_2d(
-        module, "LinearElasticityElement2d");
-    linear_elasticity_element_2d.def(py::init<double, double>(),
-                                     py::arg("lame"),
-                                     py::arg("shear_modulus"));
+    py::class_<ElasticityElement2d> elasticity_element_2d(
+        module, "ElasticityElement2d");
+    elasticity_element_2d.def(py::init<double, double>(), py::arg("lame"),
+                              py::arg("shear_modulus"));
 
-    py::class_<LinearElasticityElement2d::U, Trace2d>(
-        linear_elasticity_element_2d, "U")
+    py::class_<ElasticityElement2d::U, Trace2d>(elasticity_element_2d, "U")
         .def(py::init<std::size_t>(), py::arg("component"));
 
-    py::class_<LinearElasticityElement2d::T, Flux2d>(
-        linear_elasticity_element_2d, "T")
+    py::class_<ElasticityElement2d::T, Flux2d>(elasticity_element_2d, "T")
         .def(py::init<double, double, std::size_t>(), py::arg("lame"),
              py::arg("shear_modulus"), py::arg("component"));
 
@@ -201,7 +197,7 @@ void assembly(py::module_& module)
              py::keep_alive<1, 3>(), py::keep_alive<1, 4>(),
              py::keep_alive<1, 5>())
         .def("add_domain_integral",
-             &Form2d::add_domain_integral<LinearElasticityElement2d>,
+             &Form2d::add_domain_integral<ElasticityElement2d>,
              py::arg("element"), py::arg("quadrature"),
              py::arg("source").noconvert(),
              py::arg("cell_weights").noconvert(), py::keep_alive<1, 2>(),
@@ -223,7 +219,7 @@ void assembly(py::module_& module)
              py::arg("cell_weights").noconvert(), py::keep_alive<1, 2>(),
              py::keep_alive<1, 3>(), py::keep_alive<1, 4>())
         .def("add_mass_integral",
-             &Form2d::add_mass_integral<LinearElasticityElement2d>,
+             &Form2d::add_mass_integral<ElasticityElement2d>,
              py::arg("element"), py::arg("quadrature"),
              py::arg("cell_weights").noconvert(), py::keep_alive<1, 2>(),
              py::keep_alive<1, 3>(), py::keep_alive<1, 4>())

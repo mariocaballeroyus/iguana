@@ -25,7 +25,7 @@
 #include "iguana/condition/nitsche_condition.hpp"
 #include "iguana/condition/penalty_condition.hpp"
 #include "iguana/condition/skeleton_nitsche_condition.hpp"
-#include "iguana/element/elasticity/linear_elasticity_element.hpp"
+#include "iguana/element/elasticity/elasticity_element.hpp"
 #include "iguana/element/poisson/poisson_element.hpp"
 #include "iguana/element/stokes/stokes_element.hpp"
 #include "iguana/element/stokes/stokes_stabilized_element.hpp"
@@ -1725,89 +1725,89 @@ template void Assembler<TensorNURBS<double, 3>, 3>::assemble_mass(
     const QuadratureDomain<double, 3>&, const Eigen::VectorX<double>&);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
-    const LinearElasticityElement<TensorBSpline<double, 2>, 2>&,
+    const ElasticityElement<TensorBSpline<double, 2>, 2>&,
     const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&, Vec);
 template void Assembler<TensorBSpline<double, 3>, 3>::assemble_tangent(
-    const LinearElasticityElement<TensorBSpline<double, 3>, 3>&,
+    const ElasticityElement<TensorBSpline<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&, Vec);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_tangent(
-    const LinearElasticityElement<TensorNURBS<double, 2>, 2>&,
+    const ElasticityElement<TensorNURBS<double, 2>, 2>&,
     const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&, Vec);
 template void Assembler<TensorNURBS<double, 3>, 3>::assemble_tangent(
-    const LinearElasticityElement<TensorNURBS<double, 3>, 3>&,
+    const ElasticityElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&, Vec);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
-    const LinearElasticityElement<TensorBSpline<double, 2>, 2>&,
+    const ElasticityElement<TensorBSpline<double, 2>, 2>&,
     const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&,
     const Eigen::VectorX<double>&, Vec);
 template void Assembler<TensorBSpline<double, 3>, 3>::assemble_tangent(
-    const LinearElasticityElement<TensorBSpline<double, 3>, 3>&,
+    const ElasticityElement<TensorBSpline<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&,
     const Eigen::VectorX<double>&, Vec);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_tangent(
-    const LinearElasticityElement<TensorNURBS<double, 2>, 2>&,
+    const ElasticityElement<TensorNURBS<double, 2>, 2>&,
     const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&,
     const Eigen::VectorX<double>&, Vec);
 template void Assembler<TensorNURBS<double, 3>, 3>::assemble_tangent(
-    const LinearElasticityElement<TensorNURBS<double, 3>, 3>&,
+    const ElasticityElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&,
     const Eigen::VectorX<double>&, Vec);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_residual(
-    const LinearElasticityElement<TensorBSpline<double, 2>, 2>&,
+    const ElasticityElement<TensorBSpline<double, 2>, 2>&,
     const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&, Vec);
 template void Assembler<TensorBSpline<double, 3>, 3>::assemble_residual(
-    const LinearElasticityElement<TensorBSpline<double, 3>, 3>&,
+    const ElasticityElement<TensorBSpline<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&, Vec);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_residual(
-    const LinearElasticityElement<TensorNURBS<double, 2>, 2>&,
+    const ElasticityElement<TensorNURBS<double, 2>, 2>&,
     const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&, Vec);
 template void Assembler<TensorNURBS<double, 3>, 3>::assemble_residual(
-    const LinearElasticityElement<TensorNURBS<double, 3>, 3>&,
+    const ElasticityElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&, Vec);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_residual(
-    const LinearElasticityElement<TensorBSpline<double, 2>, 2>&,
+    const ElasticityElement<TensorBSpline<double, 2>, 2>&,
     const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&,
     const Eigen::VectorX<double>&, Vec);
 template void Assembler<TensorBSpline<double, 3>, 3>::assemble_residual(
-    const LinearElasticityElement<TensorBSpline<double, 3>, 3>&,
+    const ElasticityElement<TensorBSpline<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&,
     const Eigen::VectorX<double>&, Vec);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_residual(
-    const LinearElasticityElement<TensorNURBS<double, 2>, 2>&,
+    const ElasticityElement<TensorNURBS<double, 2>, 2>&,
     const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&,
     const Eigen::VectorX<double>&, Vec);
 template void Assembler<TensorNURBS<double, 3>, 3>::assemble_residual(
-    const LinearElasticityElement<TensorNURBS<double, 3>, 3>&,
+    const ElasticityElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&,
     const Eigen::VectorX<double>&, Vec);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_mass(
-    const LinearElasticityElement<TensorBSpline<double, 2>, 2>&,
+    const ElasticityElement<TensorBSpline<double, 2>, 2>&,
     const QuadratureDomain<double, 2>&);
 template void Assembler<TensorBSpline<double, 3>, 3>::assemble_mass(
-    const LinearElasticityElement<TensorBSpline<double, 3>, 3>&,
+    const ElasticityElement<TensorBSpline<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_mass(
-    const LinearElasticityElement<TensorNURBS<double, 2>, 2>&,
+    const ElasticityElement<TensorNURBS<double, 2>, 2>&,
     const QuadratureDomain<double, 2>&);
 template void Assembler<TensorNURBS<double, 3>, 3>::assemble_mass(
-    const LinearElasticityElement<TensorNURBS<double, 3>, 3>&,
+    const ElasticityElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_mass(
-    const LinearElasticityElement<TensorBSpline<double, 2>, 2>&,
+    const ElasticityElement<TensorBSpline<double, 2>, 2>&,
     const QuadratureDomain<double, 2>&, const Eigen::VectorX<double>&);
 template void Assembler<TensorBSpline<double, 3>, 3>::assemble_mass(
-    const LinearElasticityElement<TensorBSpline<double, 3>, 3>&,
+    const ElasticityElement<TensorBSpline<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::VectorX<double>&);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_mass(
-    const LinearElasticityElement<TensorNURBS<double, 2>, 2>&,
+    const ElasticityElement<TensorNURBS<double, 2>, 2>&,
     const QuadratureDomain<double, 2>&, const Eigen::VectorX<double>&);
 template void Assembler<TensorNURBS<double, 3>, 3>::assemble_mass(
-    const LinearElasticityElement<TensorNURBS<double, 3>, 3>&,
+    const ElasticityElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::VectorX<double>&);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
