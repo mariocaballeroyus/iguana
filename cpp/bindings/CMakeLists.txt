@@ -45,7 +45,7 @@ print(petsc4py.get_include(), c['PETSC_DIR'] + '/' + c['PETSC_ARCH'], \
                             "${iguana_petsc} that IGUANA links")
     endif()
 
-    target_sources(iguana_python PRIVATE assembly.cpp)
+    target_sources(iguana_python PRIVATE assembly.cpp evaluation.cpp)
 
     target_include_directories(iguana_python PRIVATE
         ${iguana_petsc4py_include})
