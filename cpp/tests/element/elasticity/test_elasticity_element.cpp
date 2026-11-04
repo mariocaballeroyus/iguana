@@ -7,6 +7,7 @@
 #include <iguana/utils/multi_index.hpp>
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <stdexcept>
 #include <vector>
@@ -91,6 +92,42 @@ bool vanishes(const Eigen::MatrixXd& matrix, double scale)
     return matrix.cwiseAbs().maxCoeff() <= 1e-12 * scale;
 }
 
+/// @brief Volume of the box
+template<std::size_t n>
+double box_volume()
+{
+    double product = 1.;
+
+    for (std::size_t direction = 0; direction < n; ++direction)
+        product *= sides[direction];
+
+    return product;
+}
+
+/// @brief A large rotation, about one axis in the plane and two in space
+template<std::size_t n>
+Eigen::MatrixXd rotation()
+{
+    const double angle = 1.2;
+    Eigen::MatrixXd about_z = Eigen::MatrixXd::Identity(n, n);
+    about_z(0, 0) = about_z(1, 1) = std::cos(angle);
+    about_z(1, 0) = std::sin(angle);
+    about_z(0, 1) = -about_z(1, 0);
+
+    if constexpr (n == 2) {
+        return about_z;
+    }
+    else if constexpr (n == 3) {
+        const double tilt = .7;
+        Eigen::MatrixXd about_x = Eigen::MatrixXd::Identity(n, n);
+        about_x(1, 1) = about_x(2, 2) = std::cos(tilt);
+        about_x(2, 1) = std::sin(tilt);
+        about_x(1, 2) = -about_x(2, 1);
+
+        return about_x * about_z;
+    }
+}
+
 /**
  * @brief Runs a check on the values of a box at Gauss points, which integrate
  *        the products of its functions exactly
@@ -121,8 +158,8 @@ void on_box(const Check& check)
     check(patch, values, points, weights);
 }
 
-/// @brief Checks the stiffness, residual and mass of an element against
-///        their exact integrals
+/// @brief Checks the stiffness, residual and mass of an element at rest
+///        against the exact integrals of linear elasticity
 template<std::size_t n>
 void check_forms()
 {
@@ -136,10 +173,7 @@ void check_forms()
         const Eigen::VectorXd v = field<n>(patch, b, zero_shift);
         const Eigen::VectorXd zero = Eigen::VectorXd::Zero(u.size());
 
-        double volume = 1.;
-
-        for (std::size_t direction = 0; direction < n; ++direction)
-            volume *= sides[direction];
+        const double volume = box_volume<n>();
 
         // A constant body force
         const Eigen::VectorXd force = Eigen::VectorXd::LinSpaced(n, 1., 2.);
@@ -188,6 +222,105 @@ void check_forms()
 
         REQUIRE_THAT(constant.dot(mass * other),
                      WithinRel(volume * force.dot(one), 1e-12));
+    });
+}
+
+/// @brief Checks the tangent at a large deformation that is not homogeneous
+///        against central differences of the residual
+template<std::size_t n>
+void check_tangent()
+{
+    on_box<n>([](const auto& patch, const auto& values, const auto& points,
+                 const auto& weights) {
+        const Element<n> element(lame, shear_modulus);
+        const Eigen::MatrixXd a = .3 * full_a.topLeftCorner(n, n);
+
+        Eigen::VectorXd u = field<n>(patch, a, Eigen::VectorXd::Zero(n));
+        u += .05 * Eigen::VectorXd::LinSpaced(u.size(), -1., 1.);
+
+        const Eigen::MatrixXd source = Eigen::MatrixXd::Ones(points.rows(), n);
+
+        Eigen::MatrixXd tangent;
+        element.local_tangent(values, weights, source, u, tangent);
+
+        REQUIRE(tangent.rows() == u.size());
+        REQUIRE(tangent.cols() == u.size());
+
+        const double scale = tangent.cwiseAbs().maxCoeff();
+
+        REQUIRE(vanishes(tangent - tangent.transpose(), scale));
+
+        const double step = 1e-6;
+        Eigen::MatrixXd differences(u.size(), u.size());
+        Eigen::VectorXd forward;
+        Eigen::VectorXd backward;
+
+        for (Eigen::Index dof = 0; dof < u.size(); ++dof) {
+            Eigen::VectorXd shifted = u;
+            shifted(dof) += step;
+            element.local_residual(values, weights, source, shifted, forward);
+            shifted(dof) -= 2. * step;
+            element.local_residual(values, weights, source, shifted, backward);
+            differences.col(dof) = (forward - backward) / (2. * step);
+        }
+
+        REQUIRE((tangent - differences).cwiseAbs().maxCoeff() <= 1e-7 * scale);
+    });
+}
+
+/// @brief Checks that a large rigid motion stores no energy, which the strain
+///        of linear elasticity would not give
+template<std::size_t n>
+void check_rigid_motion()
+{
+    on_box<n>([](const auto& patch, const auto& values, const auto& points,
+                 const auto& weights) {
+        const Element<n> element(lame, shear_modulus);
+        const Eigen::MatrixXd turn =
+            rotation<n>() - Eigen::MatrixXd::Identity(n, n);
+        const Eigen::VectorXd shift = Eigen::VectorXd::LinSpaced(n, 3., -1.);
+        const Eigen::MatrixXd source = Eigen::MatrixXd::Zero(points.rows(), n);
+
+        Eigen::VectorXd residual;
+        element.local_residual(values, weights, source,
+                               field<n>(patch, turn, shift), residual);
+
+        REQUIRE(vanishes(residual, 1.));
+    });
+}
+
+/// @brief Checks the residual of a homogeneous deformation, whose stress is
+///        constant, against the virtual work of a linear field
+template<std::size_t n>
+void check_homogeneous()
+{
+    on_box<n>([](const auto& patch, const auto& values, const auto& points,
+                 const auto& weights) {
+        const Element<n> element(lame, shear_modulus);
+        const Eigen::MatrixXd identity = Eigen::MatrixXd::Identity(n, n);
+        const Eigen::MatrixXd a = .2 * full_a.topLeftCorner(n, n);
+        const Eigen::MatrixXd b = full_b.topLeftCorner(n, n);
+        const Eigen::VectorXd no_shift = Eigen::VectorXd::Zero(n);
+        const Eigen::VectorXd shift = Eigen::VectorXd::LinSpaced(n, 3., -1.);
+
+        // P = F (2μ E + λ tr(E) I)
+        const Eigen::MatrixXd gradient = identity + a;
+        const Eigen::MatrixXd strain =
+            (gradient.transpose() * gradient - identity) / 2.;
+        const Eigen::MatrixXd first_stress =
+            gradient * (2. * shear_modulus * strain
+                        + lame * strain.trace() * identity);
+
+        Eigen::VectorXd residual;
+        element.local_residual(values, weights,
+                               Eigen::MatrixXd::Zero(points.rows(), n),
+                               field<n>(patch, a, shift), residual);
+
+        const double work =
+            box_volume<n>() * first_stress.cwiseProduct(b).sum();
+
+        REQUIRE_THAT(field<n>(patch, b, no_shift).dot(residual),
+                     WithinRel(work, 1e-12));
     });
 }
 
@@ -266,21 +399,44 @@ void check_invalid()
 
 } // namespace
 
-TEST_CASE("The forms of a linear elasticity element are exact and leave "
-          "rigid motions free", "[elasticity_element]")
+TEST_CASE("The forms of an elasticity element at rest are those of linear "
+          "elasticity and leave small rigid motions free",
+          "[elasticity_element]")
 {
     check_forms<2>();
     check_forms<3>();
 }
 
-TEST_CASE("The traces and fluxes of linear elasticity give the displacement "
-          "and the traction", "[elasticity_element]")
+TEST_CASE("The traces and fluxes of an elasticity element give the "
+          "displacement and the traction of small displacements",
+          "[elasticity_element]")
 {
     check_traces<2>();
     check_traces<3>();
 }
 
-TEST_CASE("A linear elasticity element needs a positive shear and bulk "
+TEST_CASE("The tangent of an elasticity element is the derivative of its "
+          "residual", "[elasticity_element]")
+{
+    check_tangent<2>();
+    check_tangent<3>();
+}
+
+TEST_CASE("A large rigid motion of an elasticity element stores no energy",
+          "[elasticity_element]")
+{
+    check_rigid_motion<2>();
+    check_rigid_motion<3>();
+}
+
+TEST_CASE("An elasticity element gives the stress of a large homogeneous "
+          "deformation", "[elasticity_element]")
+{
+    check_homogeneous<2>();
+    check_homogeneous<3>();
+}
+
+TEST_CASE("An elasticity element needs a positive shear and bulk "
           "modulus, and its traces a component of the displacement",
           "[elasticity_element]")
 {

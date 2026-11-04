@@ -529,10 +529,11 @@ double tangent_defect(A& assembler, int num_dofs, const Assemble& assemble)
 }
 
 /**
- * @brief Checks an assembled linear elasticity system on a box of several
- *        elements, whose control points are the scaled Greville points: the
+ * @brief Checks an assembled elasticity system on a box of several elements,
+ *        whose control points are the scaled Greville points. At rest: the
  *        energy of linear fields, rigid motions in its kernel, the load of a
- *        constant force and the mass of constant fields
+ *        constant force and the mass of constant fields. Away from rest: no
+ *        residual at a large rotation, at coefficients that are not zero
  */
 template<std::size_t n>
 void check_elastic_system()
@@ -644,6 +645,20 @@ void check_elastic_system()
                  WithinRel(volume * force.dot(one), 1e-12));
     REQUIRE_THAT(constant.dot(mass_of(assembler) * field(flat, force)),
                  WithinRel(volume * force.dot(one), 1e-12));
+
+    // A large rotation stores no energy either
+    const double angle = 1.2;
+    Eigen::MatrixXd turn = Eigen::MatrixXd::Zero(n, n);
+    turn(0, 0) = turn(1, 1) = std::cos(angle) - 1.;
+    turn(1, 0) = std::sin(angle);
+    turn(0, 1) = -turn(1, 0);
+
+    assembler.clear();
+    assembler.assemble_residual(element, cells,
+                                Eigen::MatrixXd::Zero(cells.num_points(), n),
+                                Coefficients(field(turn, one)));
+
+    REQUIRE(residual_of(assembler).cwiseAbs().maxCoeff() < 1e-12);
 }
 
 } // namespace
@@ -1782,9 +1797,9 @@ TEST_CASE("A test side without the pressure leaves the continuity equations "
     }
 }
 
-TEST_CASE("A linear elasticity system holds the energy of linear fields and "
-          "leaves rigid motions free, in two and three dimensions",
-          "[assembler]")
+TEST_CASE("An elasticity system at rest holds the energy of linear fields and "
+          "leaves rigid motions free, and a large rotation leaves no residual, "
+          "in two and three dimensions", "[assembler]")
 {
     check_elastic_system<2>();
     check_elastic_system<3>();
