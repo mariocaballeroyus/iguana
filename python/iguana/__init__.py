@@ -16,6 +16,7 @@ from iguana.condition import (Derivatives, NeumannCondition,
 from iguana.element import (LinearElasticityElement, PoissonElement,
                             StokesElement)
 from iguana.embedding import CellType, SurrogateBoundary, classify_cells
+from iguana.evaluation import flux_at_points, trace_at_points
 from iguana.fspace import FunctionSpace, MixedFunctionSpace
 from iguana.grid import HierarchicalGrid
 from iguana.patch import (CurvePatch, PlanarPatch, SurfacePatch, VolumePatch,
@@ -35,4 +36,4 @@ __all__ = ['Boundary', 'CellType', 'CurvePatch', 'Derivatives',
            'SkeletonNitscheCondition', 'StokesElement', 'SurfacePatch',
            'SurrogateBoundary', 'VolumeGhostPenalty', 'VolumePatch',
            'classify_cells', 'create_box', 'create_curve', 'create_rectangle',
-           'create_surface']
+           'create_surface', 'flux_at_points', 'trace_at_points']
