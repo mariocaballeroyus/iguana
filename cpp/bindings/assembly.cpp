@@ -80,14 +80,15 @@ void assembly(py::module_& module)
              py::arg("stabilization"));
 
     py::class_<StokesElement2d::U, Trace2d>(stokes_element_2d, "U")
-        .def(py::init<std::size_t>(), py::arg("component"));
+        .def(py::init<std::size_t, bool>(), py::arg("component"),
+             py::arg("pressure") = true);
 
     py::class_<StokesElement2d::P, Trace2d>(stokes_element_2d, "P")
         .def(py::init<>());
 
     py::class_<StokesElement2d::T, Flux2d>(stokes_element_2d, "T")
-        .def(py::init<double, std::size_t>(), py::arg("viscosity"),
-             py::arg("component"));
+        .def(py::init<double, std::size_t, bool>(), py::arg("viscosity"),
+             py::arg("component"), py::arg("pressure") = true);
 
     // A condition keeps a reference to its trace, which Python keeps alive
     // with it
@@ -103,13 +104,27 @@ void assembly(py::module_& module)
         .def(py::init<const Trace2d&, const Flux2d&, double, bool>(),
              py::arg("trace"), py::arg("flux"), py::arg("penalty"),
              py::arg("symmetric") = true, py::keep_alive<1, 2>(),
-             py::keep_alive<1, 3>());
+             py::keep_alive<1, 3>())
+        .def(py::init<const Trace2d&, const Flux2d&, const Trace2d&,
+                      const Flux2d&, double, bool>(),
+             py::arg("trace"), py::arg("flux"), py::arg("test_trace"),
+             py::arg("test_flux"), py::arg("penalty"),
+             py::arg("symmetric") = true, py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>(),
+             py::keep_alive<1, 5>());
 
     py::class_<SkeletonNitscheCondition2d>(module, "SkeletonNitscheCondition2d")
         .def(py::init<const Trace2d&, const Flux2d&, double, bool>(),
              py::arg("trace"), py::arg("flux"), py::arg("penalty"),
              py::arg("symmetric") = true, py::keep_alive<1, 2>(),
-             py::keep_alive<1, 3>());
+             py::keep_alive<1, 3>())
+        .def(py::init<const Trace2d&, const Flux2d&, const Trace2d&,
+                      const Flux2d&, double, bool>(),
+             py::arg("trace"), py::arg("flux"), py::arg("test_trace"),
+             py::arg("test_flux"), py::arg("penalty"),
+             py::arg("symmetric") = true, py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>(),
+             py::keep_alive<1, 5>());
 
     py::class_<SkeletonGhostPenalty2d>(module, "SkeletonGhostPenalty2d")
         .def(py::init<const Trace2d&, double, int>(), py::arg("trace"),
