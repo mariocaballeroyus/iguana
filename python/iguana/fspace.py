@@ -17,6 +17,7 @@ space.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 
 import numpy as np
@@ -185,6 +186,41 @@ class FunctionSpace:
 
         return np.flatnonzero(on_boundary)
 
+    def _holds_unknowns(self, num_unknowns: int) -> bool:
+        """Whether the space gives each of a number of unknowns a component
+        of its field."""
+        return self.block_size == num_unknowns
+
+    def _shape(self) -> tuple[int, ...]:
+        """Shape of the coefficients of the space, a value per degree of
+        freedom and component."""
+        if self.block_size == 1:
+            return (self.num_dofs,)
+
+        return (self.num_dofs, self.block_size)
+
+    def _coefficients(
+        self,
+        entries: npt.NDArray[np.float64],
+    ) -> npt.NDArray[np.float64]:
+        """Coefficients of each degree of freedom from the entries of a
+        vector of the system of the space."""
+        return entries.reshape(self._shape()).copy()
+
+    def _entries(
+        self,
+        coefficients: npt.ArrayLike,
+    ) -> npt.NDArray[np.float64]:
+        """Entries of a vector of the system of the space from the
+        coefficients of each degree of freedom, checked to give every one."""
+        coefficients = np.asarray(coefficients, dtype=np.float64)
+
+        if coefficients.shape != self._shape():
+            raise ValueError('the coefficients must give every degree of '
+                             'freedom of the space')
+
+        return coefficients.ravel()
+
     def __repr__(self) -> str:
         details = [f'num_dofs={self.num_dofs}']
 
@@ -301,6 +337,38 @@ class MixedFunctionSpace:
         """First degree of freedom of each field."""
         return tuple(self._cpp_object.offset(field)
                      for field in range(len(self._fields)))
+
+    def _holds_unknowns(self, num_unknowns: int) -> bool:
+        """Whether the space gives each of a number of unknowns a field of
+        one component."""
+        return (len(self._fields) == num_unknowns
+                and all(field.block_size == 1 for field in self._fields))
+
+    def _coefficients(
+        self,
+        entries: npt.NDArray[np.float64],
+    ) -> tuple[npt.NDArray[np.float64], ...]:
+        """Coefficients of each field from the entries of a vector of the
+        system of the space."""
+        return tuple(
+            field._coefficients(
+                entries[offset:offset + math.prod(field._shape())])
+            for offset, field in zip(self.offsets, self._fields))
+
+    def _entries(
+        self,
+        coefficients: Sequence[npt.ArrayLike],
+    ) -> npt.NDArray[np.float64]:
+        """Entries of a vector of the system of the space from the
+        coefficients of each field, checked to give every one."""
+        coefficients = list(coefficients)
+
+        if len(coefficients) != len(self._fields):
+            raise ValueError('the coefficients must give every degree of '
+                             'freedom of the space')
+
+        return np.concatenate([field._entries(each) for field, each
+                               in zip(self._fields, coefficients)])
 
     def __repr__(self) -> str:
         return (f'MixedFunctionSpace(num_dofs={self.num_dofs}, '
