@@ -380,6 +380,14 @@ void check_traces(const Values& values, const Eigen::MatrixXd& points,
         REQUIRE(((flux.transpose() * fields).array() - traction(component))
                     .abs()
                     .maxCoeff() < 1e-12);
+
+        // Without the pressure, the traction of the velocity alone
+        Element::T(viscosity, c, false).local_flux(values, normals, flux);
+
+        REQUIRE(((flux.transpose() * fields).array()
+                 - traction(component) - pressure * normal(component))
+                    .abs()
+                    .maxCoeff() < 1e-12);
     }
 
     Element::P().local_trace(values, trace);
@@ -414,6 +422,44 @@ TEST_CASE("The traces and fluxes of a Stokes element read the field of "
     REQUIRE(Element::U(1).field(3) == 1);
     REQUIRE(Element::P().field(1) == 0);
     REQUIRE(Element::P().field(3) == 2);
+}
+
+TEST_CASE("The trace of the velocity may leave out the pressure gradient of "
+          "a shift with the equation", "[stokes_element]")
+{
+    const iguana::Patch<Basis, 2> patch = rectangle();
+    const Basis along_x = bernstein(3, 2);
+    const Basis along_y = bernstein(2, 3);
+    Values values(patch, {along_x, along_y, patch.basis()},
+                  iguana::ValueFlags{});
+
+    Eigen::MatrixXd points(2, 2);
+    points << .3, .6,
+              .7, .2;
+    values.reinit(0, points);
+
+    // Every derivative up to order one, for the velocity and for the
+    // pressure gradient of each component
+    const Eigen::MatrixXd ones = Eigen::MatrixXd::Ones(2, 3);
+    values.shift(Eigen::MatrixXd::Zero(2, 2), ones, {ones, ones}, 1,
+                 iguana::ShiftCenter::surrogate);
+
+    const Eigen::Index pressure_row =
+        along_x.num_active() + along_y.num_active();
+    const Eigen::Index pressure_rows = patch.basis().num_active();
+    Eigen::MatrixXd with;
+    Eigen::MatrixXd without;
+
+    for (std::size_t c = 0; c < 2; ++c) {
+        INFO("component " << c);
+
+        Element::U(c).local_trace(values, with);
+        Element::U(c, false).local_trace(values, without);
+
+        REQUIRE(with.bottomRows(pressure_rows).cwiseAbs().maxCoeff() > 0.);
+        REQUIRE(without.bottomRows(pressure_rows).cwiseAbs().maxCoeff() == 0.);
+        REQUIRE(without.topRows(pressure_row) == with.topRows(pressure_row));
+    }
 }
 
 TEST_CASE("A Stokes element needs a positive viscosity and stabilization, "

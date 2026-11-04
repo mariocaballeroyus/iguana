@@ -1551,6 +1551,117 @@ TEST_CASE("A Stokes system on divergence-conforming spaces holds a "
     REQUIRE(tangent_defect(assembler, space.num_dofs(), assemble) < 1e-12);
 }
 
+TEST_CASE("A test side without the pressure leaves the continuity equations "
+          "alone", "[assembler]")
+{
+    using Element = iguana::StokesElement<Basis, 2>;
+
+    const iguana::Patch<Basis, 2> patch = rectangle(uneven());
+    const CellClassification<double, 2> classification =
+        all_cells(CellType::inside);
+    const iguana::FunctionSpace<Basis> x_velocity(cubic_by_quadratic(),
+                                                  classification);
+    const iguana::FunctionSpace<Basis> y_velocity(quadratic_by_cubic(),
+                                                  classification);
+    const iguana::FunctionSpace<Basis> pressure(uneven(), classification);
+    const iguana::MixedFunctionSpace<Basis> space(
+        {x_velocity, y_velocity, pressure});
+    const int pressure_dofs = pressure.num_dofs();
+    const int velocity_dofs = space.num_dofs() - pressure_dofs;
+
+    // A boundary along the edges of the rectangle, and one across the faces
+    // of the last column, where the weights of the cells jump
+    const iguana::QuadratureBoundary<double, 2> edges(
+        iguana::SurrogateBoundary<double, 2>(patch.basis().grid(),
+                                             classification),
+        iguana::GaussLegendre<double, 1>(4));
+    const iguana::QuadratureSkeleton<double, 2> faces(
+        patch.basis().grid(),
+        iguana::jump_faces(patch.basis().grid(),
+                           with_last_column(CellType::outside)),
+        iguana::GaussLegendre<double, 1>(4));
+    Eigen::VectorXd fractions(6);
+    fractions << 1., 1., 0., 1., 1., 0.;
+
+    const Eigen::VectorXd edge_data =
+        Eigen::VectorXd::Random(edges.num_points());
+    const Eigen::VectorXd face_data =
+        Eigen::VectorXd::Random(faces.num_points());
+
+    const double viscosity = 1.5;
+    const std::array<Element::U, 2> traces{Element::U(0), Element::U(1)};
+    const std::array<Element::T, 2> fluxes{Element::T(viscosity, 0),
+                                           Element::T(viscosity, 1)};
+    const std::array<Element::U, 2> test_traces{Element::U(0, false),
+                                                Element::U(1, false)};
+    const std::array<Element::T, 2> test_fluxes{
+        Element::T(viscosity, 0, false), Element::T(viscosity, 1, false)};
+
+    iguana::Assembler<Basis, 2> assembler(space, patch, true);
+    const Coefficients zero(Eigen::VectorXd::Zero(space.num_dofs()));
+
+    for (const bool symmetric : {true, false}) {
+        INFO("symmetric " << symmetric);
+        const double penalty = symmetric ? 40. * viscosity : 0.;
+
+        const auto assemble = [&](const auto& with_traces,
+                                  const auto& with_fluxes, Vec coefficients) {
+            for (std::size_t component = 0; component < 2; ++component) {
+                const iguana::NitscheCondition<Basis, 2> edge(
+                    traces[component], fluxes[component],
+                    with_traces[component], with_fluxes[component], penalty,
+                    symmetric);
+                const iguana::SkeletonNitscheCondition<Basis, 2> face(
+                    traces[component], fluxes[component],
+                    with_traces[component], with_fluxes[component], penalty,
+                    symmetric);
+
+                assembler.assemble_tangent(edge, edges, edge_data,
+                                           coefficients);
+                assembler.assemble_residual(edge, edges, edge_data,
+                                            coefficients);
+                assembler.assemble_tangent(face, faces, face_data, fractions,
+                                           coefficients);
+                assembler.assemble_residual(face, faces, face_data, fractions,
+                                            coefficients);
+            }
+        };
+
+        assembler.clear();
+        assemble(traces, fluxes, zero);
+        const Eigen::MatrixXd full(stiffness_of(assembler));
+        const Eigen::VectorXd full_load = load_of(assembler);
+
+        assembler.clear();
+        assemble(test_traces, test_fluxes, zero);
+        const Eigen::MatrixXd reduced(stiffness_of(assembler));
+        const Eigen::VectorXd reduced_load = load_of(assembler);
+
+        // The momentum equations stay, the pressure of their boundary term
+        // included, which consistency needs
+        REQUIRE(near(reduced.topRows(velocity_dofs),
+                     full.topRows(velocity_dofs)));
+        REQUIRE(near(reduced_load.head(velocity_dofs),
+                     full_load.head(velocity_dofs)));
+        REQUIRE(reduced.topRightCorner(velocity_dofs, pressure_dofs).cwiseAbs()
+                    .maxCoeff() > 0.);
+
+        // The adjoint no longer tests the pressure functions, in the matrix
+        // or in the load
+        REQUIRE(full.bottomRows(pressure_dofs).cwiseAbs().maxCoeff() > 0.);
+        REQUIRE(full_load.tail(pressure_dofs).cwiseAbs().maxCoeff() > 0.);
+        REQUIRE(reduced.bottomRows(pressure_dofs).cwiseAbs().maxCoeff() == 0.);
+        REQUIRE(reduced_load.tail(pressure_dofs).cwiseAbs().maxCoeff() == 0.);
+
+        // The residual follows the same terms as the tangent
+        REQUIRE(tangent_defect(assembler, space.num_dofs(),
+                               [&](Vec coefficients) {
+                                   assemble(test_traces, test_fluxes,
+                                            coefficients);
+                               }) < 1e-12);
+    }
+}
+
 TEST_CASE("A ghost penalty penalizes the jumps of the highest derivatives of "
           "the space across faces", "[assembler]")
 {
