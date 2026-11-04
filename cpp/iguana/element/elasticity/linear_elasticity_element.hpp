@@ -86,6 +86,14 @@ public:
                     const Eigen::VectorX<Scalar>& weights,
                     Eigen::MatrixX<Scalar>& mass) const override;
 
+    /// @brief Trace of a component of the displacement, defined in
+    ///        linear_elasticity_traces.hpp
+    class U;
+
+    /// @brief Flux of a component of the displacement, that component of the
+    ///        traction, defined in linear_elasticity_traces.hpp
+    class T;
+
 private:
     /// @brief First Lamé parameter λ
     Scalar lame_;

@@ -40,6 +40,7 @@
 #include "quadrature/xiao_gimbutas/xiao_gimbutas.hpp"
 #include "assembly/element_values.hpp"
 #include "element/elasticity/linear_elasticity_element.hpp"
+#include "element/elasticity/linear_elasticity_traces.hpp"
 #include "element/element.hpp"
 #include "element/flux.hpp"
 #include "element/poisson/poisson_element.hpp"
