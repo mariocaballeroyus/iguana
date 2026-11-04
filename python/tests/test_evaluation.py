@@ -9,11 +9,11 @@ import numpy as np
 import pytest
 
 import iguana
-from iguana import (CellType, FunctionSpace, HierarchicalGrid,
-                    LinearElasticityElement, MixedFunctionSpace,
-                    NitscheCondition, PoissonElement, QuadratureBoundary,
-                    QuadratureDomain, StokesElement, SurrogateBoundary,
-                    flux_at_points, trace_at_points)
+from iguana import (CellType, ElasticityElement, FunctionSpace,
+                    HierarchicalGrid, MixedFunctionSpace, NitscheCondition,
+                    PoissonElement, QuadratureBoundary, QuadratureDomain,
+                    StokesElement, SurrogateBoundary, flux_at_points,
+                    trace_at_points)
 
 try:
     from iguana.petsc import LinearProblem
@@ -150,7 +150,7 @@ def test_poisson_field_reads_back():
 def test_solid_reads_back():
     """A solid gives its displacement, and its traction from its moduli."""
     patch = rectangle()
-    solid = LinearElasticityElement(10., .3)
+    solid = ElasticityElement(10., .3)
     space = FunctionSpace(patch, block_size=2)
     gradient = np.array([[1., -2.], [.5, 3.]])
 
@@ -199,7 +199,7 @@ def test_invalid_arguments():
 
     # Two fields of the sizes of two components, which the rows would not tell
     # apart
-    solid = LinearElasticityElement(10., .3)
+    solid = ElasticityElement(10., .3)
     mixed = MixedFunctionSpace([FunctionSpace(patch), FunctionSpace(patch)])
 
     with pytest.raises(ValueError, match='a solid'):

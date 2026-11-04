@@ -18,8 +18,7 @@ import numpy as np
 import numpy.typing as npt
 
 from iguana import cpp as _cpp
-from iguana.element import (LinearElasticityElement, PoissonElement,
-                            StokesElement)
+from iguana.element import ElasticityElement, PoissonElement, StokesElement
 from iguana.fspace import FunctionSpace, MixedFunctionSpace
 from iguana.patch import PlanarPatch
 
@@ -27,12 +26,12 @@ from iguana.patch import PlanarPatch
 _ELEMENTS = {PoissonElement.U: PoissonElement,
              StokesElement.U: StokesElement,
              StokesElement.P: StokesElement,
-             LinearElasticityElement.U: LinearElasticityElement}
+             ElasticityElement.U: ElasticityElement}
 
 
 def trace_at_points(
     trace: (PoissonElement.U | StokesElement.U | StokesElement.P
-            | LinearElasticityElement.U),
+            | ElasticityElement.U),
     space: FunctionSpace | MixedFunctionSpace,
     coefficients: npt.ArrayLike | Sequence[npt.ArrayLike],
     points: npt.ArrayLike,
@@ -75,7 +74,7 @@ def trace_at_points(
 
 
 def flux_at_points(
-    trace: PoissonElement.U | StokesElement.U | LinearElasticityElement.U,
+    trace: PoissonElement.U | StokesElement.U | ElasticityElement.U,
     space: FunctionSpace | MixedFunctionSpace,
     coefficients: npt.ArrayLike | Sequence[npt.ArrayLike],
     points: npt.ArrayLike,
@@ -88,7 +87,9 @@ def flux_at_points(
     knot line, as at degree one, gives the value of the cell after the line.
     The normals need not be those of a boundary of the field: the traction of
     a fluid along the normal of a solid, pointing into the fluid, is the load
-    of the fluid on the solid.
+    of the fluid on the solid. The traction of a solid itself is that of small
+    displacements, as a flux is linear in the coefficients, which holds for
+    the solution of a `LinearProblem` and not for one of large displacements.
 
     Args:
         trace: The trace whose flux to evaluate, such as `fluid.u` for the
@@ -137,7 +138,7 @@ def flux_at_points(
 
 def _arguments(
     trace: (PoissonElement.U | StokesElement.U | StokesElement.P
-            | LinearElasticityElement.U),
+            | ElasticityElement.U),
     space: FunctionSpace | MixedFunctionSpace,
     coefficients: npt.ArrayLike | Sequence[npt.ArrayLike],
     points: npt.ArrayLike,
@@ -162,7 +163,7 @@ def _arguments(
                          'component of one field or a field of its own')
 
     # Its local matrices read the components of one field
-    if (element is LinearElasticityElement
+    if (element is ElasticityElement
             and isinstance(space, MixedFunctionSpace)):
         raise ValueError('a solid takes the components of one field')
 
@@ -183,7 +184,7 @@ def _arguments(
 
 def _components(
     trace: (PoissonElement.U | StokesElement.U | StokesElement.P
-            | LinearElasticityElement.U),
+            | ElasticityElement.U),
     values: list[npt.NDArray[np.float64]],
 ) -> npt.NDArray[np.float64]:
     """Values at the points of each component of a trace, shaped as its
