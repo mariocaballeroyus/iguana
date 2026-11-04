@@ -17,20 +17,28 @@ namespace iguana
 {
 
 /**
- * @brief Element of the linear elasticity problem of an isotropic solid under
- *        small displacements
+ * @brief Element of an isotropic elastic solid, the St. Venant–Kirchhoff
+ *        problem under large displacements and moderate strains
  *
- *     −div σ(u) = f
- *     σ(u) = 2μ ε(u) + λ (div u) I
+ *     −div (F S) = f
+ *     F = I + ∇u
+ *     E = ½ (FᵀF − I)
+ *     S = 2μ E + λ tr(E) I
  *
- * @details Its unknowns are the n components of the displacement, those of
- *          one field, the block size n of its space. Its source is the body
- *          force, of n components, its traces the components of the
- *          displacement, U, and its fluxes those of the traction, T. In two
- *          dimensions the Lamé parameters state plane strain, and those of
- *          plane stress take λ = 2 λ μ / (λ + 2 μ). Its mass is that of unit
- *          density, the matrix of a first derivative in time, as the second
- *          one of elastodynamics has no time scheme yet
+ * @details The patch maps the reference configuration, over which the
+ *          gradients and integrals are taken, so that the source is the body
+ *          force per unit of reference volume. At rest, its tangent is the
+ *          stiffness of linear elasticity and its residual minus the load, so
+ *          that a linear problem solves the theory of small displacements and
+ *          a nonlinear problem that of large ones. Its unknowns are the n
+ *          components of the displacement, those of one field, the block size
+ *          n of its space. Its source is the body force, of n components, its
+ *          traces the components of the displacement, U, and its fluxes those
+ *          of the traction under small displacements, T. In two dimensions
+ *          the Lamé parameters state plane strain, and those of plane stress
+ *          take λ = 2 λ μ / (λ + 2 μ). Its mass is that of unit density, the
+ *          matrix of a first derivative in time, as the second one of
+ *          elastodynamics has no time scheme yet
  *
  * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
  * @tparam n Dimension of the physical space, the number of parametric
@@ -91,10 +99,15 @@ public:
     class U;
 
     /// @brief Flux of a component of the displacement, that component of the
-    ///        traction, defined in elasticity_traces.hpp
+    ///        traction under small displacements, defined in
+    ///        elasticity_traces.hpp
     class T;
 
 private:
+    /// @brief Second Piola–Kirchhoff stress S of a deformation gradient F
+    Eigen::Matrix<Scalar, n, n> stress(
+        const Eigen::Matrix<Scalar, n, n>& gradient) const;
+
     /// @brief First Lamé parameter λ
     Scalar lame_;
 

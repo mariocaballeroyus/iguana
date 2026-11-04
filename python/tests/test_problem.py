@@ -184,22 +184,6 @@ def poisson_problem():
             {'conditions': [condition]})
 
 
-def elastic_problem():
-    """Arguments and keywords of the linear elasticity problem of a linear
-    displacement, imposed by Nitsche's method."""
-    patch = rectangle()
-    element = ElasticityElement(10., .3)
-    quadrature = gauss_quadrature(patch)
-    condition = NitscheCondition(element.u, edges(patch),
-                                 lambda x: x @ np.array([[1., -2.], [.5, 3.]]),
-                                 40. * (element.lame
-                                        + 2. * element.shear_modulus))
-
-    return ((element, FunctionSpace(patch, block_size=2), quadrature,
-             np.zeros((quadrature.num_points, 2))),
-            {'conditions': [condition]})
-
-
 def stokes_problem():
     """Arguments and keywords of the Stokes problem of the quadratic flow,
     imposed by Nitsche's method, its pressure fixed by a reference."""
@@ -798,10 +782,9 @@ def test_petsc_options_set_up_the_solver():
 
 
 @pytest.mark.parametrize('linear_problem',
-                         [poisson_problem, elastic_problem, stokes_problem,
+                         [poisson_problem, stokes_problem,
                           shifted_stokes_problem],
-                         ids=['poisson', 'elastic', 'stokes',
-                              'shifted_stokes'])
+                         ids=['poisson', 'stokes', 'shifted_stokes'])
 def test_newton_solves_a_linear_problem_in_one_step(linear_problem):
     """The residual of a linear problem is affine, with its tangent as the
     slope, so one Newton step finds the solution of the linear solver, from

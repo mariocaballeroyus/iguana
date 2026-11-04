@@ -22,8 +22,8 @@ namespace iguana
 {
 
 /**
- * @brief Trace of a component of the displacement of the linear elasticity
- *        problem, on which a condition imposes values such as a clamped side
+ * @brief Trace of a component of the displacement of an elastic solid, on
+ *        which a condition imposes values such as a clamped side
  *
  * @details Its matrix B holds the values of the active functions at the
  *          boundary points in the rows of its component, and zeros in those
@@ -81,12 +81,16 @@ private:
 };
 
 /**
- * @brief Flux of a component of the displacement of the linear elasticity
- *        problem, that component of the traction, conjugate to its trace U
+ * @brief Flux of a component of the displacement of an elastic solid, that
+ *        component of the traction under small displacements, conjugate to
+ *        its trace U
  *
  *     t = σ(u) n = (2μ ε(u) + λ (div u) I) n
  *
- * @details The traction is the stress of the solid applied to the normal
+ * @details The traction is the stress of the solid applied to the normal. A
+ *          flux is linear in the coefficients, so this is the traction of the
+ *          element linearized at rest, which a linear problem solves, and not
+ *          that under large displacements
  *
  * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
  * @tparam n Dimension of the physical space, the number of parametric

@@ -169,17 +169,14 @@ void check_forms()
         REQUIRE(vanishes(stiffness * field<n>(patch, skew, force), scale));
         REQUIRE(vanishes(stiffness - stiffness.transpose(), scale));
 
-        // The residual is the stiffness times the coefficients less the
-        // load, which a constant field tests against the force
+        // At rest, the residual is minus the load, which a constant field
+        // tests against the force
         const Eigen::MatrixXd no_gradient = Eigen::MatrixXd::Zero(n, n);
         const Eigen::VectorXd one = Eigen::VectorXd::LinSpaced(n, 3., -1.);
         const Eigen::VectorXd constant = field<n>(patch, no_gradient, one);
         Eigen::VectorXd at_zero;
-        Eigen::VectorXd at_u;
         element.local_residual(values, weights, source, zero, at_zero);
-        element.local_residual(values, weights, source, u, at_u);
 
-        REQUIRE(vanishes(at_u - at_zero - stiffness * u, scale));
         REQUIRE_THAT(-constant.dot(at_zero),
                      WithinRel(volume * force.dot(one), 1e-12));
 
