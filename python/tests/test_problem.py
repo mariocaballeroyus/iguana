@@ -280,12 +280,18 @@ def test_stokes_flow_is_exact():
     assert u[nearest, 2] == 0.
 
 
-def test_stokes_flow_on_a_divergence_conforming_space_is_exact():
+@pytest.mark.parametrize('test_pressure, symmetric',
+                         [(True, True), (False, True), (False, False)],
+                         ids=['default', 'pressure_free', 'skew_pressure_free'])
+def test_stokes_flow_on_a_divergence_conforming_space_is_exact(test_pressure,
+                                                               symmetric):
     """Each component of the velocity one degree higher along its own
     direction holds the flow, and the pressure the basis of the patch, so
     the Galerkin Stokes element finds them exactly with the velocity imposed
     all around by Nitsche's method, each field in its own array, the
-    pressure up to the constant its reference fixes."""
+    pressure up to the constant its reference fixes. Leaving the pressure
+    out of the test side keeps them, and only then does the imposed velocity
+    stay out of the continuity equations."""
     patch = rectangle()
     space = MixedFunctionSpace.divergence_conforming(patch)
     _, velocity, body_force = stokes()
@@ -296,11 +302,18 @@ def test_stokes_flow_on_a_divergence_conforming_space_is_exact():
     quadrature.fill_gauss_legendre(CellType.inside, 4)
 
     condition = NitscheCondition(element.u, edges(patch), velocity,
-                                 40. * element.viscosity)
-    u_x, u_y, p = LinearProblem(element, space, quadrature, body_force,
-                                conditions=[condition],
-                                pressure_reference=(1., 1.6),
-                                petsc_options_prefix='divergence_').solve()
+                                 40. * element.viscosity, symmetric=symmetric,
+                                 test_pressure=test_pressure)
+    problem = LinearProblem(element, space, quadrature, body_force,
+                            conditions=[condition],
+                            pressure_reference=(1., 1.6),
+                            petsc_options_prefix='divergence_')
+    u_x, u_y, p = problem.solve()
+
+    # The load of the continuity equations, which only the adjoint holds
+    load = problem.b.getArray()[space.offsets[2]:]
+
+    assert (np.abs(load).max() > 0.) == test_pressure
 
     # In parameters, x^2 is the width squared times t^2, and x y the
     # product of the sides and of t along each, each by its blossoms
@@ -321,6 +334,52 @@ def test_stokes_flow_on_a_divergence_conforming_space_is_exact():
     assert np.allclose(p - p[nearest], exact_p - exact_p[nearest], rtol=0.,
                        atol=1e-10)
     assert p[nearest] == 0.
+
+
+def test_pressure_free_test_side_across_faces():
+    """Inside a square, on a divergence-conforming space that keeps every
+    function, Nitsche's condition on the faces where the weights jump, its
+    test side without the pressure, keeps the imposed velocity out of the
+    continuity equations and finds the flow."""
+    patch = iguana.create_rectangle(lengths=(2., 3.), elements=(6, 6))
+    boundary = square()
+    cell_types, fractions = classify_cells(patch, boundary)
+    space = MixedFunctionSpace.divergence_conforming(patch)
+    _, velocity, body_force = stokes()
+    element = StokesElement(1.5)
+
+    quadrature = QuadratureDomain(patch, cell_types)
+
+    for cell_type in (CellType.inside, CellType.cut, CellType.outside):
+        quadrature.fill_gauss_legendre(cell_type, 4)
+
+    condition = SkeletonNitscheCondition(element.u, patch, cell_types,
+                                         boundary, velocity,
+                                         40. * element.viscosity,
+                                         test_pressure=False)
+    ghosts = [GhostPenalty(trace, patch, cell_types, .1)
+              for trace in (element.u, element.p)]
+    problem = LinearProblem(element, space, quadrature, body_force,
+                            cell_weights=fractions, conditions=[condition],
+                            stabilizations=ghosts,
+                            pressure_reference=(1., 1.75),
+                            petsc_options_prefix='divergence_gsbm_')
+    u_x, u_y, _ = problem.solve()
+
+    assert np.abs(problem.b.getArray()[space.offsets[2]:]).max() == 0.
+
+    # In parameters, as for the flow on the whole rectangle, to round-off,
+    # which the cells the penalties alone determine amplify
+    width, height = patch.control_points.max(axis=0)
+    first, second, _ = space.fields
+    count = len(first.knots[1]) - first.degrees[1] - 1
+    exact_x = np.kron(np.ones(count),
+                      width ** 2 * blossoms(first.knots[0], 3, 2))
+    exact_y = -2. * np.kron(height * blossoms(second.knots[1], 3, 1),
+                            width * blossoms(second.knots[0], 2, 1))
+
+    assert np.abs(u_x - exact_x).max() < 1e-8
+    assert np.abs(u_y - exact_y).max() < 1e-8
 
 
 def test_stokes_flow_by_the_generalized_shifted_boundary_method():
