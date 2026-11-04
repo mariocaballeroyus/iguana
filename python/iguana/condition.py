@@ -25,14 +25,15 @@ import numpy.typing as npt
 
 from iguana import cpp as _cpp
 from iguana.boundary import Boundary
-from iguana.element import PoissonElement, StokesElement
+from iguana.element import (LinearElasticityElement, PoissonElement,
+                            StokesElement)
 from iguana.embedding import CellType
 from iguana.grid import HierarchicalGrid
 from iguana.patch import PlanarPatch
 from iguana.quadrature import QuadratureBoundary
 
 # The traces conditions act on, of one value per point or of several
-_TRACES = (PoissonElement.U, StokesElement.U)
+_TRACES = (PoissonElement.U, StokesElement.U, LinearElasticityElement.U)
 
 
 class PenaltyCondition:
@@ -41,7 +42,7 @@ class PenaltyCondition:
 
     def __init__(
         self,
-        trace: PoissonElement.U | StokesElement.U,
+        trace: PoissonElement.U | StokesElement.U | LinearElasticityElement.U,
         quadrature: QuadratureBoundary,
         values: (npt.ArrayLike
                  | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
@@ -62,11 +63,12 @@ class PenaltyCondition:
 
         Args:
             trace: The trace whose values are imposed, such as the field u
-                of `PoissonElement` or the velocity u of `StokesElement`.
+                of `PoissonElement`, the velocity u of `StokesElement` or
+                the displacement u of `LinearElasticityElement`.
             quadrature: The quadrature of the boundary the values are
                 imposed along.
             values: The values imposed at each point of the quadrature, in
-                its order, one per point or two for the velocity, or a
+                its order, one per point or two for a vector, or a
                 function that takes the points where they apply,
                 `quadrature.projections` of shape `(num_points, 2)`, and
                 returns those values.
@@ -95,7 +97,9 @@ class PenaltyCondition:
         self._penalty = float(penalty)
 
     @property
-    def trace(self) -> PoissonElement.U | StokesElement.U:
+    def trace(
+        self,
+    ) -> PoissonElement.U | StokesElement.U | LinearElasticityElement.U:
         """The trace whose values are imposed."""
         return self._trace
 
@@ -107,7 +111,7 @@ class PenaltyCondition:
     @property
     def values(self) -> npt.NDArray[np.float64]:
         """Values imposed at each point of the quadrature, of shape
-        `(num_points,)`, or `(num_points, 2)` for the velocity. They are set
+        `(num_points,)`, or `(num_points, 2)` for a vector. They are set
         as at initialization, by their values or by a function of the points
         where they apply."""
         return _given(self._values, self._trace._shape)
@@ -143,7 +147,7 @@ class NitscheCondition:
 
     def __init__(
         self,
-        trace: PoissonElement.U | StokesElement.U,
+        trace: PoissonElement.U | StokesElement.U | LinearElasticityElement.U,
         quadrature: QuadratureBoundary,
         values: (npt.ArrayLike
                  | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
@@ -159,8 +163,9 @@ class NitscheCondition:
         scaled by the size of the elements. Unlike a penalty alone, it is
         consistent: the error decays with the order of the space for any
         penalty large enough to keep the method stable, about ten times the
-        square of the degree of the patch, and times the viscosity for the
-        velocity of a fluid, whose flux is the traction.
+        square of the degree of the patch, times the viscosity for the
+        velocity of a fluid and about λ + 2 μ for the displacement of a
+        solid, whose fluxes are the tractions.
 
         The adjoint may instead take the opposite sign, the skew-symmetric
         method, which is stable without a penalty and so takes any
@@ -181,11 +186,12 @@ class NitscheCondition:
 
         Args:
             trace: The trace whose values are imposed, such as the field u
-                of `PoissonElement` or the velocity u of `StokesElement`.
+                of `PoissonElement`, the velocity u of `StokesElement` or
+                the displacement u of `LinearElasticityElement`.
             quadrature: The quadrature of the boundary the values are
                 imposed along.
             values: The values imposed at each point of the quadrature, in
-                its order, one per point or two for the velocity, or a
+                its order, one per point or two for a vector, or a
                 function that takes the points where they apply,
                 `quadrature.projections` of shape `(num_points, 2)`, and
                 returns those values.
@@ -230,7 +236,9 @@ class NitscheCondition:
         self._test_pressure = bool(test_pressure)
 
     @property
-    def trace(self) -> PoissonElement.U | StokesElement.U:
+    def trace(
+        self,
+    ) -> PoissonElement.U | StokesElement.U | LinearElasticityElement.U:
         """The trace whose values are imposed."""
         return self._trace
 
@@ -242,7 +250,7 @@ class NitscheCondition:
     @property
     def values(self) -> npt.NDArray[np.float64]:
         """Values imposed at each point of the quadrature, of shape
-        `(num_points,)`, or `(num_points, 2)` for the velocity. They are set
+        `(num_points,)`, or `(num_points, 2)` for a vector. They are set
         as at initialization, by their values or by a function of the points
         where they apply."""
         return _given(self._values, self._trace._shape)
@@ -297,7 +305,7 @@ class NeumannCondition:
 
     def __init__(
         self,
-        trace: PoissonElement.U | StokesElement.U,
+        trace: PoissonElement.U | StokesElement.U | LinearElasticityElement.U,
         quadrature: QuadratureBoundary,
         values: (npt.ArrayLike
                  | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
@@ -307,18 +315,20 @@ class NeumannCondition:
         The data is the boundary term of the weak form where it is known,
         so it adds a load and no stiffness. For the field u of the Poisson
         element it is the outward flux ∂u/∂n, and for the velocity of the
-        Stokes element the traction. Data that depends on the normal is
-        given at the points, from the normals of the quadrature, such as
+        Stokes element or the displacement of a solid the traction. Data
+        that depends on the normal is given at the points, from the
+        normals of the quadrature, such as
         `quadrature.normals @ gradient`.
 
         Args:
             trace: The trace of the test functions the data does work on,
-                such as the field u of `PoissonElement` for a flux or the
-                velocity u of `StokesElement` for a traction.
+                such as the field u of `PoissonElement` for a flux, or
+                the velocity u of `StokesElement` or the displacement u
+                of `LinearElasticityElement` for a traction.
             quadrature: The quadrature of the boundary the data is given
                 along, not shifted.
             values: The data at each point of the quadrature, in its order,
-                one value per point or two for the velocity, or a function
+                one value per point or two for a vector, or a function
                 that takes their positions, of shape `(num_points, 2)`, and
                 returns it.
 
@@ -343,7 +353,9 @@ class NeumannCondition:
         self._values = _values(quadrature.positions, values, trace._shape)
 
     @property
-    def trace(self) -> PoissonElement.U | StokesElement.U:
+    def trace(
+        self,
+    ) -> PoissonElement.U | StokesElement.U | LinearElasticityElement.U:
         """The trace of the test functions the data does work on."""
         return self._trace
 
@@ -355,7 +367,7 @@ class NeumannCondition:
     @property
     def values(self) -> npt.NDArray[np.float64]:
         """Data at each point of the quadrature, of shape `(num_points,)`,
-        or `(num_points, 2)` for the velocity. It is set as at
+        or `(num_points, 2)` for a vector. It is set as at
         initialization, by its values or by a function of the positions of
         the points."""
         return _given(self._values, self._trace._shape)
@@ -444,7 +456,7 @@ class SkeletonNitscheCondition:
 
     def __init__(
         self,
-        trace: PoissonElement.U | StokesElement.U,
+        trace: PoissonElement.U | StokesElement.U | LinearElasticityElement.U,
         patch: PlanarPatch,
         cell_types: Sequence[CellType],
         boundary: Boundary,
@@ -507,7 +519,8 @@ class SkeletonNitscheCondition:
 
         Args:
             trace: The trace whose values are imposed, such as the field u
-                of `PoissonElement` or the velocity u of `StokesElement`.
+                of `PoissonElement`, the velocity u of `StokesElement` or
+                the displacement u of `LinearElasticityElement`.
             patch: The background patch, a planar patch with an affine map,
                 whose elements are the cells.
             cell_types: The type of each element of the patch, with the
@@ -515,7 +528,7 @@ class SkeletonNitscheCondition:
             boundary: The true boundary, made of curves in the plane of the
                 patch, where the values apply.
             values: The values imposed at the closest point of each face
-                point, one per point or two for the velocity, or a function
+                point, one per point or two for a vector, or a function
                 that takes those closest points, of shape `(num_points, 2)`,
                 and returns their values.
             penalty: The penalty, which the size of the cells scales,
@@ -555,10 +568,10 @@ class SkeletonNitscheCondition:
                 the center is neither the boundary nor the surrogate, if the
                 number of points is not positive, if a trace other than the
                 velocity of a fluid leaves out the pressure, or, with a
-                source, if it does not give each point the values of the
-                source, its derivatives one per term of their order, or if
-                an interpolated source needs derivatives above the degree of
-                the patch.
+                source, if the trace is that of a solid, if it does not
+                give each point the values of the source, its derivatives
+                one per term of their order, or if an interpolated source
+                needs derivatives above the degree of the patch.
         """
         if not isinstance(trace, _TRACES):
             raise TypeError('the trace must be the trace of an element')
@@ -602,6 +615,10 @@ class SkeletonNitscheCondition:
             raise ValueError('the number of points must be positive')
 
         if source is not None:
+            # The equation rewrites the shift of these traces alone
+            if not isinstance(trace, (PoissonElement.U, StokesElement.U)):
+                raise ValueError('a solid has no shift with the equation')
+
             if not (isinstance(source, Derivatives) or callable(source)):
                 raise TypeError('the source must be derivatives or a function '
                                 'of the points')
@@ -658,7 +675,9 @@ class SkeletonNitscheCondition:
             self._imposed = self._values + self._source_part
 
     @property
-    def trace(self) -> PoissonElement.U | StokesElement.U:
+    def trace(
+        self,
+    ) -> PoissonElement.U | StokesElement.U | LinearElasticityElement.U:
         """The trace whose values are imposed."""
         return self._trace
 
@@ -675,7 +694,7 @@ class SkeletonNitscheCondition:
     @property
     def values(self) -> npt.NDArray[np.float64]:
         """Values at the closest point of each face point, of shape
-        `(num_points,)`, or `(num_points, 2)` for the velocity. They are set
+        `(num_points,)`, or `(num_points, 2)` for a vector. They are set
         as at initialization, by their values or by a function of the
         closest points."""
         return _given(self._values, self._trace._shape)
@@ -764,7 +783,7 @@ class SkeletonNitscheCondition:
 
 
 def _check_test_pressure(
-    trace: PoissonElement.U | StokesElement.U,
+    trace: PoissonElement.U | StokesElement.U | LinearElasticityElement.U,
     test_pressure: bool,
 ) -> None:
     """Check that a test side leaving out the pressure has one to leave
@@ -775,7 +794,7 @@ def _check_test_pressure(
 
 
 def _test_side(
-    trace: PoissonElement.U | StokesElement.U,
+    trace: PoissonElement.U | StokesElement.U | LinearElasticityElement.U,
     test_pressure: bool,
 ) -> tuple[list[_cpp.Trace2d], list[_cpp.Flux2d]]:
     """Compiled traces and fluxes of the test functions of a condition, those

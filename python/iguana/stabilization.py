@@ -37,7 +37,8 @@ def _ghost_faces(
     """The faces of a ghost penalty, checked as its initialization
     documents, in the numbering of the grid of the patch."""
     if not isinstance(trace, _TRACES):
-        raise TypeError('the trace must be the trace of an element')
+        raise TypeError('the trace must be one of a Poisson or a Stokes '
+                        'element')
 
     if not isinstance(patch, PlanarPatch):
         raise TypeError('the patch must be a planar patch')
@@ -112,8 +113,8 @@ class GhostPenalty:
                 cells, or `'outside'`, those between two outside cells.
 
         Raises:
-            TypeError: If the trace is not the trace of an element, or if
-                the patch is not a planar patch.
+            TypeError: If the trace is not one of a Poisson or a Stokes
+                element, or if the patch is not a planar patch.
             ValueError: If there is not one cell type per element, if the
                 penalty is not positive, or if the faces are not all, cut
                 or outside.
@@ -217,8 +218,8 @@ class VolumeGhostPenalty:
                 cells, or `'outside'`, those between two outside cells.
 
         Raises:
-            TypeError: If the trace is not the trace of an element, or if
-                the patch is not a planar patch.
+            TypeError: If the trace is not one of a Poisson or a Stokes
+                element, or if the patch is not a planar patch.
             ValueError: If there is not one cell type per element, if the
                 penalty is not positive, or if the faces are not all, cut
                 or outside.

@@ -32,6 +32,7 @@ add_library(iguana
     quadrature/xiao_gimbutas/xiao_gimbutas.cpp
     quadrature/xiao_gimbutas/xiao_gimbutas_tables.cpp
     assembly/element_values.cpp
+    element/elasticity/linear_elasticity_element.cpp
     element/poisson/poisson_element.cpp
     element/poisson/poisson_shift.cpp
     element/stokes/stokes_element.cpp

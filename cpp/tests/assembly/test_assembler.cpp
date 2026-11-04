@@ -4,10 +4,12 @@
  */
 
 #include <iguana/iguana.hpp>
+#include <iguana/utils/multi_index.hpp>
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <initializer_list>
 #include <stdexcept>
 #include <vector>
@@ -524,6 +526,125 @@ double tangent_defect(A& assembler, int num_dofs, const Assemble& assemble)
     return (change - stiffness_of(assembler) * coefficients).cwiseAbs()
                .maxCoeff()
            / change.cwiseAbs().maxCoeff();
+}
+
+/**
+ * @brief Checks an assembled linear elasticity system on a box of several
+ *        elements, whose control points are the scaled Greville points: the
+ *        energy of linear fields, rigid motions in its kernel, the load of a
+ *        constant force and the mass of constant fields
+ */
+template<std::size_t n>
+void check_elastic_system()
+{
+    using Spline = iguana::TensorBSpline<double, n>;
+
+    constexpr double lame = 1.2;
+    constexpr double shear_modulus = .7;
+    const std::array<double, 3> sides{2., 3., .5};
+    const std::array<KnotVector<double>, 3> along{
+        KnotVector<double>(2, {0., 0., 0., .4, 1., 1., 1.}),
+        KnotVector<double>(2, {0., 0., 0., .3, .7, 1., 1., 1.}),
+        KnotVector<double>(2, {0., 0., 0., .6, 1., 1., 1.})};
+
+    const auto first_knots = [&along]() -> std::array<KnotVector<double>, n> {
+        if constexpr (n == 2)
+            return {along[0], along[1]};
+        else if constexpr (n == 3)
+            return along;
+    };
+
+    const Spline basis{TensorGrid<double, n>(first_knots())};
+    std::array<int, n> counts{};
+
+    for (std::size_t direction = 0; direction < n; ++direction)
+        counts[direction] = basis.axis(direction).num_functions();
+
+    iguana::PointMatrix<double, n> points(basis.num_functions(), n);
+    double volume = 1.;
+
+    for (std::size_t direction = 0; direction < n; ++direction)
+        volume *= sides[direction];
+
+    for (int function = 0; function < basis.num_functions(); ++function) {
+        const std::array<int, n> index = iguana::unflatten(function, counts);
+
+        for (std::size_t direction = 0; direction < n; ++direction)
+            points(function, direction) =
+                sides[direction]
+                * greville(along[direction], index[direction]);
+    }
+
+    const iguana::Patch<Spline, n> patch(basis, points);
+    const std::vector<CellType> inside(
+        static_cast<std::size_t>(basis.grid().num_elements()),
+        CellType::inside);
+    const CellClassification<double, n> classification(inside);
+    const iguana::FunctionSpace<Spline> space(basis, classification,
+                                              static_cast<int>(n));
+
+    // Three points integrate the products of quadratic functions exactly
+    iguana::QuadratureDomain<double, n> cells;
+    cells.fill(basis.grid(), classification, CellType::inside,
+               iguana::GaussLegendre<double, n>(3));
+
+    const iguana::LinearElasticityElement<Spline, n> element(lame,
+                                                             shear_modulus);
+    const Eigen::VectorXd force = Eigen::VectorXd::LinSpaced(n, 1., 2.);
+    const Eigen::MatrixXd source =
+        force.transpose().replicate(cells.num_points(), 1);
+
+    iguana::Assembler<Spline, n> assembler(space, patch);
+    const Coefficients zero(Eigen::VectorXd::Zero(space.num_dofs()));
+    assembler.assemble_tangent(element, cells, source, zero);
+    assembler.assemble_residual(element, cells, source, zero);
+    assembler.assemble_mass(element, cells);
+
+    // The coefficients of A x + t, the components of each function together
+    const auto field = [&points](const Eigen::MatrixXd& a,
+                                 const Eigen::VectorXd& t) {
+        Eigen::MatrixXd values =
+            (points * a.transpose()).rowwise() + t.transpose();
+        values.transposeInPlace();
+
+        return Eigen::VectorXd(
+            Eigen::Map<const Eigen::VectorXd>(values.data(), values.size()));
+    };
+
+    const Eigen::Matrix3d full_a{{1., -2., .3}, {3., .5, -1.}, {.2, 1.5, -.7}};
+    const Eigen::Matrix3d full_b{{-1., 2., .4}, {.5, 4., -.2}, {1.1, -.3, .9}};
+    const Eigen::MatrixXd a = full_a.topLeftCorner(n, n);
+    const Eigen::MatrixXd b = full_b.topLeftCorner(n, n);
+    const Eigen::VectorXd none = Eigen::VectorXd::Zero(n);
+    const Eigen::MatrixXd flat = Eigen::MatrixXd::Zero(n, n);
+
+    const Eigen::SparseMatrix<double, Eigen::RowMajor> stiffness =
+        stiffness_of(assembler);
+
+    // ( 2μ ε(u), ε(v) )_Ω + ( λ div u, div v )_Ω of the linear fields
+    const Eigen::MatrixXd strain_a = (a + a.transpose()) / 2.;
+    const Eigen::MatrixXd strain_b = (b + b.transpose()) / 2.;
+    const double energy =
+        volume * (2. * shear_modulus * strain_a.cwiseProduct(strain_b).sum()
+                  + lame * a.trace() * b.trace());
+
+    REQUIRE_THAT(field(b, none).dot(stiffness * field(a, none)),
+                 WithinRel(energy, 1e-12));
+
+    // Rigid motions store no energy
+    const Eigen::VectorXd rigid = field(a - a.transpose(), force);
+
+    REQUIRE((stiffness * rigid).cwiseAbs().maxCoeff()
+            < 1e-12 * stiffness.coeffs().cwiseAbs().maxCoeff());
+
+    // The load and mass of constant fields, whose functions sum to one
+    const Eigen::VectorXd one = Eigen::VectorXd::LinSpaced(n, 3., -1.);
+    const Eigen::VectorXd constant = field(flat, one);
+
+    REQUIRE_THAT(constant.dot(load_of(assembler)),
+                 WithinRel(volume * force.dot(one), 1e-12));
+    REQUIRE_THAT(constant.dot(mass_of(assembler) * field(flat, force)),
+                 WithinRel(volume * force.dot(one), 1e-12));
 }
 
 } // namespace
@@ -1660,6 +1781,14 @@ TEST_CASE("A test side without the pressure leaves the continuity equations "
                                             coefficients);
                                }) < 1e-12);
     }
+}
+
+TEST_CASE("A linear elasticity system holds the energy of linear fields and "
+          "leaves rigid motions free, in two and three dimensions",
+          "[assembler]")
+{
+    check_elastic_system<2>();
+    check_elastic_system<3>();
 }
 
 TEST_CASE("A ghost penalty penalizes the jumps of the highest derivatives of "

@@ -28,6 +28,7 @@ add_executable(iguana_tests
     quadrature/test_quadrature_skeleton.cpp
     quadrature/xiao_gimbutas/test_xiao_gimbutas.cpp
     assembly/test_element_values.cpp
+    element/elasticity/test_linear_elasticity_element.cpp
     element/poisson/test_poisson_element.cpp
     element/poisson/test_poisson_shift.cpp
     element/poisson/test_poisson_traces.cpp
