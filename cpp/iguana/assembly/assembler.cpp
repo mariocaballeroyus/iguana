@@ -16,6 +16,7 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "iguana/assembly/element_values.hpp"
@@ -360,27 +361,45 @@ void cells_around(int element, const std::array<int, d>& counts,
 }
 
 /**
- * @brief Compressed rows of the sparsity pattern of a space: an entry for
- *        every pair of degrees of freedom sharing an element and, with the
- *        faces coupled, for every pair on the two cells of an interior face
+ * @brief Compressed rows of the sparsity pattern of a space on the grid of
+ *        a patch: an entry for every pair of degrees of freedom sharing an
+ *        element and, with the faces coupled, for every pair on the two
+ *        cells of an interior face
  *
  * Each row takes the degrees of freedom of the cells around its elements
  * once, skipping those it already holds, so that building the pattern
  * takes the memory of the pattern itself
  *
  * @param space Space whose degrees of freedom number the rows and columns
- * @param counts Number of elements of the grid in each direction
+ * @param patch Patch whose grid the elements of the space must be
  * @param couple_faces Whether to pair the two cells of every interior face
  * @param offsets Output, the first entry of each row, followed by the
  *        number of entries
  * @param columns Output, the columns of each row in increasing order
+ *
+ * @throws std::invalid_argument If the space does not have the elements of
+ *         the patch
  */
-template<typename Basis>
+template<typename Basis, std::size_t n>
 void sparsity_pattern(const MixedFunctionSpace<Basis>& space,
-                      const std::array<int, Basis::dimension>& counts,
-                      bool couple_faces, std::vector<PetscInt>& offsets,
+                      const Patch<Basis, n>& patch, bool couple_faces,
+                      std::vector<PetscInt>& offsets,
                       std::vector<PetscInt>& columns)
 {
+    // The values locate the points of each element in every basis, checked
+    // before the system exists, as nothing would destroy it. The fields
+    // share the elements of the first
+    if (space.field(0).basis().grid().lines() != patch.basis().grid().lines())
+        throw std::invalid_argument("Assembler: "
+                                    "the space must have the elements of the "
+                                    "patch");
+
+    std::array<int, Basis::dimension> counts{};
+
+    for (std::size_t direction = 0; direction < Basis::dimension; ++direction)
+        counts[direction] =
+            patch.basis().grid().knots(direction).num_elements();
+
     const int num_elements = space.num_elements();
     const int num_dofs = space.num_dofs();
 
@@ -421,6 +440,106 @@ void sparsity_pattern(const MixedFunctionSpace<Basis>& space,
         std::sort(columns.begin() + offsets.back(), columns.end());
         offsets.push_back(static_cast<PetscInt>(columns.size()));
     }
+}
+
+/**
+ * @brief Adds the multipliers of conditions to the compressed rows of the
+ *        sparsity pattern of a space, in rows and columns after its degrees
+ *        of freedom
+ *
+ * Each multiplier pairs with the degrees of freedom of the cells where it
+ * is active, both ways, and with itself, so that its row has a diagonal
+ *
+ * @param space Space whose degrees of freedom number the rows of the
+ *        pattern
+ * @param multipliers Conditions whose multipliers follow the degrees of
+ *        freedom, in order
+ * @param offsets The first entry of each row, followed by the number of
+ *        entries, extended with the rows of the multipliers
+ * @param columns The columns of each row in increasing order, extended
+ *
+ * @pre The quadrature of every condition holds cells of the space
+ */
+template<typename Basis, std::size_t n>
+void add_multipliers(
+    const MixedFunctionSpace<Basis>& space,
+    const std::vector<std::reference_wrapper<
+        const LagrangeMultiplierCondition<Basis, n>>>& multipliers,
+    std::vector<PetscInt>& offsets, std::vector<PetscInt>& columns)
+{
+    const int num_dofs = space.num_dofs();
+
+    // The degrees of freedom of the cells where each multiplier is active,
+    // condition after condition
+    std::vector<std::vector<int>> multiplier_dofs;
+    std::vector<int> active;
+    std::vector<int> dofs;
+
+    for (const LagrangeMultiplierCondition<Basis, n>& condition :
+         multipliers) {
+        const QuadratureBoundary<typename Basis::Scalar, Basis::dimension>&
+            quadrature = condition.quadrature();
+        const std::size_t first = multiplier_dofs.size();
+        multiplier_dofs.resize(first + condition.num_multipliers());
+
+        for (int held = 0; held < quadrature.num_elements(); ++held) {
+            const int first_point = quadrature.offsets()(held);
+            const int count = quadrature.offsets()(held + 1) - first_point;
+            condition.active_on(first_point, count, active);
+            space.dofs_on_element(quadrature.elements()(held), dofs);
+
+            for (const int multiplier : active) {
+                std::vector<int>& coupled = multiplier_dofs[first + multiplier];
+                coupled.insert(coupled.end(), dofs.begin(), dofs.end());
+            }
+        }
+    }
+
+    // Each degree of freedom once, in increasing order, and the multipliers
+    // of each degree of freedom, in increasing order too
+    std::vector<std::vector<int>> dof_multipliers(num_dofs);
+
+    for (std::size_t multiplier = 0; multiplier < multiplier_dofs.size();
+         ++multiplier) {
+        std::vector<int>& coupled = multiplier_dofs[multiplier];
+        std::ranges::sort(coupled);
+        coupled.erase(std::unique(coupled.begin(), coupled.end()),
+                      coupled.end());
+
+        for (const int dof : coupled)
+            dof_multipliers[dof].push_back(num_dofs
+                                           + static_cast<int>(multiplier));
+    }
+
+    // The rows of the space gain the columns of their multipliers, which
+    // follow every degree of freedom, and each multiplier takes a row of its
+    // degrees of freedom and its diagonal
+    std::vector<PetscInt> extended_offsets{0};
+    std::vector<PetscInt> extended_columns;
+
+    for (int row = 0; row < num_dofs; ++row) {
+        extended_columns.insert(extended_columns.end(),
+                                columns.begin() + offsets[row],
+                                columns.begin() + offsets[row + 1]);
+        extended_columns.insert(extended_columns.end(),
+                                dof_multipliers[row].begin(),
+                                dof_multipliers[row].end());
+        extended_offsets.push_back(
+            static_cast<PetscInt>(extended_columns.size()));
+    }
+
+    for (std::size_t multiplier = 0; multiplier < multiplier_dofs.size();
+         ++multiplier) {
+        extended_columns.insert(extended_columns.end(),
+                                multiplier_dofs[multiplier].begin(),
+                                multiplier_dofs[multiplier].end());
+        extended_columns.push_back(num_dofs + static_cast<int>(multiplier));
+        extended_offsets.push_back(
+            static_cast<PetscInt>(extended_columns.size()));
+    }
+
+    offsets = std::move(extended_offsets);
+    columns = std::move(extended_columns);
 }
 
 /**
@@ -881,42 +1000,81 @@ template<typename Basis, std::size_t n>
 Assembler<Basis, n>::Assembler(const MixedFunctionSpace<Basis>& space,
                                const Patch<Basis, n>& patch,
                                bool couple_faces)
-    : space_(space), patch_(patch), couple_faces_(couple_faces)
+    : space_(space), patch_(patch), couple_faces_(couple_faces),
+      first_multipliers_{space.num_dofs()}
 {
-    // The values locate the points of each element in every basis, checked
-    // before the system exists, as nothing would destroy it. The fields
-    // share the elements of the first
-    if (space.field(0).basis().grid().lines() != patch.basis().grid().lines())
-        throw std::invalid_argument("Assembler: "
-                                    "the space must have the elements of the "
-                                    "patch");
-
-    const int num_dofs = space.num_dofs();
-
     // Sparsity pattern: K_ij can only be non-zero when functions i and j
     // share an element, and a term on a face pairs the functions of its two
     // cells, so with the faces coupled, so do the cells of every interior
     // face of the grid
-    std::array<int, dim> counts{};
-
-    for (std::size_t direction = 0; direction < dim; ++direction)
-        counts[direction] =
-            patch.basis().grid().knots(direction).num_elements();
-
     std::vector<PetscInt> offsets;
     std::vector<PetscInt> columns;
-    sparsity_pattern(space, counts, couple_faces, offsets, columns);
+    sparsity_pattern(space, patch, couple_faces, offsets, columns);
+    create_system(offsets, columns);
+}
+
+template<typename Basis, std::size_t n>
+Assembler<Basis, n>::Assembler(const FunctionSpace<Basis>& space,
+                               const Patch<Basis, n>& patch,
+                               bool couple_faces, Multipliers multipliers)
+    requires (dim == 2)
+    : Assembler(MixedFunctionSpace<Basis>(std::vector{std::cref(space)}),
+                patch, couple_faces, std::move(multipliers))
+{
+}
+
+template<typename Basis, std::size_t n>
+Assembler<Basis, n>::Assembler(const MixedFunctionSpace<Basis>& space,
+                               const Patch<Basis, n>& patch,
+                               bool couple_faces, Multipliers multipliers)
+    requires (dim == 2)
+    : space_(space), patch_(patch), couple_faces_(couple_faces),
+      multipliers_(std::move(multipliers)),
+      first_multipliers_{space.num_dofs()}
+{
+    for (const LagrangeMultiplierCondition<Basis, n>& condition :
+         multipliers_) {
+        // Each condition once, as the passes find its multipliers by its
+        // address
+        const auto same = [&condition](const auto& other) {
+            return &other.get() == &condition;
+        };
+
+        if (std::ranges::count_if(multipliers_, same) > 1)
+            throw std::invalid_argument("Assembler: "
+                                        "each condition must be given once");
+
+        first_multipliers_.push_back(first_multipliers_.back()
+                                     + condition.num_multipliers());
+    }
+
+    // As without multipliers, and B_ij can only be non-zero when multiplier
+    // i is active on a cell of function j
+    std::vector<PetscInt> offsets;
+    std::vector<PetscInt> columns;
+    sparsity_pattern(space, patch, couple_faces, offsets, columns);
+    add_multipliers(space, multipliers_, offsets, columns);
+    create_system(offsets, columns);
+}
+
+template<typename Basis, std::size_t n>
+void Assembler<Basis, n>::create_system(const std::vector<PetscInt>& offsets,
+                                        const std::vector<PetscInt>& columns)
+{
+    const int num_unknowns = first_multipliers_.back();
 
     // The compressed rows of the pattern preallocate the tangent, its
     // explicit zeros the only entries a write may reach. The block size
     // tells the solvers which degrees of freedom are components of one
-    // function, in blocks only when the space has a single field
-    const int block_size =
-        space.num_fields() == 1 ? space.field(0).block_size() : 1;
+    // function, in blocks only when the space has a single field and there
+    // are no multipliers
+    const int block_size = space_.num_fields() == 1 && multipliers_.empty()
+                               ? space_.field(0).block_size()
+                               : 1;
 
     check_petsc(MatCreate(PETSC_COMM_SELF, &tangent_));
-    check_petsc(MatSetSizes(tangent_, num_dofs, num_dofs, num_dofs,
-                            num_dofs));
+    check_petsc(MatSetSizes(tangent_, num_unknowns, num_unknowns,
+                            num_unknowns, num_unknowns));
     check_petsc(MatSetBlockSize(tangent_, block_size));
     check_petsc(MatSetType(tangent_, MATSEQAIJ));
     check_petsc(MatSeqAIJSetPreallocationCSR(tangent_, offsets.data(),
@@ -1445,15 +1603,105 @@ void Assembler<Basis, n>::add_skeleton_condition_residual(
 }
 
 template<typename Basis, std::size_t n>
+void Assembler<Basis, n>::assemble_tangent(
+    const LagrangeMultiplierCondition<Basis, n>& condition)
+    requires (dim == 2)
+{
+    const int first_unknown = first_multiplier(condition);
+    Eigen::MatrixX<Scalar> coupling;
+    std::vector<int> dofs;
+    std::vector<int> multipliers;
+
+    visit_boundary_cells(
+        patch_, space_, condition.flags(), condition.quadrature(), nullptr, 0,
+        [&](int cell, int first, int count, const auto& values, const auto&,
+            const auto& weights, const auto& normals) {
+            space_.dofs_on_element(cell, dofs);
+            condition.active_on(first, count, multipliers);
+
+            for (int& multiplier : multipliers)
+                multiplier += first_unknown;
+
+            // B in the rows of the multipliers, and Bᵀ in their columns
+            condition.local_coupling(values, weights, normals, first,
+                                     coupling);
+            add_to_matrix(tangent_, multipliers, dofs, coupling);
+            add_to_matrix(tangent_, dofs, multipliers, coupling.transpose());
+        });
+
+    finalize(tangent_);
+}
+
+template<typename Basis, std::size_t n>
+void Assembler<Basis, n>::assemble_residual(
+    const LagrangeMultiplierCondition<Basis, n>& condition,
+    const Eigen::VectorX<Scalar>& data, Vec coefficients) requires (dim == 2)
+{
+    const int first_unknown = first_multiplier(condition);
+    check_condition_data<Scalar>(data, nullptr, 0,
+                                 condition.quadrature().num_points());
+    check_coefficients(coefficients);
+
+    const Entries entries(coefficients);
+    Eigen::VectorX<Scalar> imposed;
+    Eigen::VectorX<Scalar> cell_coefficients;
+    Eigen::VectorX<Scalar> cell_multipliers;
+    Eigen::VectorX<Scalar> load;
+    Eigen::MatrixX<Scalar> coupling;
+    std::vector<int> dofs;
+    std::vector<int> multipliers;
+
+    visit_boundary_cells(
+        patch_, space_, condition.flags(), condition.quadrature(), nullptr, 0,
+        [&](int cell, int first, int count, const auto& values, const auto&,
+            const auto& weights, const auto& normals) {
+            space_.dofs_on_element(cell, dofs);
+            condition.active_on(first, count, multipliers);
+
+            for (int& multiplier : multipliers)
+                multiplier += first_unknown;
+
+            entries.gather(dofs, cell_coefficients);
+            entries.gather(multipliers, cell_multipliers);
+            imposed = data.segment(first, count);
+            condition.local_coupling(values, weights, normals, first,
+                                     coupling);
+            condition.local_load(weights, imposed, first, load);
+
+            // R_u += Bᵀ λ in the rows of the space, and R_λ = B u − G in
+            // those of the multipliers
+            add_to_residual(dofs, coupling.transpose() * cell_multipliers);
+            add_to_residual(multipliers,
+                            coupling * cell_coefficients - load);
+        });
+
+    finalize(residual_);
+}
+
+template<typename Basis, std::size_t n>
+int Assembler<Basis, n>::first_multiplier(
+    const LagrangeMultiplierCondition<Basis, n>& condition) const
+{
+    for (std::size_t k = 0; k < multipliers_.size(); ++k) {
+        if (&multipliers_[k].get() == &condition)
+            return first_multipliers_[k];
+    }
+
+    throw std::invalid_argument("Assembler: "
+                                "the condition must be given at "
+                                "construction");
+}
+
+template<typename Basis, std::size_t n>
 void Assembler<Basis, n>::check_coefficients(Vec coefficients) const
 {
     PetscInt size = 0;
     check_petsc(VecGetSize(coefficients, &size));
 
-    if (size != space_.num_dofs())
+    if (size != first_multipliers_.back())
         throw std::invalid_argument("Assembler: "
                                     "the coefficients must have one entry "
-                                    "per degree of freedom");
+                                    "per unknown");
 }
 
 template<typename Basis, std::size_t n>
@@ -1462,17 +1710,27 @@ void Assembler<Basis, n>::add_to_matrix(Mat matrix,
                                         const Eigen::MatrixX<Scalar>& local)
 {
     // The k-th degree of freedom pairs with row and column k
-    const PetscInt count = static_cast<PetscInt>(dofs.size());
+    add_to_matrix(matrix, dofs, dofs, local);
+}
+
+template<typename Basis, std::size_t n>
+void Assembler<Basis, n>::add_to_matrix(Mat matrix,
+                                        std::span<const int> rows,
+                                        std::span<const int> columns,
+                                        const Eigen::MatrixX<Scalar>& local)
+{
+    const PetscInt num_rows = static_cast<PetscInt>(rows.size());
+    const PetscInt num_columns = static_cast<PetscInt>(columns.size());
 
     // PETSc reads an entry for every pair, past the end of a local matrix
     // of another block size
-    if (local.rows() != count || local.cols() != count)
+    if (local.rows() != num_rows || local.cols() != num_columns)
         throw std::invalid_argument("Assembler: "
                                     "the local matrix must match the degrees "
                                     "of freedom of the space");
 
-    check_petsc(MatSetValues(matrix, count, dofs.data(), count, dofs.data(),
-                             local.data(), ADD_VALUES));
+    check_petsc(MatSetValues(matrix, num_rows, rows.data(), num_columns,
+                             columns.data(), local.data(), ADD_VALUES));
 }
 
 template<typename Basis, std::size_t n>

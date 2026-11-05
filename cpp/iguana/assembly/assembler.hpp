@@ -8,6 +8,7 @@
 
 #include <concepts>
 #include <cstddef>
+#include <functional>
 #include <span>
 #include <vector>
 
@@ -15,6 +16,7 @@
 #include <petscmat.h>
 
 #include "iguana/condition/condition.hpp"
+#include "iguana/condition/lagrange_multiplier_condition.hpp"
 #include "iguana/condition/skeleton_condition.hpp"
 #include "iguana/condition/skeleton_ghost_penalty.hpp"
 #include "iguana/condition/volume_ghost_penalty.hpp"
@@ -72,6 +74,15 @@ namespace iguana
  * block size, throws std::invalid_argument, since PETSc would read past
  * its end
  *
+ * Lagrange multiplier conditions bring unknowns of their own, which follow
+ * the degrees of freedom of the space, condition after condition. Together
+ * they are the unknowns of the system, each with a row and a column of the
+ * tangent and mass, an entry of the residual and one of the coefficients.
+ * The pattern pairs each multiplier with the degrees of freedom of the
+ * cells where it is active, and with itself, so that every row has its
+ * diagonal as factorizations expect. The rows of the multipliers do not
+ * divide into blocks, so with multipliers the block size is one
+ *
  * @tparam Basis Basis of the space and the patch, TensorBSpline or
  *         TensorNURBS
  * @tparam n Dimension of the physical space of the patch
@@ -93,6 +104,11 @@ public:
 
     /// @brief Number of parametric directions
     static constexpr std::size_t dim = Basis::dimension;
+
+    /// @brief Lagrange multiplier conditions, whose multipliers follow the
+    ///        degrees of freedom of the space in the system
+    using Multipliers = std::vector<
+        std::reference_wrapper<const LagrangeMultiplierCondition<Basis, n>>>;
 
     /**
      * @brief Constructs a zero tangent, residual and mass with the pattern
@@ -136,6 +152,53 @@ public:
     Assembler(const MixedFunctionSpace<Basis>& space,
               const Patch<Basis, n>& patch, bool couple_faces = false);
 
+    /**
+     * @brief Constructs a zero tangent, residual and mass with the pattern
+     *        of a space of one field and of Lagrange multipliers
+     *
+     * @param space Space whose degrees of freedom number the system
+     * @param patch Patch that maps the points of the quadratures
+     * @param couple_faces Whether to couple the degrees of freedom of the
+     *        two cells of every interior face of the grid, as without
+     *        multipliers
+     * @param multipliers Conditions whose multipliers follow the degrees of
+     *        freedom of the space, in order
+     *
+     * @throws std::invalid_argument If the space does not have the elements
+     *         of the patch, or if a condition is given twice
+     * @throws std::runtime_error If PETSc fails to create the system
+     *
+     * @pre PETSc is initialized, @p space, @p patch and the conditions
+     *      outlive the assembler, which keeps references to them, and the
+     *      quadrature of each condition is built on the grid of the basis,
+     *      every element it holds having its degrees of freedom in the space
+     */
+    Assembler(const FunctionSpace<Basis>& space,
+              const Patch<Basis, n>& patch, bool couple_faces,
+              Multipliers multipliers) requires (dim == 2);
+
+    /**
+     * @brief Constructs a zero tangent, residual and mass with the pattern
+     *        of a space of several fields and of Lagrange multipliers
+     *
+     * @param space Space whose degrees of freedom number the system, field
+     *        after field
+     * @param patch Patch that maps the points of the quadratures
+     * @param couple_faces Whether to couple the degrees of freedom of the
+     *        two cells of every interior face of the grid, as without
+     *        multipliers
+     * @param multipliers Conditions whose multipliers follow the degrees of
+     *        freedom of the space, in order
+     *
+     * @throws std::invalid_argument As for a space of one field
+     * @throws std::runtime_error If PETSc fails to create the system
+     *
+     * @pre As for a space of one field, with the fields of @p space
+     */
+    Assembler(const MixedFunctionSpace<Basis>& space,
+              const Patch<Basis, n>& patch, bool couple_faces,
+              Multipliers multipliers) requires (dim == 2);
+
     /// @brief Drops the references of the assembler to the tangent,
     ///        residual and mass, which PETSc destroys once nothing else
     ///        holds them
@@ -154,13 +217,12 @@ public:
      * @param quadrature Quadrature over elements of the grid of the basis
      * @param source Value of the source at each point of the quadrature, a
      *        row per point in its order and a column per component
-     * @param coefficients Coefficients of the degrees of freedom of the
-     *        space, one each
+     * @param coefficients Coefficients of the unknowns of the system, one each
      *
      * @throws std::invalid_argument If @p source does not have one row per
      *         point of @p quadrature, if @p coefficients does not have one
-     *         entry per degree of freedom, or if the local matrices of
-     *         @p element do not match the degrees of freedom of the space
+     *         entry per unknown, or if the local matrices of @p element do
+     *         not match the degrees of freedom of the space
      *
      * @pre @p quadrature is built on the grid of the basis and the domain of
      *      the space, so that every element it holds has its degrees of
@@ -186,8 +248,7 @@ public:
      *        row per point in its order and a column per component
      * @param cell_weights Weight of the test functions on each element of
      *        the grid, in its numbering
-     * @param coefficients Coefficients of the degrees of freedom of the
-     *        space, one each
+     * @param coefficients Coefficients of the unknowns of the system, one each
      *
      * @throws std::invalid_argument As for the tangent of an element, or if
      *         @p cell_weights does not have one value per element of the
@@ -214,8 +275,7 @@ public:
      * @param quadrature Quadrature over elements of the grid of the basis
      * @param source Value of the source at each point of the quadrature, a
      *        row per point in its order and a column per component
-     * @param coefficients Coefficients of the degrees of freedom of the
-     *        space, one each
+     * @param coefficients Coefficients of the unknowns of the system, one each
      *
      * @throws std::invalid_argument As for the tangent of an element
      *
@@ -240,8 +300,7 @@ public:
      *        row per point in its order and a column per component
      * @param cell_weights Weight of the test functions on each element of
      *        the grid, in its numbering
-     * @param coefficients Coefficients of the degrees of freedom of the
-     *        space, one each
+     * @param coefficients Coefficients of the unknowns of the system, one each
      *
      * @throws std::invalid_argument As for the weighted tangent of an
      *         element
@@ -309,13 +368,12 @@ public:
      *        basis
      * @param data Data of the condition at each point of the quadrature, in
      *        its order, such as the value it imposes
-     * @param coefficients Coefficients of the degrees of freedom of the
-     *        space, one each
+     * @param coefficients Coefficients of the unknowns of the system, one each
      *
      * @throws std::invalid_argument If @p data does not have one value per
      *         point of @p quadrature, if @p coefficients does not have one
-     *         entry per degree of freedom, or if the local matrices of
-     *         @p condition do not match the degrees of freedom of the space
+     *         entry per unknown, or if the local matrices of @p condition do
+     *         not match the degrees of freedom of the space
      *
      * @pre @p quadrature is built on the grid of the basis, every element it
      *      holds has its degrees of freedom in the space, and
@@ -338,8 +396,7 @@ public:
      *        basis
      * @param data Data of the condition at each point of the quadrature, in
      *        its order, such as the value it imposes
-     * @param coefficients Coefficients of the degrees of freedom of the
-     *        space, one each
+     * @param coefficients Coefficients of the unknowns of the system, one each
      *
      * @throws std::invalid_argument As for the tangent of a condition
      *
@@ -373,8 +430,7 @@ public:
      *        in ElementValues::shift()
      * @param data Data of the condition at the closest point of each point
      *        of the quadrature, in its order
-     * @param coefficients Coefficients of the degrees of freedom of the
-     *        space, one each
+     * @param coefficients Coefficients of the unknowns of the system, one each
      *
      * @throws std::invalid_argument As for the tangent of a condition, if
      *         @p order is negative, if @p projection does not have one
@@ -410,8 +466,7 @@ public:
      *        in ElementValues::shift()
      * @param data Data of the condition at the closest point of each point
      *        of the quadrature, in its order
-     * @param coefficients Coefficients of the degrees of freedom of the
-     *        space, one each
+     * @param coefficients Coefficients of the unknowns of the system, one each
      *
      * @throws std::invalid_argument As for the projected tangent of a
      *         condition
@@ -439,16 +494,15 @@ public:
      * @param penalty Ghost penalty whose local tangent is added
      * @param quadrature Quadrature over interior faces of the grid of the
      *        basis
-     * @param coefficients Coefficients of the degrees of freedom of the
-     *        space, one each
+     * @param coefficients Coefficients of the unknowns of the system, one each
      *
      * @throws std::invalid_argument If the faces are not coupled, if the map
      *         of the patch is not affine, if the patch is not a B-spline one,
      *         if the field of @p penalty is not one of the space, if a knot
      *         vector of that field repeats an interior knot, if
-     *         @p coefficients does not have one entry per degree of freedom,
-     *         or if the local matrices of @p penalty do not match the degrees
-     *         of freedom of the space
+     *         @p coefficients does not have one entry per unknown, or if the
+     *         local matrices of @p penalty do not match the degrees of
+     *         freedom of the space
      *
      * @pre @p quadrature is built on the grid of the basis, every cell it
      *      holds has its degrees of freedom in the space, and
@@ -465,8 +519,7 @@ public:
      * @param penalty Ghost penalty whose local residual is added
      * @param quadrature Quadrature over interior faces of the grid of the
      *        basis
-     * @param coefficients Coefficients of the degrees of freedom of the
-     *        space, one each
+     * @param coefficients Coefficients of the unknowns of the system, one each
      *
      * @throws std::invalid_argument As for the tangent of a ghost penalty
      *
@@ -490,14 +543,13 @@ public:
      * @param faces Quadrature over interior faces of the grid of the basis,
      *        whose points are not used
      * @param cells Quadrature holding points on both cells of every face
-     * @param coefficients Coefficients of the degrees of freedom of the
-     *        space, one each
+     * @param coefficients Coefficients of the unknowns of the system, one each
      *
      * @throws std::invalid_argument If the faces are not coupled, if the
      *         field of @p penalty is not one of the space, if a cell of a
      *         face holds no points of @p cells, if @p coefficients does not
-     *         have one entry per degree of freedom, or if the local matrices
-     *         of @p penalty do not match the degrees of freedom of the space
+     *         have one entry per unknown, or if the local matrices of
+     *         @p penalty do not match the degrees of freedom of the space
      *
      * @pre @p faces and @p cells are built on the grid of the basis, every
      *      cell of a face has its degrees of freedom in the space, and
@@ -517,8 +569,7 @@ public:
      * @param faces Quadrature over interior faces of the grid of the basis,
      *        whose points are not used
      * @param cells Quadrature holding points on both cells of every face
-     * @param coefficients Coefficients of the degrees of freedom of the
-     *        space, one each
+     * @param coefficients Coefficients of the unknowns of the system, one each
      *
      * @throws std::invalid_argument As for the tangent of a volume ghost
      *         penalty
@@ -554,15 +605,14 @@ public:
      *        its order, such as the value it imposes
      * @param cell_weights Weight of the test functions on each element of
      *        the grid, in its numbering
-     * @param coefficients Coefficients of the degrees of freedom of the
-     *        space, one each
+     * @param coefficients Coefficients of the unknowns of the system, one each
      *
      * @throws std::invalid_argument If the faces are not coupled, if
      *         @p data does not have one value per point of @p quadrature, if
      *         @p cell_weights does not have one value per element of the
-     *         grid, if @p coefficients does not have one entry per degree of
-     *         freedom, or if the local matrices of @p condition do not match
-     *         the degrees of freedom of the space
+     *         grid, if @p coefficients does not have one entry per unknown,
+     *         or if the local matrices of @p condition do not match the
+     *         degrees of freedom of the space
      *
      * @pre @p quadrature is built on the grid of the basis, every cell of a
      *      face across which the weights jump has its degrees of freedom in
@@ -590,8 +640,7 @@ public:
      *        its order, such as the value it imposes
      * @param cell_weights Weight of the test functions on each element of
      *        the grid, in its numbering
-     * @param coefficients Coefficients of the degrees of freedom of the
-     *        space, one each
+     * @param coefficients Coefficients of the unknowns of the system, one each
      *
      * @throws std::invalid_argument As for the tangent of a skeleton
      *         condition
@@ -630,8 +679,7 @@ public:
      *        of the quadrature, in its order
      * @param cell_weights Weight of the test functions on each element of
      *        the grid, in its numbering
-     * @param coefficients Coefficients of the degrees of freedom of the
-     *        space, one each
+     * @param coefficients Coefficients of the unknowns of the system, one each
      *
      * @throws std::invalid_argument As for the tangent of a skeleton
      *         condition, if @p order is negative, if @p projection does not
@@ -672,8 +720,7 @@ public:
      *        of the quadrature, in its order
      * @param cell_weights Weight of the test functions on each element of
      *        the grid, in its numbering
-     * @param coefficients Coefficients of the degrees of freedom of the
-     *        space, one each
+     * @param coefficients Coefficients of the unknowns of the system, one each
      *
      * @throws std::invalid_argument As for the projected tangent of a
      *         skeleton condition
@@ -688,22 +735,65 @@ public:
                            const Eigen::VectorX<Scalar>& cell_weights,
                            Vec coefficients) requires (dim == 2);
 
+    /**
+     * @brief Adds the coupling of the multipliers of a condition with the
+     *        degrees of freedom of the space into the tangent
+     *
+     * The coupling goes into the rows of the multipliers and its transpose
+     * into their columns, along the quadrature of the condition, whose
+     * weights and normals the patch maps as for any condition. It is linear
+     * in the unknowns, so that the tangent does not depend on them
+     *
+     * @param condition Lagrange multiplier condition given at construction
+     *
+     * @throws std::invalid_argument If @p condition was not given at
+     *         construction
+     */
+    void assemble_tangent(
+        const LagrangeMultiplierCondition<Basis, n>& condition)
+        requires (dim == 2);
+
+    /**
+     * @brief Adds the residual of a condition imposed through Lagrange
+     *        multipliers, at coefficients
+     *
+     * The rows of the space gain the transpose of the coupling times the
+     * multipliers, and those of the multipliers the coupling times the
+     * degrees of freedom less the load of the imposed values
+     *
+     * @param condition Lagrange multiplier condition given at construction
+     * @param data Value imposed at each point of the quadrature of
+     *        @p condition, in its order, the normal component for a vector
+     *        trace
+     * @param coefficients Coefficients of the unknowns of the system, one each
+     *
+     * @throws std::invalid_argument If @p condition was not given at
+     *         construction, if @p data does not have one value per point of
+     *         its quadrature, or if @p coefficients does not have one entry
+     *         per unknown
+     *
+     * @pre @p coefficients is not the residual
+     */
+    void assemble_residual(
+        const LagrangeMultiplierCondition<Basis, n>& condition,
+        const Eigen::VectorX<Scalar>& data, Vec coefficients)
+        requires (dim == 2);
+
     /// @brief Zeroes the tangent, residual and mass, keeping the pattern
     void clear();
 
-    /// @brief Tangent, of size (num_dofs, num_dofs), owned by the assembler
-    ///        unless a reference to it is taken
+    /// @brief Tangent, with a row and a column per unknown, owned by the
+    ///        assembler unless a reference to it is taken
     Mat tangent() const noexcept
     { return tangent_; }
 
-    /// @brief Mass, of size (num_dofs, num_dofs), with the pattern of the
-    ///        tangent, owned by the assembler unless a reference to it is
-    ///        taken
+    /// @brief Mass, with the pattern of the tangent, owned by the assembler
+    ///        unless a reference to it is taken
     Mat mass() const noexcept
     { return mass_; }
 
-    /// @brief Residual, of size num_dofs, owned by the assembler unless a
-    ///        reference to it is taken
+    /// @brief Residual, with an entry per unknown, owned by the assembler
+    ///        unless a reference to it is taken
     Vec residual() const noexcept
     { return residual_; }
 
@@ -757,8 +847,30 @@ private:
         requires (dim == 2);
 
     /**
-     * @brief Checks that coefficients have one entry per degree of freedom
-     *        of the space
+     * @brief Creates the tangent, mass and residual with the compressed rows
+     *        of a sparsity pattern, the work of every constructor
+     *
+     * @param offsets First entry of each row, followed by the number of
+     *        entries
+     * @param columns Columns of each row in increasing order
+     *
+     * @throws std::runtime_error If PETSc fails to create them
+     */
+    void create_system(const std::vector<PetscInt>& offsets,
+                       const std::vector<PetscInt>& columns);
+
+    /**
+     * @brief First unknown of the multipliers of a condition
+     *
+     * @throws std::invalid_argument If the condition was not given at
+     *         construction
+     */
+    int first_multiplier(
+        const LagrangeMultiplierCondition<Basis, n>& condition) const;
+
+    /**
+     * @brief Checks that coefficients have one entry per unknown of the
+     *        system
      *
      * @throws std::invalid_argument If they do not
      */
@@ -766,8 +878,7 @@ private:
 
     /**
      * @brief Adds a local matrix at degrees of freedom, those of a cell or
-     *        of the two cells of a face, into the tangent or the mass, the
-     *        only place where they are written
+     *        of the two cells of a face, into the tangent or the mass
      *
      * @throws std::invalid_argument If @p local does not have a row and a
      *         column per entry of @p dofs
@@ -779,9 +890,22 @@ private:
                        const Eigen::MatrixX<Scalar>& local);
 
     /**
-     * @brief Adds a local residual at degrees of freedom, those of a cell or
-     *        of the two cells of a face, the only place where the residual
-     *        is written
+     * @brief Adds a local matrix at rows and columns of unknowns into the
+     *        tangent or the mass, the only place where they are written
+     *
+     * @throws std::invalid_argument If @p local does not have a row per
+     *         entry of @p rows and a column per entry of @p columns
+     *
+     * @pre @p matrix is the tangent or the mass
+     */
+    void add_to_matrix(Mat matrix, std::span<const int> rows,
+                       std::span<const int> columns,
+                       const Eigen::MatrixX<Scalar>& local);
+
+    /**
+     * @brief Adds a local residual at unknowns, the degrees of freedom of a
+     *        cell or of the two cells of a face, or multipliers, the only
+     *        place where the residual is written
      *
      * @throws std::invalid_argument If @p local does not have an entry per
      *         entry of @p dofs
@@ -831,8 +955,17 @@ private:
     /// @brief Whether the pattern couples the cells of every interior face
     bool couple_faces_;
 
+    /// @brief Lagrange multiplier conditions, whose multipliers follow the
+    ///        degrees of freedom of the space in their order
+    Multipliers multipliers_;
+
+    /// @brief First unknown of the multipliers of each condition, followed
+    ///        by the number of unknowns
+    std::vector<int> first_multipliers_;
+
     /// @brief Tangent, with an entry for every pair of degrees of freedom
-    ///        sharing an element, or the cells of a face when coupled
+    ///        sharing an element, or the cells of a face when coupled, and
+    ///        for every multiplier with those of its cells and itself
     Mat tangent_ = nullptr;
 
     /// @brief Mass, with the pattern of the tangent

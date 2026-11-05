@@ -15,6 +15,7 @@
 
 #include "iguana/assembly/assembler.hpp"
 #include "iguana/condition/condition.hpp"
+#include "iguana/condition/lagrange_multiplier_condition.hpp"
 #include "iguana/condition/skeleton_condition.hpp"
 #include "iguana/condition/skeleton_ghost_penalty.hpp"
 #include "iguana/condition/volume_ghost_penalty.hpp"
@@ -207,6 +208,36 @@ public:
     }
 
     /**
+     * @brief Adds the tangent and residual of a condition imposed through
+     *        Lagrange multipliers, along its quadrature
+     *
+     * @param condition Lagrange multiplier condition, given to the
+     *        assemblers the form is assembled into
+     * @param data Value the condition imposes at each point of its
+     *        quadrature
+     *
+     * @pre What the integral reads outlives the form, and @p data keeps its
+     *      size. The assembly checks them as Assembler::assemble_residual()
+     *      does
+     */
+    void add_multiplier_integral(
+        const LagrangeMultiplierCondition<Basis, n>& condition, Data data)
+        requires (dim == 2)
+    {
+        const Eigen::Map<const Eigen::VectorX<Scalar>> values = view(data);
+
+        tangents_.push_back([&condition](Assembler<Basis, n>& assembler,
+                                         Vec) {
+            assembler.assemble_tangent(condition);
+        });
+        residuals_.push_back([&condition, values](
+                                 Assembler<Basis, n>& assembler,
+                                 Vec coefficients) {
+            assembler.assemble_residual(condition, values, coefficients);
+        });
+    }
+
+    /**
      * @brief Adds the tangent and residual of a skeleton condition across
      *        the faces of a skeleton quadrature, with the test functions of
      *        each cell weighted and the values expanded along the distance
@@ -319,8 +350,7 @@ public:
      *
      * @param assembler Assembler of the space and patch of the integrals,
      *        added into as each of its assemblies is
-     * @param coefficients Coefficients of the unknowns, one per degree of
-     *        freedom of the space
+     * @param coefficients Coefficients of the unknowns of the system, one each
      *
      * @throws std::invalid_argument As the assemblies of the integrals do
      */
@@ -337,8 +367,7 @@ public:
      *
      * @param assembler Assembler of the space and patch of the integrals,
      *        added into as each of its assemblies is
-     * @param coefficients Coefficients of the unknowns, one per degree of
-     *        freedom of the space
+     * @param coefficients Coefficients of the unknowns of the system, one each
      *
      * @throws std::invalid_argument As the assemblies of the integrals do
      */
