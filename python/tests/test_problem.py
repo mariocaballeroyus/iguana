@@ -15,9 +15,10 @@ import pytest
 import iguana
 from iguana import (Boundary, CellType, Derivatives, ElasticityElement,
                     FunctionSpace, GhostPenalty, HierarchicalGrid,
-                    MixedFunctionSpace, NeumannCondition, NitscheCondition,
-                    PenaltyCondition, PoissonElement, QuadratureBoundary,
-                    QuadratureDomain, SkeletonNitscheCondition, StokesElement,
+                    LagrangeMultiplierCondition, MixedFunctionSpace,
+                    NeumannCondition, NitscheCondition, PenaltyCondition,
+                    PoissonElement, QuadratureBoundary, QuadratureDomain,
+                    SkeletonNitscheCondition, StokesElement,
                     SurrogateBoundary, classify_cells)
 
 try:
@@ -53,6 +54,18 @@ def edges(patch):
     surrogate = SurrogateBoundary(patch, [CellType.inside] * num_cells)
 
     return QuadratureBoundary(patch, surrogate, 3)
+
+
+def sides(patch):
+    """Quadrature of the boundary of a rectangle from the origin, a curve
+    per side, counterclockwise from the bottom one."""
+    width, height = patch.control_points.max(axis=0)
+    corners = [(0., 0.), (width, 0.), (width, height), (0., height)]
+
+    return QuadratureBoundary(patch, Boundary([iguana.create_curve(
+        degree=1, knots=[0., 0., 1., 1.],
+        control_points=[corners[side], corners[(side + 1) % 4]])
+        for side in range(4)]), 3)
 
 
 def coefficients(knots):
@@ -279,6 +292,27 @@ def test_stokes_flow_is_exact():
     assert np.allclose(u[:, 2] - u[nearest, 2], exact[:, 2]
                        - exact[nearest, 2], rtol=0., atol=1e-12)
     assert u[nearest, 2] == 0.
+
+
+def test_stokes_flow_by_lagrange_multipliers_is_exact():
+    """Lagrange multipliers on both components of the velocity impose the
+    quadratic flow on every side exactly, the pressure reference fixing the
+    constant that the pressure would otherwise trade with them."""
+    patch = rectangle()
+    space = FunctionSpace(patch, block_size=3)
+    element, velocity, body_force = stokes()
+
+    condition = LagrangeMultiplierCondition(element.u, sides(patch), velocity)
+    u = LinearProblem(element, space, gauss_quadrature(patch), body_force,
+                      conditions=[condition], pressure_reference=(1., 1.6),
+                      petsc_options_prefix='stokes_').solve()
+    exact = quadratic_flow(patch)
+    nearest = np.argmin(np.linalg.norm(space.control_points - [1., 1.6],
+                                       axis=1))
+
+    assert np.allclose(u[:, :2], exact[:, :2], rtol=0., atol=1e-12)
+    assert np.allclose(u[:, 2] - u[nearest, 2], exact[:, 2]
+                       - exact[nearest, 2], rtol=0., atol=1e-12)
 
 
 @pytest.mark.parametrize('test_pressure, symmetric',
@@ -609,14 +643,16 @@ def test_uniaxial_tension_is_exact(plane_stress):
                        atol=1e-11)
 
 
-def tension(element, stretch):
+def tension(element, stretch, rollers=False):
     """Problem of a rectangle stretched along x, and its displacement, under
     large displacements. The nominal traction P = F_xx S_xx on its left and
     right sides, with S_yy = 0 as its top and bottom are free, makes the
     deformation homogeneous, E_yy = −λ / (λ + 2μ) E_xx, a linear field the
     splines hold. Penalties on its values along the left side and the bottom
     leave out only the rigid motions, as those sides carry no reaction, so that
-    they do not disturb it."""
+    they do not disturb it. With `rollers`, normal Lagrange multipliers hold
+    those sides instead, and the left one carries the reaction to the pull
+    on the right one."""
     lame, shear = element.lame, element.shear_modulus
     strain = (stretch ** 2 - 1.) / 2.
     contraction = lame / (lame + 2. * shear)
@@ -634,18 +670,30 @@ def tension(element, stretch):
             degree=1, knots=[0., 0., 1., 1.], control_points=[start, end])]),
             3)
 
-    penalty = 1e3 * (lame + 2. * shear)
-    conditions = [
-        PenaltyCondition(element.u, side((0., 0.), (width, 0.)), displacement,
-                         penalty),
-        PenaltyCondition(element.u, side((0., height), (0., 0.)), displacement,
-                         penalty),
-        NeumannCondition(element.u, side((width, 0.), (width, height)),
-                         lambda x: np.tile([stretch * stress, 0.],
-                                           (len(x), 1))),
-        NeumannCondition(element.u, side((0., height), (0., 0.)),
-                         lambda x: np.tile([-stretch * stress, 0.],
-                                           (len(x), 1)))]
+    pull = NeumannCondition(element.u, side((width, 0.), (width, height)),
+                            lambda x: np.tile([stretch * stress, 0.],
+                                              (len(x), 1)))
+
+    if rollers:
+        conditions = [
+            LagrangeMultiplierCondition(element.u, side((0., 0.), (width, 0.)),
+                                        displacement, normal=True),
+            LagrangeMultiplierCondition(element.u,
+                                        side((0., height), (0., 0.)),
+                                        displacement, normal=True),
+            pull]
+    else:
+        penalty = 1e3 * (lame + 2. * shear)
+        conditions = [
+            PenaltyCondition(element.u, side((0., 0.), (width, 0.)),
+                             displacement, penalty),
+            PenaltyCondition(element.u, side((0., height), (0., 0.)),
+                             displacement, penalty),
+            pull,
+            NeumannCondition(element.u, side((0., height), (0., 0.)),
+                             lambda x: np.tile([-stretch * stress, 0.],
+                                               (len(x), 1)))]
+
     arguments = (element, FunctionSpace(patch, block_size=2),
                  gauss_quadrature(patch), lambda x: np.zeros((len(x), 2)))
 
@@ -670,6 +718,32 @@ def test_uniaxial_tension_under_large_displacements(plane_stress):
     assert problem.solver.getIterationNumber() > 1
     assert np.allclose(u, displacement(arguments[1].control_points), rtol=0.,
                        atol=1e-9)
+
+
+def test_rollers_by_lagrange_multipliers_under_large_displacements():
+    """Normal Lagrange multipliers hold a solid on rollers under large
+    displacements, which Nitsche's method cannot, and leave its stretch
+    exact. Those of the left side balance the pull on the right one, and
+    those of the bottom carry nothing."""
+    element = ElasticityElement(10., .3)
+    arguments, keywords, displacement = tension(element, 1.3, rollers=True)
+    bottom, left, pull = keywords['conditions']
+
+    # Rollers moved by a translation, which the normal components of the
+    # values carry
+    translation = np.array([.1, -.2])
+
+    for rollers in (bottom, left):
+        rollers.values = lambda x: displacement(x) + translation
+
+    u = NonlinearProblem(*arguments, **keywords,
+                         petsc_options_prefix='rollers_').solve()
+
+    assert np.allclose(u, displacement(arguments[1].control_points)
+                       + translation, rtol=0., atol=1e-12)
+    assert np.allclose(left.multipliers, -pull.values[0, 0], rtol=0.,
+                       atol=1e-12)
+    assert np.allclose(bottom.multipliers, 0., rtol=0., atol=1e-12)
 
 
 def test_problem_chooses_the_theory_of_a_solid():
