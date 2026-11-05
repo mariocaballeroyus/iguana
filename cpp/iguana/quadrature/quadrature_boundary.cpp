@@ -43,6 +43,7 @@ QuadratureBoundary<T, d>::QuadratureBoundary(
     weights_.resize(num_total);
     normals_.resize(num_total, d);
     faces_.resize(num_total);
+    parameters_.resize(num_total);
 
     // Buffers reused over the pieces
     Eigen::MatrixX<T> parameters;
@@ -89,6 +90,7 @@ QuadratureBoundary<T, d>::QuadratureBoundary(
             weights_.segment(first, count) = weights.cwiseProduct(measures);
             normals_.middleRows(first, count) = normals;
             faces_.segment(first, count).setConstant(piece.face);
+            parameters_.segment(first, count) = parameters.col(0);
             first += count;
         }
 
@@ -120,6 +122,7 @@ QuadratureBoundary<T, d>::QuadratureBoundary(
     weights_.resize(num_total);
     normals_.setZero(num_total, d);
     faces_.resize(num_total);
+    parameters_.resize(num_total);
 
     // Buffers reused over the faces
     Eigen::MatrixX<T> parameters;
@@ -153,6 +156,7 @@ QuadratureBoundary<T, d>::QuadratureBoundary(
             normals_.block(first, direction, count, 1)
                 .setConstant(static_cast<T>(face.side));
             faces_.segment(first, count).setConstant(index);
+            parameters_.segment(first, count) = parameters.col(0);
 
             first += count;
             ++index;

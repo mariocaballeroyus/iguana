@@ -91,6 +91,12 @@ public:
     constexpr const Eigen::VectorXi& faces() const noexcept
     { return faces_; }
 
+    /// @brief Parameter of each point on its face: that of the face for an
+    ///        embedded boundary, and the coordinate of the grid along the
+    ///        face for a surrogate one
+    constexpr const Eigen::VectorX<T>& parameters() const noexcept
+    { return parameters_; }
+
 private:
     using Quadrature<T, d>::offsets_;
     using Quadrature<T, d>::points_;
@@ -104,6 +110,9 @@ private:
 
     /// @brief Face of the boundary holding each point
     Eigen::VectorXi faces_;
+
+    /// @brief Parameter of each point on its face
+    Eigen::VectorX<T> parameters_;
 };
 
 } // namespace iguana
