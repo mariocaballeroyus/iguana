@@ -34,6 +34,7 @@ add_executable(iguana_tests
     element/poisson/test_poisson_traces.cpp
     element/stokes/test_stokes_element.cpp
     element/stokes/test_stokes_shift.cpp
+    evaluation/test_field_evaluation.cpp
     utils/test_bernstein.cpp
     utils/test_legendre.cpp)
 

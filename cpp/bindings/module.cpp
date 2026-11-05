@@ -20,6 +20,7 @@ void quadrature(py::module_& module);
 
 #ifdef IGUANA_WITH_PETSC
 void assembly(py::module_& module);
+void evaluation(py::module_& module);
 #endif
 
 } // namespace iguana::bindings
@@ -42,5 +43,9 @@ PYBIND11_MODULE(cpp, module)
     py::module_::import("petsc4py.PETSc");
 
     iguana::bindings::assembly(module);
+
+    // After the assembly, which binds the traces and fluxes it evaluates. A
+    // build without PETSc has neither, nor a solve to read back
+    iguana::bindings::evaluation(module);
 #endif
 }

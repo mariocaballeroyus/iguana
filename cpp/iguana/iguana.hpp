@@ -59,6 +59,7 @@
 #include "condition/skeleton_nitsche_condition.hpp"
 #include "condition/skeleton_ghost_penalty.hpp"
 #include "condition/volume_ghost_penalty.hpp"
+#include "evaluation/field_evaluation.hpp"
 
 #ifdef IGUANA_WITH_PETSC
 #include "assembly/assembler.hpp"

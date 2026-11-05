@@ -68,7 +68,7 @@ class _Problem:
 
         # A coefficient per unknown of the element, the components of one
         # field or a field each
-        if not _holds_unknowns(space, element._num_unknowns):
+        if not space._holds_unknowns(element._num_unknowns):
             raise ValueError('the space must give each unknown of the '
                              'element a component of one field or a field '
                              'of its own')
@@ -345,7 +345,7 @@ class LinearProblem(_Problem):
         if self._previous is None:
             return None
 
-        return _coefficients(self._space, self._previous.getArray())
+        return self._space._coefficients(self._previous.getArray())
 
     @previous.setter
     def previous(
@@ -355,7 +355,7 @@ class LinearProblem(_Problem):
         if self._previous is None:
             raise ValueError('a steady problem has no previous solution')
 
-        self._previous.setArray(_entries(self._space, previous))
+        self._previous.setArray(self._space._entries(previous))
 
     def solve(
         self,
@@ -407,7 +407,7 @@ class LinearProblem(_Problem):
         if self._solver.getConvergedReason() < 0:
             raise RuntimeError('the linear solver did not converge')
 
-        return _coefficients(self._space, self._x.getArray())
+        return self._space._coefficients(self._x.getArray())
 
 
 class NonlinearProblem(_Problem):
@@ -549,14 +549,14 @@ class NonlinearProblem(_Problem):
         starts, shaped as the solution: zero at first, then the last
         solution, or the last iterate of a solve that did not converge. The
         pinned pressure starts from zero whatever its guess."""
-        return _coefficients(self._space, self._x.getArray())
+        return self._space._coefficients(self._x.getArray())
 
     @guess.setter
     def guess(
         self,
         guess: npt.ArrayLike | Sequence[npt.ArrayLike],
     ) -> None:
-        self._x.setArray(_entries(self._space, guess))
+        self._x.setArray(self._space._entries(guess))
 
     def solve(
         self,
@@ -587,7 +587,7 @@ class NonlinearProblem(_Problem):
         if self._solver.getConvergedReason() < 0:
             raise RuntimeError('the nonlinear solver did not converge')
 
-        return _coefficients(self._space, self._x.getArray())
+        return self._space._coefficients(self._x.getArray())
 
 
 def _check_terms(
@@ -634,66 +634,6 @@ def _check_terms(
         if stabilization.patch is not patch:
             raise ValueError('the cells of a stabilization must lie on the '
                              'patch of the space')
-
-
-def _holds_unknowns(
-    space: FunctionSpace | MixedFunctionSpace,
-    num_unknowns: int,
-) -> bool:
-    """Whether a space gives each of a number of unknowns a component of its
-    one field, or a field of one component each."""
-    if isinstance(space, FunctionSpace):
-        return space.block_size == num_unknowns
-
-    return (len(space.fields) == num_unknowns
-            and all(field.block_size == 1 for field in space.fields))
-
-
-def _shape(space: FunctionSpace) -> tuple[int, ...]:
-    """Shape of the coefficients of a space, a value per degree of freedom
-    and component."""
-    if space.block_size == 1:
-        return (space.num_dofs,)
-
-    return (space.num_dofs, space.block_size)
-
-
-def _coefficients(
-    space: FunctionSpace | MixedFunctionSpace,
-    entries: npt.NDArray[np.float64],
-) -> npt.NDArray[np.float64] | tuple[npt.NDArray[np.float64], ...]:
-    """Coefficients of each degree of freedom of a space from the entries of
-    a vector of its system, or those of each field of a mixed space."""
-    if isinstance(space, FunctionSpace):
-        return entries.reshape(_shape(space)).copy()
-
-    return tuple(entries[offset:offset + math.prod(_shape(field))]
-                 .reshape(_shape(field)).copy()
-                 for offset, field in zip(space.offsets, space.fields))
-
-
-def _entries(
-    space: FunctionSpace | MixedFunctionSpace,
-    coefficients: npt.ArrayLike | Sequence[npt.ArrayLike],
-) -> npt.NDArray[np.float64]:
-    """Entries of a vector of the system of a space from the coefficients of
-    each degree of freedom, or those of each field of a mixed space,
-    checked to give every one."""
-    if isinstance(space, FunctionSpace):
-        spaces, fields = [space], [coefficients]
-    else:
-        spaces, fields = space.fields, list(coefficients)
-
-    fields = [np.asarray(field, dtype=np.float64) for field in fields]
-
-    mismatched = len(fields) != len(spaces) or any(
-        field.shape != _shape(each) for field, each in zip(fields, spaces))
-
-    if mismatched:
-        raise ValueError('the coefficients must give every degree of '
-                         'freedom of the space')
-
-    return np.concatenate([field.ravel() for field in fields])
 
 
 def _pinned(
