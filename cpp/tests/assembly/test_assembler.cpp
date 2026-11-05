@@ -10,6 +10,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <functional>
 #include <initializer_list>
 #include <stdexcept>
 #include <vector>
@@ -325,6 +326,53 @@ iguana::QuadratureBoundary<double, 2> boundary_quadrature(
         patch, iguana::Boundary<double, 2>(faces, {1, 1, 1, 1}));
 
     return {embedded, iguana::GaussLegendre<double, 1>(5)};
+}
+
+/// @brief Corners of the rectangle, counterclockwise
+std::array<Eigen::RowVector2d, 4> rectangle_corners()
+{
+    return {Eigen::RowVector2d(0., 0.), Eigen::RowVector2d(width, 0.),
+            Eigen::RowVector2d(width, height),
+            Eigen::RowVector2d(0., height)};
+}
+
+/// @brief Linear multipliers of two elements on each side of a
+///        quadrilateral, in the parameter of its faces from zero to one
+std::vector<iguana::BSpline<double>> side_bases()
+{
+    return std::vector<iguana::BSpline<double>>(
+        4, iguana::BSpline<double>(1, {0., 0., .5, 1., 1.}));
+}
+
+/**
+ * @brief Coefficients of the multipliers of side_bases() along the sides of
+ *        a quadrilateral that give a function linear along each side: its
+ *        values at the start, middle and end of each
+ *
+ * @param corners Corners of the quadrilateral, counterclockwise
+ * @param function Value at a point of a side, given with the outward
+ *        normal of the side
+ */
+template<typename Function>
+Eigen::VectorXd side_coefficients(
+    const std::array<Eigen::RowVector2d, 4>& corners,
+    const Function& function)
+{
+    Eigen::VectorXd coefficients(12);
+
+    for (std::size_t side = 0; side < 4; ++side) {
+        const Eigen::RowVector2d& from = corners[side];
+        const Eigen::RowVector2d along = corners[(side + 1) % 4] - from;
+        const Eigen::RowVector2d normal =
+            Eigen::RowVector2d(along(1), -along(0)).normalized();
+
+        for (std::size_t node = 0; node < 3; ++node)
+            coefficients(static_cast<Eigen::Index>(3 * side + node)) =
+                function(from + static_cast<double>(node) / 2. * along,
+                         normal);
+    }
+
+    return coefficients;
 }
 
 /// @brief Greville abscissae of every function of a univariate basis
@@ -2583,5 +2631,222 @@ TEST_CASE("Several fields share no block size, and a ghost penalty needs "
     REQUIRE_THROWS_AS(assembler.assemble_tangent(on_first, skeleton, zero),
                       std::invalid_argument);
     REQUIRE_THROWS_AS(assembler.assemble_tangent(on_missing, skeleton, zero),
+                      std::invalid_argument);
+}
+
+TEST_CASE("Lagrange multipliers impose a trace and equal the negative of "
+          "its flux", "[assembler][multipliers]")
+{
+    const Basis basis = uneven();
+    const iguana::Patch<Basis, 2> patch = rectangle(basis);
+    const CellClassification<double, 2> classification =
+        all_cells(CellType::inside);
+    const iguana::FunctionSpace<Basis> space(basis, classification);
+    const iguana::QuadratureDomain<double, 2> cells =
+        inside_quadrature(basis, classification);
+
+    const std::array<Eigen::RowVector2d, 4> corners = rectangle_corners();
+    const iguana::QuadratureBoundary<double, 2> sides =
+        boundary_quadrature(patch, corners);
+
+    const iguana::PoissonElement<Basis, 2> element;
+    const iguana::PoissonElement<Basis, 2>::U trace;
+    const iguana::LagrangeMultiplierCondition<Basis, 2> condition(
+        trace, side_bases(), sides);
+
+    // u = x^2 + x y, from the blossoms of each direction, with the source
+    // f = −Δu = −2
+    const KnotVector<double>& along_x = basis.grid().knots(0);
+    const KnotVector<double>& along_y = basis.grid().knots(1);
+    const Eigen::VectorXd ones_y =
+        Eigen::VectorXd::Ones(basis.axis(1).num_functions());
+    const Eigen::VectorXd u =
+        product(width * width * truncated_power(along_x, 0.), ones_y)
+        + product(width * grevilles(along_x), height * grevilles(along_y));
+    const Eigen::VectorXd source =
+        Eigen::VectorXd::Constant(cells.num_points(), -2.);
+
+    const auto gradient = [](const Eigen::RowVector2d& x) {
+        return Eigen::RowVector2d(2. * x(0) + x(1), x(0));
+    };
+
+    // The values of u at the points, which the map places by scaling each
+    // axis by its side, and λ = −∂u/∂n, linear along each side
+    const Eigen::MatrixXd x =
+        sides.points() * Eigen::Vector2d(width, height).asDiagonal();
+    const Eigen::VectorXd data =
+        x.col(0).cwiseProduct(x.col(0) + x.col(1));
+    const Eigen::VectorXd multipliers = side_coefficients(
+        corners, [&gradient](const Eigen::RowVector2d& point,
+                             const Eigen::RowVector2d& normal) {
+            return -gradient(point).dot(normal);
+        });
+
+    Eigen::VectorXd unknowns(space.num_dofs() + condition.num_multipliers());
+    unknowns << u, multipliers;
+
+    iguana::Assembler<Basis, 2> assembler(space, patch, false,
+                                          {std::cref(condition)});
+    const Coefficients exact(unknowns);
+    assembler.assemble_residual(element, cells, source, exact);
+    assembler.assemble_residual(condition, data, exact);
+
+    // ( ∇u, ∇v )_Ω + ( λ, v )_Γ = ( f, v )_Ω and ( μ, u − g )_Γ = 0 in
+    // every row
+    REQUIRE(residual_of(assembler).cwiseAbs().maxCoeff() < 1e-12);
+
+    // The normals of the sides are those in parameter space, as the map
+    // scales each axis
+    Eigen::VectorXd flux(sides.num_points());
+
+    for (int point = 0; point < sides.num_points(); ++point)
+        flux(point) = gradient(x.row(point)).dot(sides.normals().row(point));
+
+    REQUIRE((condition.values(multipliers) + flux).cwiseAbs().maxCoeff()
+            < 1e-12);
+
+    // Assembled by a form, the coupling and its transpose in the tangent
+    // where the residual places them
+    const Eigen::VectorXd cell_weights = Eigen::VectorXd::Ones(6);
+    iguana::Form<Basis, 2> form;
+    form.add_domain_integral(element, cells, source, cell_weights);
+    form.add_multiplier_integral(condition, data);
+
+    const auto assemble = [&](Vec coefficients) {
+        form.assemble_tangent(assembler, coefficients);
+        form.assemble_residual(assembler, coefficients);
+    };
+
+    REQUIRE(tangent_defect(assembler, static_cast<int>(unknowns.size()),
+                           assemble)
+            < 1e-12);
+}
+
+TEST_CASE("Lagrange multipliers impose the normal component of a vector "
+          "trace", "[assembler][multipliers]")
+{
+    const Basis basis = uneven();
+    const iguana::Patch<Basis, 2> patch = rectangle(basis);
+    const CellClassification<double, 2> classification =
+        all_cells(CellType::inside);
+    const iguana::FunctionSpace<Basis> space(basis, classification, 2);
+    const iguana::QuadratureDomain<double, 2> cells =
+        inside_quadrature(basis, classification);
+
+    const std::array<Eigen::RowVector2d, 4> corners = rectangle_corners();
+    const iguana::QuadratureBoundary<double, 2> sides =
+        boundary_quadrature(patch, corners);
+
+    constexpr double lame = 1.2;
+    constexpr double shear_modulus = .7;
+    const iguana::ElasticityElement<Basis, 2> solid(lame, shear_modulus);
+    const iguana::ElasticityElement<Basis, 2>::U along_x(0);
+    const iguana::ElasticityElement<Basis, 2>::U along_y(1);
+    const iguana::LagrangeMultiplierCondition<Basis, 2> condition(
+        {std::cref(along_x), std::cref(along_y)}, side_bases(), sides);
+
+    // The stretch u = (a x, b y) has F = I + diag(a, b), the strain
+    // E = (FᵀF − I) / 2 and S = 2μ E + λ tr(E) I, all diagonal, so that the
+    // traction P n of P = F S is normal to each side, λ = −n · P n
+    const Eigen::Vector2d stretch(.3, -.2);
+    const Eigen::Vector2d strain =
+        stretch + stretch.cwiseProduct(stretch) / 2.;
+    const Eigen::Vector2d stress =
+        (Eigen::Vector2d::Ones() + stretch)
+            .cwiseProduct(2. * shear_modulus * strain
+                          + Eigen::Vector2d::Constant(lame * strain.sum()));
+
+    // The values of u · n at the points, the normals of the sides being
+    // those in parameter space, as the map scales each axis
+    const Eigen::MatrixXd x =
+        sides.points() * Eigen::Vector2d(width, height).asDiagonal();
+    const Eigen::VectorXd data = (x * stretch.asDiagonal())
+                                     .cwiseProduct(sides.normals())
+                                     .rowwise()
+                                     .sum();
+    const Eigen::VectorXd multipliers = side_coefficients(
+        corners, [&stress](const Eigen::RowVector2d&,
+                           const Eigen::RowVector2d& normal) {
+            return -normal.cwiseAbs2().dot(stress.transpose());
+        });
+
+    Eigen::VectorXd unknowns(space.num_dofs() + condition.num_multipliers());
+    unknowns << linear_vector_field(patch, stretch.asDiagonal()), multipliers;
+
+    iguana::Assembler<Basis, 2> assembler(space, patch, false,
+                                          {std::cref(condition)});
+    const Coefficients exact(unknowns);
+    assembler.assemble_residual(solid, cells,
+                                Eigen::MatrixXd::Zero(cells.num_points(), 2),
+                                exact);
+    assembler.assemble_residual(condition, data, exact);
+
+    // ( P, ∇v )_Ω + ( λ, v · n )_Γ = 0 and ( μ, u · n − g )_Γ = 0 in every
+    // row
+    REQUIRE(residual_of(assembler).cwiseAbs().maxCoeff() < 1e-12);
+}
+
+TEST_CASE("Lagrange multipliers need a basis over each face, n components "
+          "for a normal and the assembler they were given to",
+          "[assembler][multipliers]")
+{
+    const Basis basis = uneven();
+    const iguana::Patch<Basis, 2> patch = rectangle(basis);
+    const iguana::FunctionSpace<Basis> space(basis,
+                                             all_cells(CellType::inside));
+    const iguana::QuadratureBoundary<double, 2> sides =
+        boundary_quadrature(patch, rectangle_corners());
+
+    const iguana::PoissonElement<Basis, 2>::U trace;
+    const iguana::LagrangeMultiplierCondition<Basis, 2> condition(
+        trace, side_bases(), sides);
+
+    using Condition = iguana::LagrangeMultiplierCondition<Basis, 2>;
+    using Components =
+        std::vector<std::reference_wrapper<const iguana::Trace<Basis, 2>>>;
+
+    // A face without a basis, a basis short of its face, and a normal of
+    // one component
+    std::vector<iguana::BSpline<double>> bases = side_bases();
+    bases.pop_back();
+
+    REQUIRE_THROWS_AS(Condition(trace, bases, sides), std::invalid_argument);
+
+    bases = side_bases();
+    bases.back() = iguana::BSpline<double>(1, {0., 0., .5, .5});
+
+    REQUIRE_THROWS_AS(Condition(trace, bases, sides), std::invalid_argument);
+    REQUIRE_THROWS_AS(Condition(Components{std::cref(trace)}, side_bases(),
+                                sides),
+                      std::invalid_argument);
+
+    // One coefficient short of the multipliers
+    REQUIRE_THROWS_AS(condition.values(Eigen::VectorXd::Zero(11)),
+                      std::invalid_argument);
+
+    // An assembler without the condition, and one given it twice
+    iguana::Assembler<Basis, 2> without(space, patch);
+
+    REQUIRE_THROWS_AS(without.assemble_tangent(condition),
+                      std::invalid_argument);
+    REQUIRE_THROWS_AS((iguana::Assembler<Basis, 2>(
+                          space, patch, false,
+                          {std::cref(condition), std::cref(condition)})),
+                      std::invalid_argument);
+
+    // The coefficients of the space alone, and one value short of the
+    // points
+    iguana::Assembler<Basis, 2> assembler(space, patch, false,
+                                          {std::cref(condition)});
+    const Eigen::VectorXd data = Eigen::VectorXd::Zero(sides.num_points());
+    const Eigen::VectorXd short_data = data.head(data.size() - 1);
+    const Coefficients of_space(Eigen::VectorXd::Zero(space.num_dofs()));
+    const Coefficients of_system(
+        Eigen::VectorXd::Zero(space.num_dofs() + 12));
+
+    REQUIRE_THROWS_AS(assembler.assemble_residual(condition, data, of_space),
+                      std::invalid_argument);
+    REQUIRE_THROWS_AS(assembler.assemble_residual(condition, short_data,
+                                                  of_system),
                       std::invalid_argument);
 }
