@@ -39,6 +39,7 @@ add_library(iguana
     element/stokes/stokes_shift.cpp
     element/stokes/stokes_stabilized_element.cpp
     condition/penalty_condition.cpp
+    condition/lagrange_multiplier_condition.cpp
     condition/nitsche_condition.cpp
     condition/skeleton_nitsche_condition.cpp
     condition/neumann_condition.cpp
