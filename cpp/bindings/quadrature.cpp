@@ -452,6 +452,8 @@ void quadrature(py::module_& module)
         .def_property_readonly("num_points", &QuadratureBoundary2d::num_points)
         .def_property_readonly("faces", &QuadratureBoundary2d::faces)
         .def_property_readonly("points", &QuadratureBoundary2d::points)
+        .def_property_readonly("parameters",
+                               &QuadratureBoundary2d::parameters)
         .def("positions", &boundary_positions, py::arg("patch"))
         .def("physical_weights", &physical_boundary_weights, py::arg("patch"))
         .def("physical_normals", &physical_boundary_normals,
