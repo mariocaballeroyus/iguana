@@ -6,6 +6,7 @@
 #ifndef IGUANA_IGUANA_HPP
 #define IGUANA_IGUANA_HPP
 
+#include "basis/boundary_basis.hpp"
 #include "basis/bspline.hpp"
 #include "basis/tensor_bspline.hpp"
 #include "basis/tensor_nurbs.hpp"

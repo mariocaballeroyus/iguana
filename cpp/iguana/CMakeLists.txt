@@ -1,4 +1,5 @@
 add_library(iguana
+    basis/boundary_basis.cpp
     basis/bspline.cpp
     basis/tensor_bspline.cpp
     basis/tensor_nurbs.cpp

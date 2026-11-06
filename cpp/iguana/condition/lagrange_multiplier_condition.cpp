@@ -6,47 +6,25 @@
 #include "lagrange_multiplier_condition.hpp"
 
 #include <algorithm>
-#include <concepts>
 #include <cstddef>
 #include <iterator>
-#include <limits>
-#include <span>
 #include <stdexcept>
 #include <utility>
 
 #include "iguana/basis/tensor_bspline.hpp"
 #include "iguana/basis/tensor_nurbs.hpp"
-#include "iguana/grid/knot_vector.hpp"
 
 namespace iguana
 {
-
-namespace
-{
-
-/// @brief First multiplier of each face, numbered face after face, followed
-///        by their number
-template<std::floating_point T>
-std::vector<int> first_multipliers(const std::vector<BSpline<T>>& bases)
-{
-    std::vector<int> offsets{0};
-
-    for (const BSpline<T>& basis : bases)
-        offsets.push_back(offsets.back() + basis.num_functions());
-
-    return offsets;
-}
-
-} // namespace
 
 template<typename Basis, std::size_t n>
 LagrangeMultiplierCondition<Basis, n>::LagrangeMultiplierCondition(
     const Trace<Basis, n>& trace, std::vector<BSpline<Scalar>> bases,
     const QuadratureBoundary<Scalar, dim>& quadrature)
-    : traces_{std::cref(trace)}, bases_(std::move(bases)),
-      offsets_(first_multipliers(bases_)), quadrature_(quadrature)
+    : traces_{std::cref(trace)}, basis_(std::move(bases)),
+      quadrature_(quadrature)
 {
-    check_bases();
+    basis_.check(quadrature_.faces(), quadrature_.parameters());
 }
 
 template<typename Basis, std::size_t n>
@@ -54,41 +32,15 @@ LagrangeMultiplierCondition<Basis, n>::LagrangeMultiplierCondition(
     std::vector<std::reference_wrapper<const Trace<Basis, n>>> components,
     std::vector<BSpline<Scalar>> bases,
     const QuadratureBoundary<Scalar, dim>& quadrature)
-    : traces_(std::move(components)), bases_(std::move(bases)),
-      offsets_(first_multipliers(bases_)), quadrature_(quadrature)
+    : traces_(std::move(components)), basis_(std::move(bases)),
+      quadrature_(quadrature)
 {
     if (traces_.size() != n)
         throw std::invalid_argument("LagrangeMultiplierCondition: "
                                     "the normal component needs a trace per "
                                     "component");
 
-    check_bases();
-}
-
-template<typename Basis, std::size_t n>
-void LagrangeMultiplierCondition<Basis, n>::check_bases() const
-{
-    for (Eigen::Index point = 0; point < quadrature_.num_points(); ++point) {
-        const int face = quadrature_.faces()(point);
-
-        if (face < 0 || face >= static_cast<int>(bases_.size()))
-            throw std::invalid_argument("LagrangeMultiplierCondition: "
-                                        "every face of the boundary needs a "
-                                        "basis");
-
-        // Up to round-off, the points lie in the interval of their basis
-        const KnotVector<Scalar>& knots =
-            bases_[static_cast<std::size_t>(face)].knots();
-        const Scalar parameter = quadrature_.parameters()(point);
-        const Scalar rounding = 4096 * std::numeric_limits<Scalar>::epsilon()
-                                * (knots.domain_end() - knots.domain_start());
-
-        if (!(parameter >= knots.domain_start() - rounding
-              && parameter <= knots.domain_end() + rounding))
-            throw std::invalid_argument("LagrangeMultiplierCondition: "
-                                        "the basis of a face must cover its "
-                                        "parameter");
-    }
+    basis_.check(quadrature_.faces(), quadrature_.parameters());
 }
 
 template<typename Basis, std::size_t n>
@@ -107,45 +59,11 @@ ValueFlags LagrangeMultiplierCondition<Basis, n>::flags() const noexcept
 }
 
 template<typename Basis, std::size_t n>
-void LagrangeMultiplierCondition<Basis, n>::active_at(
-    int point, std::vector<int>& multipliers,
-    Eigen::VectorX<Scalar>& functions) const
-{
-    const int face = quadrature_.faces()(point);
-    const BSpline<Scalar>& basis = bases_[static_cast<std::size_t>(face)];
-    const Scalar parameter = quadrature_.parameters()(point);
-    const int first_active =
-        basis.first_active(element_holding(basis.knots(), parameter));
-
-    Eigen::MatrixX<Scalar> values;
-    basis.eval_on_element(first_active,
-                          std::span<const Scalar>(&parameter, 1), values);
-    functions = values.col(0);
-
-    multipliers.resize(static_cast<std::size_t>(values.rows()));
-
-    for (std::size_t k = 0; k < multipliers.size(); ++k)
-        multipliers[k] = offsets_[static_cast<std::size_t>(face)]
-                         + first_active + static_cast<int>(k);
-}
-
-template<typename Basis, std::size_t n>
 void LagrangeMultiplierCondition<Basis, n>::active_on(
     int first, int count, std::vector<int>& multipliers) const
 {
-    std::vector<int> at_point;
-    Eigen::VectorX<Scalar> functions;
-    multipliers.clear();
-
-    for (int point = first; point < first + count; ++point) {
-        active_at(point, at_point, functions);
-        multipliers.insert(multipliers.end(), at_point.begin(),
-                           at_point.end());
-    }
-
-    std::sort(multipliers.begin(), multipliers.end());
-    multipliers.erase(std::unique(multipliers.begin(), multipliers.end()),
-                      multipliers.end());
+    basis_.active_on(quadrature_.faces(), quadrature_.parameters(), first,
+                     count, multipliers);
 }
 
 template<typename Basis, std::size_t n>
@@ -180,7 +98,9 @@ void LagrangeMultiplierCondition<Basis, n>::local_coupling(
     Eigen::VectorX<Scalar> functions;
 
     for (int q = 0; q < count; ++q) {
-        active_at(first + q, at_point, functions);
+        basis_.active_at(quadrature_.faces()(first + q),
+                         quadrature_.parameters()(first + q), at_point,
+                         functions);
 
         for (std::size_t k = 0; k < at_point.size(); ++k) {
             const auto row = std::ranges::lower_bound(multipliers,
@@ -211,7 +131,9 @@ void LagrangeMultiplierCondition<Basis, n>::local_load(
     Eigen::VectorX<Scalar> functions;
 
     for (int q = 0; q < count; ++q) {
-        active_at(first + q, at_point, functions);
+        basis_.active_at(quadrature_.faces()(first + q),
+                         quadrature_.parameters()(first + q), at_point,
+                         functions);
 
         for (std::size_t k = 0; k < at_point.size(); ++k) {
             const auto row = std::ranges::lower_bound(multipliers,
@@ -236,18 +158,9 @@ LagrangeMultiplierCondition<Basis, n>::values(
                                     "the coefficients must be one per "
                                     "multiplier");
 
-    Eigen::VectorX<Scalar> result(quadrature_.num_points());
-    std::vector<int> at_point;
-    Eigen::VectorX<Scalar> functions;
-
-    for (Eigen::Index point = 0; point < result.size(); ++point) {
-        active_at(static_cast<int>(point), at_point, functions);
-
-        // λ(s_q) = Σ_i λ_i μ_i(s_q)
-        result(point) = functions.dot(multipliers(at_point));
-    }
-
-    return result;
+    // λ(s_q) = Σ_i λ_i μ_i(s_q)
+    return basis_.evaluate(multipliers, quadrature_.faces(),
+                           quadrature_.parameters());
 }
 
 template class LagrangeMultiplierCondition<TensorBSpline<double, 2>, 2>;
