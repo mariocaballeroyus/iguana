@@ -20,11 +20,22 @@ jobs:
         with:
           submodules: true
 
+      - name: Restore the downloaded packages
+        uses: actions/cache@v4
+        with:
+          path: ~/apt-archives
+          key: apt-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: apt-
+
       - name: Install PETSc and the test dependencies
-        run: >
-          sudo apt-get update &&
-          sudo apt-get install -y --no-install-recommends petsc-dev
-          python3-dev python3-petsc4py python3-numpy python3-pytest
+        run: |
+          mkdir -p ~/apt-archives/partial
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            -o Dir::Cache::Archives="$HOME/apt-archives" \
+            -o APT::Keep-Downloaded-Packages=true \
+            petsc-dev python3-dev python3-petsc4py python3-numpy python3-pytest
+          sudo chown -R "$USER" ~/apt-archives
 
       - name: Configure
         run: >
