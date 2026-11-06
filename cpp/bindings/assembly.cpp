@@ -36,6 +36,9 @@ using NitscheCondition2d = NitscheCondition<TensorBSpline<double, 2>, 2>;
 using LagrangeMultiplierCondition2d =
     LagrangeMultiplierCondition<TensorBSpline<double, 2>, 2>;
 using Components2d = std::vector<std::reference_wrapper<const Trace2d>>;
+using SkeletonMultiplierCondition2d =
+    SkeletonMultiplierCondition<TensorBSpline<double, 2>, 2>;
+using Fluxes2d = std::vector<std::reference_wrapper<const Flux2d>>;
 using SkeletonNitscheCondition2d =
     SkeletonNitscheCondition<TensorBSpline<double, 2>, 2>;
 using SkeletonGhostPenalty2d =
@@ -49,6 +52,7 @@ using Assembler2d = Assembler<TensorBSpline<double, 2>, 2>;
 using MixedFunctionSpace2d = MixedFunctionSpace<TensorBSpline<double, 2>>;
 using Form2d = Form<TensorBSpline<double, 2>, 2>;
 using Data = Form2d::Data;
+using Source = Form2d::Source;
 
 /// @brief Integrals of a ghost penalty across faces, the overloads of
 ///        add_skeleton_integral that are not templates
@@ -149,6 +153,25 @@ void assembly(py::module_& module)
         .def("values", &LagrangeMultiplierCondition2d::values,
              py::arg("multipliers"));
 
+    // A skeleton multiplier condition keeps references to the lists of its
+    // traces and fluxes, its pressure, its quadrature and its projection
+    py::class_<SkeletonMultiplierCondition2d>(
+        module, "SkeletonMultiplierCondition2d")
+        .def(py::init<Components2d, Fluxes2d, const Trace2d&,
+                      std::vector<BSpline<double>>,
+                      const QuadratureSkeleton2d&,
+                      const BoundaryProjection2d&, int, double, bool>(),
+             py::arg("velocity"), py::arg("fluxes"), py::arg("pressure"),
+             py::arg("bases"), py::arg("quadrature"), py::arg("projection"),
+             py::arg("order"), py::arg("penalty"), py::arg("symmetric") = true,
+             py::keep_alive<1, 2>(), py::keep_alive<1, 3>(),
+             py::keep_alive<1, 4>(), py::keep_alive<1, 6>(),
+             py::keep_alive<1, 7>())
+        .def_property_readonly(
+            "num_multipliers", &SkeletonMultiplierCondition2d::num_multipliers)
+        .def("values", &SkeletonMultiplierCondition2d::values,
+             py::arg("multipliers"));
+
     py::class_<SkeletonNitscheCondition2d>(module, "SkeletonNitscheCondition2d")
         .def(py::init<const Trace2d&, const Flux2d&, double, bool>(),
              py::arg("trace"), py::arg("flux"), py::arg("penalty"),
@@ -179,20 +202,26 @@ void assembly(py::module_& module)
     py::class_<Assembler2d>(module, "Assembler2d")
         .def(py::init<const FunctionSpace<TensorBSpline<double, 2>>&,
                       const Patch<TensorBSpline<double, 2>, 2>&, bool,
-                      Assembler2d::Multipliers>(),
+                      Assembler2d::Multipliers,
+                      Assembler2d::SkeletonMultipliers>(),
              py::arg("space"), py::arg("patch"),
              py::arg("couple_faces") = false,
              py::arg("multipliers") = Assembler2d::Multipliers(),
+             py::arg("skeleton_multipliers") =
+                 Assembler2d::SkeletonMultipliers(),
              py::keep_alive<1, 2>(), py::keep_alive<1, 3>(),
-             py::keep_alive<1, 5>())
+             py::keep_alive<1, 5>(), py::keep_alive<1, 6>())
         .def(py::init<const MixedFunctionSpace2d&,
                       const Patch<TensorBSpline<double, 2>, 2>&, bool,
-                      Assembler2d::Multipliers>(),
+                      Assembler2d::Multipliers,
+                      Assembler2d::SkeletonMultipliers>(),
              py::arg("space"), py::arg("patch"),
              py::arg("couple_faces") = false,
              py::arg("multipliers") = Assembler2d::Multipliers(),
+             py::arg("skeleton_multipliers") =
+                 Assembler2d::SkeletonMultipliers(),
              py::keep_alive<1, 2>(), py::keep_alive<1, 3>(),
-             py::keep_alive<1, 5>())
+             py::keep_alive<1, 5>(), py::keep_alive<1, 6>())
         .def("clear", &Assembler2d::clear)
         .def_property_readonly("tangent", &Assembler2d::tangent)
         .def_property_readonly("mass", &Assembler2d::mass)
@@ -299,6 +328,12 @@ void assembly(py::module_& module)
                  &Form2d::add_multiplier_integral),
              py::arg("condition"), py::arg("data").noconvert(),
              py::keep_alive<1, 2>(), py::keep_alive<1, 3>())
+        .def("add_multiplier_integral",
+             py::overload_cast<const SkeletonMultiplierCondition2d&, Source,
+                               Data>(&Form2d::add_multiplier_integral),
+             py::arg("condition"), py::arg("data").noconvert(),
+             py::arg("cell_weights").noconvert(), py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>())
         .def("add_skeleton_integral",
              &Form2d::add_skeleton_integral<SkeletonNitscheCondition2d>,
              py::arg("condition"), py::arg("quadrature"),
