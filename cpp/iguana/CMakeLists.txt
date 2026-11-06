@@ -1,4 +1,5 @@
 add_library(iguana
+    basis/boundary_basis.cpp
     basis/bspline.cpp
     basis/tensor_bspline.cpp
     basis/tensor_nurbs.cpp
@@ -42,6 +43,7 @@ add_library(iguana
     condition/lagrange_multiplier_condition.cpp
     condition/nitsche_condition.cpp
     condition/skeleton_nitsche_condition.cpp
+    condition/skeleton_multiplier_condition.cpp
     condition/neumann_condition.cpp
     condition/skeleton_ghost_penalty.cpp
     condition/volume_ghost_penalty.cpp

@@ -13,6 +13,7 @@
 #include <Eigen/Core>
 
 #include "iguana/assembly/element_values.hpp"
+#include "iguana/basis/boundary_basis.hpp"
 #include "iguana/basis/bspline.hpp"
 #include "iguana/element/trace.hpp"
 #include "iguana/geometry/patch.hpp"
@@ -38,7 +39,12 @@ namespace iguana
  *          degrees of freedom of the cell, and the load of the multipliers,
  *          which the assembler adds with the transpose of the coupling. The
  *          multipliers follow the boundary as it moves, as they live on its
- *          faces rather than on the grid
+ *          faces rather than on the grid. The volume terms must leave their
+ *          boundary terms on the boundary itself, as on a boundary fitted
+ *          by the patch or with cut cells integrated over their part inside
+ *          it. In the Generalized Shifted Boundary Method they leave them
+ *          on the faces where the weights jump, which only
+ *          SkeletonMultiplierCondition balances
  *
  * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
  * @tparam n Dimension of the physical space of the patch
@@ -93,7 +99,7 @@ public:
 
     /// @brief Number of multipliers, of all the faces
     constexpr int num_multipliers() const noexcept
-    { return offsets_.back(); }
+    { return basis_.num_functions(); }
 
     /// @brief Whether the condition imposes the normal component of a vector
     ///        trace
@@ -172,28 +178,12 @@ public:
         const Eigen::VectorX<Scalar>& multipliers) const;
 
 private:
-    /**
-     * @brief Multipliers active at a point and their values there
-     *
-     * @param point Index of the point in the quadrature
-     * @param multipliers Output, overwritten
-     * @param functions Output, the value of each, overwritten
-     */
-    void active_at(int point, std::vector<int>& multipliers,
-                   Eigen::VectorX<Scalar>& functions) const;
-
-    /// @brief Checks the bases against the points of the quadrature
-    void check_bases() const;
-
     /// @brief Trace whose values are imposed, or the n components whose
     ///        normal component is
     std::vector<std::reference_wrapper<const Trace<Basis, n>>> traces_;
 
-    /// @brief Basis of the multipliers on each face
-    std::vector<BSpline<Scalar>> bases_;
-
-    /// @brief First multiplier of each face, followed by their number
-    std::vector<int> offsets_;
+    /// @brief Basis of the multipliers on the faces of the boundary
+    BoundaryBasis<Scalar> basis_;
 
     /// @brief Quadrature of the boundary the condition acts along
     const QuadratureBoundary<Scalar, dim>& quadrature_;

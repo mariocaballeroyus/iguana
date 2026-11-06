@@ -9,7 +9,8 @@ consistently through the flux conjugate to the trace, Lagrange multipliers
 impose them exactly as unknowns of their own, and a Neumann condition loads
 the trace of the test functions with natural data, such as a flux.
 Nitsche's method on faces imposes them across the faces of the cells where
-their weights jump, as the generalized shifted boundary method does.
+their weights jump, as the generalized shifted boundary method does, and
+multipliers on faces impose there the normal velocity of a fluid.
 A trace of several components, such as the velocity of `StokesElement`,
 takes as many values per point, each acting on its component. A condition
 holds its data and where it applies, and a problem assembles it with the
@@ -423,6 +424,13 @@ class LagrangeMultiplierCondition:
         boundary inside the domain of the field, they are the jump of the
         flux across it.
 
+        The volume terms must leave their boundary terms on the boundary
+        itself, as on a boundary the patch fits, or with cut cells
+        integrated over their part inside it. Weighted by the volume
+        fractions of the generalized shifted boundary method, they leave
+        them on the faces where the weights jump instead, which only
+        `SkeletonMultiplierCondition` balances.
+
         With `normal`, one multiplier per point imposes the normal
         component u · n of a vector trace alone, leaving its tangential
         component free, as on a slip wall.
@@ -480,34 +488,12 @@ class LagrangeMultiplierCondition:
         self._normal_values = (self._normal_component() if self._normal
                                else None)
 
-        faces = quadrature.boundary.faces
-
         if degree is None:
             degree = max(max(quadrature.patch.degrees) - 1, 0)
 
-        if degree < 0:
-            raise ValueError('the degree must be non-negative')
-
-        if elements is None:
-            elements = np.maximum(_cells_crossed(quadrature) // 2, 1)
-        elif np.ndim(elements) == 0:
-            elements = [elements] * len(faces)
-
-        elements = np.asarray(elements)
-
-        if elements.shape != (len(faces),) or np.any(elements < 1):
-            raise ValueError('the elements must be positive, one for every '
-                             'face or one per face')
-
         self._degree = int(degree)
-        self._elements = tuple(int(count) for count in elements)
-
-        # A basis on the interval of the parameter of each face, which the
-        # knot vector of the face clamps
-        bases = [_cpp.BSpline(self._degree,
-                              face.knots[0] + (face.knots[-1] - face.knots[0])
-                              * _uniform_knots(self._degree, count))
-                 for face, count in zip(faces, self._elements)]
+        self._elements, bases = _multiplier_bases(quadrature, self._degree,
+                                                  elements)
 
         # One condition for the normal, or one per component
         traces = trace._cpp_traces()
@@ -802,18 +788,8 @@ class SkeletonNitscheCondition:
         if not isinstance(trace, _TRACES):
             raise TypeError('the trace must be the trace of an element')
 
-        if not isinstance(patch, PlanarPatch):
-            raise TypeError('the patch must be a planar patch')
-
-        if not isinstance(boundary, Boundary):
-            raise TypeError('the boundary must be a boundary')
-
-        cell_types = list(cell_types)
-        num_elements = HierarchicalGrid(patch.degrees,
-                                        patch.knots).num_elements
-
-        if len(cell_types) != num_elements:
-            raise ValueError('there must be one cell type per cell')
+        quadrature, projection = _jump_faces(patch, cell_types, boundary,
+                                             num_points)
 
         # Only the symmetric method needs a penalty to be stable
         if symmetric and not penalty > 0.:
@@ -834,12 +810,6 @@ class SkeletonNitscheCondition:
             raise ValueError('the center must be the boundary or the '
                              'surrogate')
 
-        if num_points is None:
-            num_points = max(patch.degrees) + 1
-
-        if num_points < 1:
-            raise ValueError('the number of points must be positive')
-
         if source is not None:
             # The equation rewrites the shift of these traces alone
             if not isinstance(trace, (PoissonElement.U, StokesElement.U)):
@@ -849,16 +819,6 @@ class SkeletonNitscheCondition:
                 raise TypeError('the source must be derivatives or a function '
                                 'of the points')
 
-        # The faces between cells whose weights may jump, their points
-        # projected onto the boundary
-        faces = _cpp.jump_faces(
-            patch=patch._cpp_object,
-            classification=_cpp.CellClassification2d(cell_types))
-        quadrature = _cpp.QuadratureSkeleton2d(
-            patch=patch._cpp_object, faces=faces, num_points=num_points)
-        projection = _cpp.project_closest_points(
-            patch=patch._cpp_object, boundary=boundary._cpp_object,
-            points=quadrature.points)
         positions = np.array(projection.positions)
 
         self._trace = trace
@@ -1008,6 +968,219 @@ class SkeletonNitscheCondition:
                 f'penalty={self._penalty}{skew}{pressure})')
 
 
+class SkeletonMultiplierCondition:
+    """The velocity of a fluid imposed across the faces of a patch where the
+    weights of the cells jump, its normal component through Lagrange
+    multipliers on the boundary and its tangential one by Nitsche's
+    method."""
+
+    def __init__(
+        self,
+        trace: StokesElement.U,
+        patch: PlanarPatch,
+        cell_types: Sequence[CellType],
+        boundary: Boundary,
+        values: (npt.ArrayLike
+                 | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
+        penalty: float,
+        *,
+        order: int | None = None,
+        degree: int | None = None,
+        elements: int | Sequence[int] | None = None,
+        symmetric: bool = True,
+        num_points: int | None = None,
+    ) -> None:
+        """Initialize the condition imposing the velocity of a fluid.
+
+        The counterpart of `LagrangeMultiplierCondition` in the generalized
+        shifted boundary method, whose volume terms, weighted by the
+        fractions of the cells, leave their boundary terms on the faces
+        where the weights jump. The multipliers are B-splines in the
+        parameter of each face of the boundary, but integrated on those
+        faces, as `SkeletonNitscheCondition` is, each face point reading
+        them at its closest point on the boundary. So they stay the same
+        however the boundary moves through the cells. They stand for the
+        pressure on the boundary, which the Taylor series of the pressure
+        carries to each face point, and impose the normal component of the
+        velocity expanded to the closest points, while its tangential
+        component takes Nitsche's penalty and adjoint term. Nothing is
+        tested by the pressure functions, so that a divergence-conforming
+        velocity stays free of divergence. Solved, the multipliers are the
+        pressure on the boundary.
+
+        The multipliers must be coarser than the cells for the problem to
+        be stable, and every one must be read at a closest point. A moving
+        boundary keeps them by giving the same `elements` at every step.
+
+        Args:
+            trace: The velocity u of a `StokesElement`, Galerkin or
+                stabilized.
+            patch: The background patch, a planar patch with an affine map,
+                whose elements are the cells.
+            cell_types: The type of each element of the patch, with the
+                first direction running fastest.
+            boundary: The true boundary, made of curves in the plane of the
+                patch.
+            values: The velocity imposed at the closest point of each face
+                point, of shape `(num_points, 2)`, or a function that takes
+                those closest points and returns it.
+            penalty: Nitsche's penalty on the tangential velocity, which the
+                size of the cells scales, positive for the symmetric method
+                and non-negative for the skew-symmetric one.
+            order: Total order of the Taylor series to the closest points,
+                nonnegative. Without it, the highest degree of the patch.
+            degree: Degree of the multipliers, nonnegative. Without it, the
+                highest degree of the patch, that of the pressure.
+            elements: Number of elements of the multipliers on each face,
+                positive, one for every face or one per face. Without it,
+                one per two cells of the patch the face crosses, and at
+                least one.
+            symmetric: Whether the adjoint term of the tangential velocity
+                is that of the symmetric method, rather than the
+                skew-symmetric one.
+            num_points: The Gauss points on each face, positive. Without
+                them, one more than the highest degree of the patch.
+
+        Raises:
+            TypeError: If the trace is not the velocity of a fluid, if the
+                patch is not a planar patch, or if the boundary is not a
+                boundary.
+            ValueError: If there is not one cell type per element, if the
+                map of the patch is not affine, if the number of points is
+                not positive, if the values are not the velocity at each
+                point, if the penalty is negative, or zero for the symmetric
+                method, if the order or the degree is negative, if the
+                elements are not positive or not one per face, or if a
+                multiplier is read at no closest point.
+        """
+        if not isinstance(trace, StokesElement.U):
+            raise TypeError('the trace must be the velocity of a fluid')
+
+        quadrature, projection = _jump_faces(patch, cell_types, boundary,
+                                             num_points)
+
+        # Only the symmetric method needs a penalty to be stable
+        if symmetric and not penalty > 0.:
+            raise ValueError('the penalty must be positive')
+
+        if not penalty >= 0.:
+            raise ValueError('the penalty must be non-negative')
+
+        if order is None:
+            order = max(patch.degrees)
+
+        if order < 0:
+            raise ValueError('the order must be non-negative')
+
+        if degree is None:
+            degree = max(patch.degrees)
+
+        # The cells each face crosses, which the points of a quadrature of
+        # the boundary tell
+        self._degree = int(degree)
+        self._elements, bases = _multiplier_bases(
+            QuadratureBoundary(patch, boundary, 1), self._degree, elements)
+
+        self._trace = trace
+        self._patch = patch
+        self._quadrature = quadrature
+        self._projection = projection
+        self._penalty = float(penalty)
+        self._symmetric = bool(symmetric)
+        self._values = _values(np.array(projection.positions), values,
+                               trace._shape)
+
+        self._cpp_conditions = [_cpp.SkeletonMultiplierCondition2d(
+            trace._cpp_traces(), trace._cpp_fluxes(pressure=False),
+            trace._element.p._cpp_traces()[0], bases, quadrature,
+            projection, int(order), self._penalty, self._symmetric)]
+
+        # Coefficients of the multipliers, which a solve sets
+        self._coefficients: list[npt.NDArray[np.float64]] | None = None
+
+    @property
+    def trace(self) -> StokesElement.U:
+        """The velocity imposed."""
+        return self._trace
+
+    @property
+    def patch(self) -> PlanarPatch:
+        """The background patch, whose cells the faces separate."""
+        return self._patch
+
+    @property
+    def num_faces(self) -> int:
+        """Number of faces between cells whose weights may jump."""
+        return self._quadrature.num_faces
+
+    @property
+    def values(self) -> npt.NDArray[np.float64]:
+        """Velocity at the closest point of each face point, of shape
+        `(num_points, 2)`. It is set as at initialization, by its values or
+        by a function of the closest points."""
+        return _given(self._values, self._trace._shape)
+
+    @values.setter
+    def values(
+        self,
+        values: (npt.ArrayLike
+                 | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
+    ) -> None:
+        self._values[...] = _values(np.array(self._projection.positions),
+                                    values, self._trace._shape)
+
+    @property
+    def penalty(self) -> float:
+        """Nitsche's penalty on the tangential velocity."""
+        return self._penalty
+
+    @property
+    def symmetric(self) -> bool:
+        """Whether the adjoint term is that of the symmetric method."""
+        return self._symmetric
+
+    @property
+    def degree(self) -> int:
+        """Degree of the multipliers."""
+        return self._degree
+
+    @property
+    def elements(self) -> tuple[int, ...]:
+        """Number of elements of the multipliers on each face."""
+        return self._elements
+
+    @property
+    def closest_points(self) -> npt.NDArray[np.float64]:
+        """Closest point on the boundary of each face point, where the
+        values and the multipliers apply, of shape `(num_points, 2)`."""
+        return np.array(self._projection.positions)
+
+    @property
+    def multipliers(self) -> npt.NDArray[np.float64] | None:
+        """Values of the multipliers at the closest point of each face point,
+        of shape `(num_points,)`, once a problem has solved for them, or
+        `None` before."""
+        if self._coefficients is None:
+            return None
+
+        return self._cpp_conditions[0].values(self._coefficients[0])
+
+    def _add_to(self, form: _cpp.Form2d,
+                cell_weights: npt.NDArray[np.float64]) -> None:
+        """Add the integral of the condition to the compiled form of a planar
+        problem, assembled with its faces coupled, with the weights of the
+        cells. The form reads the velocity, a column per component, and the
+        weights where they lie. Its assembler must number the
+        multipliers."""
+        form.add_multiplier_integral(self._cpp_conditions[0], self._values.T,
+                                     cell_weights)
+
+    def __repr__(self) -> str:
+        skew = '' if self._symmetric else ', symmetric=False'
+        return (f'SkeletonMultiplierCondition({self._trace!r}, '
+                f'penalty={self._penalty}, degree={self._degree}{skew})')
+
+
 def _check_test_pressure(
     trace: PoissonElement.U | StokesElement.U | ElasticityElement.U,
     test_pressure: bool,
@@ -1046,6 +1219,84 @@ def _add_along(
         form.add_boundary_integral(condition, quadrature._cpp_object,
                                    quadrature._projection, quadrature.order,
                                    values)
+
+
+def _jump_faces(
+    patch: PlanarPatch,
+    cell_types: Sequence[CellType],
+    boundary: Boundary,
+    num_points: int | None,
+) -> tuple[_cpp.QuadratureSkeleton2d, _cpp.BoundaryProjection2d]:
+    """Quadrature of the faces between cells whose weights may jump, those
+    between cells of different types or between two cut cells, and its
+    points projected onto the boundary, checked as the conditions across
+    faces document. Without a number of points, one more than the highest
+    degree of the patch."""
+    if not isinstance(patch, PlanarPatch):
+        raise TypeError('the patch must be a planar patch')
+
+    if not isinstance(boundary, Boundary):
+        raise TypeError('the boundary must be a boundary')
+
+    cell_types = list(cell_types)
+    num_elements = HierarchicalGrid(patch.degrees, patch.knots).num_elements
+
+    if len(cell_types) != num_elements:
+        raise ValueError('there must be one cell type per cell')
+
+    if num_points is None:
+        num_points = max(patch.degrees) + 1
+
+    if num_points < 1:
+        raise ValueError('the number of points must be positive')
+
+    faces = _cpp.jump_faces(
+        patch=patch._cpp_object,
+        classification=_cpp.CellClassification2d(cell_types))
+    quadrature = _cpp.QuadratureSkeleton2d(
+        patch=patch._cpp_object, faces=faces, num_points=num_points)
+    projection = _cpp.project_closest_points(
+        patch=patch._cpp_object, boundary=boundary._cpp_object,
+        points=quadrature.points)
+
+    return quadrature, projection
+
+
+def _multiplier_bases(
+    quadrature: QuadratureBoundary,
+    degree: int,
+    elements: int | Sequence[int] | None,
+) -> tuple[tuple[int, ...], list[_cpp.BSpline]]:
+    """Number of elements and basis of the multipliers of a degree on each
+    face of the boundary of a quadrature, checked as the multiplier
+    conditions document. Without elements, one per two cells the face
+    crosses, and at least one."""
+    faces = quadrature.boundary.faces
+
+    if degree < 0:
+        raise ValueError('the degree must be non-negative')
+
+    if elements is None:
+        elements = np.maximum(_cells_crossed(quadrature) // 2, 1)
+    elif np.ndim(elements) == 0:
+        elements = [elements] * len(faces)
+
+    elements = np.asarray(elements)
+
+    if elements.shape != (len(faces),) or np.any(elements < 1):
+        raise ValueError('the elements must be positive, one for every '
+                         'face or one per face')
+
+    elements = tuple(int(count) for count in elements)
+
+    # A basis on the interval of the parameter of each face, which the knot
+    # vector of the face clamps
+    bases = [_cpp.BSpline(degree, face.knots[0]
+                          + (face.knots[-1] - face.knots[0])
+                          * _uniform_knots(degree, count))
+             for face, count in zip(faces, elements)]
+
+    return elements, bases
 
 
 def _cells_crossed(
