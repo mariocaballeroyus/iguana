@@ -18,6 +18,7 @@
 #include "iguana/condition/lagrange_multiplier_condition.hpp"
 #include "iguana/condition/skeleton_condition.hpp"
 #include "iguana/condition/skeleton_ghost_penalty.hpp"
+#include "iguana/condition/skeleton_multiplier_condition.hpp"
 #include "iguana/condition/volume_ghost_penalty.hpp"
 #include "iguana/element/element.hpp"
 #include "iguana/geometry/boundary_projection.hpp"
@@ -234,6 +235,42 @@ public:
                                  Assembler<Basis, n>& assembler,
                                  Vec coefficients) {
             assembler.assemble_residual(condition, values, coefficients);
+        });
+    }
+
+    /**
+     * @brief Adds the tangent and residual of a skeleton multiplier
+     *        condition across the faces of its quadrature, with the test
+     *        functions of each cell weighted
+     *
+     * @param condition Skeleton multiplier condition, given to the
+     *        assemblers the form is assembled into
+     * @param data Velocity imposed at the closest point of each point of
+     *        its quadrature, a row per point and a column per component
+     * @param cell_weights Weight of the test functions on each element of
+     *        the grid
+     *
+     * @pre What the integral reads outlives the form, and @p data and
+     *      @p cell_weights keep their sizes. The assembly checks them as
+     *      Assembler::assemble_residual() does
+     */
+    void add_multiplier_integral(
+        const SkeletonMultiplierCondition<Basis, n>& condition, Source data,
+        Data cell_weights) requires (dim == 2)
+    {
+        const SourceView values = view(data);
+        const Eigen::Map<const Eigen::VectorX<Scalar>> weights =
+            view(cell_weights);
+
+        tangents_.push_back([&condition, weights](
+                                Assembler<Basis, n>& assembler, Vec) {
+            assembler.assemble_tangent(condition, weights);
+        });
+        residuals_.push_back([&condition, values, weights](
+                                 Assembler<Basis, n>& assembler,
+                                 Vec coefficients) {
+            assembler.assemble_residual(condition, values, weights,
+                                        coefficients);
         });
     }
 

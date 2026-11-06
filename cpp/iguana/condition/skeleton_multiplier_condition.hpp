@@ -54,15 +54,13 @@ namespace iguana
  *          coarser than the cells, for the saddle point to be stable
  *
  * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
- * @tparam n Dimension of the physical space of the patch
+ * @tparam n Dimension of the physical space of the patch, two, the
+ *         boundary a curve in the plane whose tangent is its normal turned
+ *         a quarter
  */
 template<typename Basis, std::size_t n>
 class SkeletonMultiplierCondition final
 {
-    // The tangent of the boundary is the normal turned a quarter
-    static_assert(n == 2, "SkeletonMultiplierCondition: "
-                          "the boundary must be a curve in the plane");
-
 public:
     /// @brief Floating-point type of the basis
     using Scalar = typename Basis::Scalar;

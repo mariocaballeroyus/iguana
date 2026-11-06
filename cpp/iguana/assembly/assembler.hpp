@@ -19,6 +19,7 @@
 #include "iguana/condition/lagrange_multiplier_condition.hpp"
 #include "iguana/condition/skeleton_condition.hpp"
 #include "iguana/condition/skeleton_ghost_penalty.hpp"
+#include "iguana/condition/skeleton_multiplier_condition.hpp"
 #include "iguana/condition/volume_ghost_penalty.hpp"
 #include "iguana/element/element.hpp"
 #include "iguana/fspace/function_space.hpp"
@@ -80,8 +81,11 @@ namespace iguana
  * tangent and mass, an entry of the residual and one of the coefficients.
  * The pattern pairs each multiplier with the degrees of freedom of the
  * cells where it is active, and with itself, so that every row has its
- * diagonal as factorizations expect. The rows of the multipliers do not
- * divide into blocks, so with multipliers the block size is one
+ * diagonal as factorizations expect. The multipliers of skeleton
+ * multiplier conditions follow those of the others, and the pattern pairs
+ * each with the degrees of freedom of both cells of every face where it is
+ * read. The rows of the multipliers do not divide into blocks, so with
+ * multipliers the block size is one
  *
  * @tparam Basis Basis of the space and the patch, TensorBSpline or
  *         TensorNURBS
@@ -109,6 +113,11 @@ public:
     ///        degrees of freedom of the space in the system
     using Multipliers = std::vector<
         std::reference_wrapper<const LagrangeMultiplierCondition<Basis, n>>>;
+
+    /// @brief Skeleton multiplier conditions, whose multipliers follow those
+    ///        of the Lagrange multiplier conditions in the system
+    using SkeletonMultipliers = std::vector<
+        std::reference_wrapper<const SkeletonMultiplierCondition<Basis, n>>>;
 
     /**
      * @brief Constructs a zero tangent, residual and mass with the pattern
@@ -163,6 +172,8 @@ public:
      *        multipliers
      * @param multipliers Conditions whose multipliers follow the degrees of
      *        freedom of the space, in order
+     * @param skeleton_multipliers Conditions whose multipliers follow those
+     *        of @p multipliers, in order
      *
      * @throws std::invalid_argument If the space does not have the elements
      *         of the patch, or if a condition is given twice
@@ -175,7 +186,9 @@ public:
      */
     Assembler(const FunctionSpace<Basis>& space,
               const Patch<Basis, n>& patch, bool couple_faces,
-              Multipliers multipliers) requires (dim == 2);
+              Multipliers multipliers,
+              SkeletonMultipliers skeleton_multipliers = {})
+        requires (dim == 2);
 
     /**
      * @brief Constructs a zero tangent, residual and mass with the pattern
@@ -189,6 +202,8 @@ public:
      *        multipliers
      * @param multipliers Conditions whose multipliers follow the degrees of
      *        freedom of the space, in order
+     * @param skeleton_multipliers Conditions whose multipliers follow those
+     *        of @p multipliers, in order
      *
      * @throws std::invalid_argument As for a space of one field
      * @throws std::runtime_error If PETSc fails to create the system
@@ -197,7 +212,9 @@ public:
      */
     Assembler(const MixedFunctionSpace<Basis>& space,
               const Patch<Basis, n>& patch, bool couple_faces,
-              Multipliers multipliers) requires (dim == 2);
+              Multipliers multipliers,
+              SkeletonMultipliers skeleton_multipliers = {})
+        requires (dim == 2);
 
     /// @brief Drops the references of the assembler to the tangent,
     ///        residual and mass, which PETSc destroys once nothing else
@@ -779,6 +796,66 @@ public:
         const Eigen::VectorX<Scalar>& data, Vec coefficients)
         requires (dim == 2);
 
+    /**
+     * @brief Adds the tangent of a skeleton multiplier condition across the
+     *        faces of its quadrature, with the test functions of each cell
+     *        weighted
+     *
+     * On each face whose two cells weigh differently, the velocity terms go
+     * into the rows and columns of both cells, the constraint into the rows
+     * of the multipliers read there and the coupling into their columns.
+     * The condition is linear, so that the tangent does not depend on the
+     * coefficients
+     *
+     * @param condition Skeleton multiplier condition given at construction
+     * @param cell_weights Weight of the test functions on each element of
+     *        the grid, in its numbering
+     *
+     * @throws std::invalid_argument If the faces are not coupled, if
+     *         @p condition was not given at construction, if the projection
+     *         of @p condition does not have one distance vector per point of
+     *         its quadrature, or if @p cell_weights does not have one value
+     *         per element of the grid
+     *
+     * @pre The quadrature of @p condition is built on the grid of the basis,
+     *      and every cell of a face across which the weights jump has its
+     *      degrees of freedom in the space
+     */
+    void assemble_tangent(
+        const SkeletonMultiplierCondition<Basis, n>& condition,
+        const Eigen::VectorX<Scalar>& cell_weights) requires (dim == 2);
+
+    /**
+     * @brief Adds the residual of a skeleton multiplier condition across
+     *        the faces of its quadrature, with the test functions of each
+     *        cell weighted, at coefficients
+     *
+     * The rows of both cells of each face gain its velocity terms and the
+     * transpose of the coupling times the multipliers, and those of the
+     * multipliers the constraint times the coefficients of the cells less
+     * the load of the imposed velocity
+     *
+     * @param condition Skeleton multiplier condition given at construction
+     * @param data Velocity imposed at the closest point of each point of
+     *        its quadrature, a row per point and a column per component
+     * @param cell_weights Weight of the test functions on each element of
+     *        the grid, in its numbering
+     * @param coefficients Coefficients of the unknowns of the system, one each
+     *
+     * @throws std::invalid_argument As for the tangent of a skeleton
+     *         multiplier condition, if @p data does not have a row per point
+     *         and a column per component, or if @p coefficients does not have
+     *         one entry per unknown
+     *
+     * @pre As for the tangent of a skeleton multiplier condition, and
+     *      @p coefficients is not the residual
+     */
+    void assemble_residual(
+        const SkeletonMultiplierCondition<Basis, n>& condition,
+        const Eigen::MatrixX<Scalar>& data,
+        const Eigen::VectorX<Scalar>& cell_weights, Vec coefficients)
+        requires (dim == 2);
+
     /// @brief Zeroes the tangent, residual and mass, keeping the pattern
     void clear();
 
@@ -867,6 +944,28 @@ private:
      */
     int first_multiplier(
         const LagrangeMultiplierCondition<Basis, n>& condition) const;
+
+    /**
+     * @brief First unknown of the multipliers of a skeleton multiplier
+     *        condition
+     *
+     * @throws std::invalid_argument If the condition was not given at
+     *         construction
+     */
+    int first_multiplier(
+        const SkeletonMultiplierCondition<Basis, n>& condition) const
+        requires (dim == 2);
+
+    /**
+     * @brief Checks the faces, the projection and the cell weights of a
+     *        skeleton multiplier pass
+     *
+     * @throws std::invalid_argument As the tangent of a skeleton multiplier
+     *         condition documents
+     */
+    void check_skeleton_multipliers(
+        const SkeletonMultiplierCondition<Basis, n>& condition,
+        const Eigen::VectorX<Scalar>& cell_weights) const requires (dim == 2);
 
     /**
      * @brief Checks that coefficients have one entry per unknown of the
@@ -959,8 +1058,12 @@ private:
     ///        degrees of freedom of the space in their order
     Multipliers multipliers_;
 
-    /// @brief First unknown of the multipliers of each condition, followed
-    ///        by the number of unknowns
+    /// @brief Skeleton multiplier conditions, whose multipliers follow those
+    ///        of the Lagrange multiplier conditions in their order
+    SkeletonMultipliers skeleton_multipliers_;
+
+    /// @brief First unknown of the multipliers of each condition, those of
+    ///        the skeleton ones last, followed by the number of unknowns
     std::vector<int> first_multipliers_;
 
     /// @brief Tangent, with an entry for every pair of degrees of freedom

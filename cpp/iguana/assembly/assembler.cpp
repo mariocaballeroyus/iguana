@@ -329,6 +329,32 @@ void fold_face(const Eigen::VectorX<T>& local,
 }
 
 /**
+ * @brief Sums the columns of a local matrix of a face that share a degree
+ *        of freedom, as for its rows and columns, its rows those of the
+ *        multipliers read on the face
+ *
+ * @throws std::invalid_argument If @p local does not have a column per
+ *         entry of @p positions
+ */
+template<std::floating_point T>
+void fold_columns(const Eigen::MatrixX<T>& local,
+                  const std::vector<int>& positions, std::ptrdiff_t num_dofs,
+                  Eigen::MatrixX<T>& folded)
+{
+    const std::ptrdiff_t count = std::ssize(positions);
+
+    if (local.cols() != count)
+        throw std::invalid_argument("Assembler: "
+                                    "the local matrix must match the degrees "
+                                    "of freedom of the space");
+
+    folded.setZero(local.rows(), num_dofs);
+
+    for (std::ptrdiff_t col = 0; col < count; ++col)
+        folded.col(positions[col]) += local.col(col);
+}
+
+/**
  * @brief Cells around an element of a grid: the element itself and, with
  *        the faces coupled, its neighbours across each of its faces
  *
@@ -448,12 +474,16 @@ void sparsity_pattern(const MixedFunctionSpace<Basis>& space,
  *        of freedom
  *
  * Each multiplier pairs with the degrees of freedom of the cells where it
- * is active, both ways, and with itself, so that its row has a diagonal
+ * is active, those of both cells of every face where it is read for a
+ * skeleton condition, both ways, and with itself, so that its row has a
+ * diagonal
  *
  * @param space Space whose degrees of freedom number the rows of the
  *        pattern
  * @param multipliers Conditions whose multipliers follow the degrees of
  *        freedom, in order
+ * @param skeleton_multipliers Skeleton conditions whose multipliers follow
+ *        those of @p multipliers, in order
  * @param offsets The first entry of each row, followed by the number of
  *        entries, extended with the rows of the multipliers
  * @param columns The columns of each row in increasing order, extended
@@ -465,6 +495,8 @@ void add_multipliers(
     const MixedFunctionSpace<Basis>& space,
     const std::vector<std::reference_wrapper<
         const LagrangeMultiplierCondition<Basis, n>>>& multipliers,
+    const std::vector<std::reference_wrapper<
+        const SkeletonMultiplierCondition<Basis, n>>>& skeleton_multipliers,
     std::vector<PetscInt>& offsets, std::vector<PetscInt>& columns)
 {
     const int num_dofs = space.num_dofs();
@@ -491,6 +523,30 @@ void add_multipliers(
             for (const int multiplier : active) {
                 std::vector<int>& coupled = multiplier_dofs[first + multiplier];
                 coupled.insert(coupled.end(), dofs.begin(), dofs.end());
+            }
+        }
+    }
+
+    for (const SkeletonMultiplierCondition<Basis, n>& condition :
+         skeleton_multipliers) {
+        const QuadratureSkeleton<typename Basis::Scalar, Basis::dimension>&
+            quadrature = condition.quadrature();
+        const std::size_t first = multiplier_dofs.size();
+        multiplier_dofs.resize(first + condition.num_multipliers());
+
+        for (int face = 0; face < quadrature.num_faces(); ++face) {
+            const int first_point = quadrature.offsets()(face);
+            const int count = quadrature.offsets()(face + 1) - first_point;
+            condition.active_on(first_point, count, active);
+
+            for (const int side : {0, 1}) {
+                space.dofs_on_element(quadrature.cells()(face, side), dofs);
+
+                for (const int multiplier : active) {
+                    std::vector<int>& coupled =
+                        multiplier_dofs[first + multiplier];
+                    coupled.insert(coupled.end(), dofs.begin(), dofs.end());
+                }
             }
         }
     }
@@ -985,6 +1041,20 @@ void check_volume_ghost(bool couple_faces,
                                     "the space");
 }
 
+/// @brief Whether a list of conditions holds one twice
+template<typename Conditions>
+bool repeats(const Conditions& conditions)
+{
+    for (std::size_t k = 0; k < conditions.size(); ++k) {
+        for (std::size_t j = 0; j < k; ++j) {
+            if (&conditions[j].get() == &conditions[k].get())
+                return true;
+        }
+    }
+
+    return false;
+}
+
 } // namespace
 
 template<typename Basis, std::size_t n>
@@ -1016,44 +1086,49 @@ Assembler<Basis, n>::Assembler(const MixedFunctionSpace<Basis>& space,
 template<typename Basis, std::size_t n>
 Assembler<Basis, n>::Assembler(const FunctionSpace<Basis>& space,
                                const Patch<Basis, n>& patch,
-                               bool couple_faces, Multipliers multipliers)
+                               bool couple_faces, Multipliers multipliers,
+                               SkeletonMultipliers skeleton_multipliers)
     requires (dim == 2)
     : Assembler(MixedFunctionSpace<Basis>(std::vector{std::cref(space)}),
-                patch, couple_faces, std::move(multipliers))
+                patch, couple_faces, std::move(multipliers),
+                std::move(skeleton_multipliers))
 {
 }
 
 template<typename Basis, std::size_t n>
 Assembler<Basis, n>::Assembler(const MixedFunctionSpace<Basis>& space,
                                const Patch<Basis, n>& patch,
-                               bool couple_faces, Multipliers multipliers)
+                               bool couple_faces, Multipliers multipliers,
+                               SkeletonMultipliers skeleton_multipliers)
     requires (dim == 2)
     : space_(space), patch_(patch), couple_faces_(couple_faces),
       multipliers_(std::move(multipliers)),
+      skeleton_multipliers_(std::move(skeleton_multipliers)),
       first_multipliers_{space.num_dofs()}
 {
+    // Each condition once, as the passes find its multipliers by its
+    // address
+    if (repeats(multipliers_) || repeats(skeleton_multipliers_))
+        throw std::invalid_argument("Assembler: "
+                                    "each condition must be given once");
+
     for (const LagrangeMultiplierCondition<Basis, n>& condition :
-         multipliers_) {
-        // Each condition once, as the passes find its multipliers by its
-        // address
-        const auto same = [&condition](const auto& other) {
-            return &other.get() == &condition;
-        };
-
-        if (std::ranges::count_if(multipliers_, same) > 1)
-            throw std::invalid_argument("Assembler: "
-                                        "each condition must be given once");
-
+         multipliers_)
         first_multipliers_.push_back(first_multipliers_.back()
                                      + condition.num_multipliers());
-    }
+
+    for (const SkeletonMultiplierCondition<Basis, n>& condition :
+         skeleton_multipliers_)
+        first_multipliers_.push_back(first_multipliers_.back()
+                                     + condition.num_multipliers());
 
     // As without multipliers, and B_ij can only be non-zero when multiplier
     // i is active on a cell of function j
     std::vector<PetscInt> offsets;
     std::vector<PetscInt> columns;
     sparsity_pattern(space, patch, couple_faces, offsets, columns);
-    add_multipliers(space, multipliers_, offsets, columns);
+    add_multipliers(space, multipliers_, skeleton_multipliers_, offsets,
+                    columns);
     create_system(offsets, columns);
 }
 
@@ -1069,6 +1144,7 @@ void Assembler<Basis, n>::create_system(const std::vector<PetscInt>& offsets,
     // function, in blocks only when the space has a single field and there
     // are no multipliers
     const int block_size = space_.num_fields() == 1 && multipliers_.empty()
+                                   && skeleton_multipliers_.empty()
                                ? space_.field(0).block_size()
                                : 1;
 
@@ -1676,6 +1752,168 @@ void Assembler<Basis, n>::assemble_residual(
         });
 
     finalize(residual_);
+}
+
+template<typename Basis, std::size_t n>
+void Assembler<Basis, n>::assemble_tangent(
+    const SkeletonMultiplierCondition<Basis, n>& condition,
+    const Eigen::VectorX<Scalar>& cell_weights) requires (dim == 2)
+{
+    check_skeleton_multipliers(condition, cell_weights);
+    const int first_unknown = first_multiplier(condition);
+
+    Eigen::MatrixX<Scalar> local;
+    Eigen::MatrixX<Scalar> folded;
+    Eigen::MatrixX<Scalar> coupling;
+    Eigen::MatrixX<Scalar> constraint;
+    Eigen::VectorX<Scalar> load;
+    std::vector<int> dofs;
+    std::vector<int> positions;
+    std::vector<int> multipliers;
+
+    visit_jump_faces(
+        patch_, space_, condition.flags(), condition.quadrature(),
+        &condition.projection(), condition.order(), cell_weights,
+        [&](int cell_before, int cell_after, int first, int count,
+            const auto& before, const auto& after, const auto& shifted_before,
+            const auto& shifted_after, const auto& side_weights,
+            const auto& weights, const auto& normals) {
+            face_dofs(cell_before, cell_after, dofs, positions);
+            condition.active_on(first, count, multipliers);
+
+            for (int& multiplier : multipliers)
+                multiplier += first_unknown;
+
+            // The velocity terms in the rows and columns of both cells
+            condition.local_tangent(before, after, shifted_before,
+                                    shifted_after, side_weights, weights,
+                                    normals, first, local);
+            fold_face(local, positions, std::ssize(dofs), folded);
+            add_to_matrix(tangent_, dofs, folded);
+
+            // B in the rows of the multipliers and C in their columns, the
+            // load of the constraint aside, as the data are not needed
+            condition.local_constraint(
+                shifted_before, shifted_after, side_weights, weights,
+                normals, Eigen::MatrixX<Scalar>::Zero(count, n), first,
+                constraint, load);
+            fold_columns(constraint, positions, std::ssize(dofs), folded);
+            add_to_matrix(tangent_, multipliers, dofs, folded);
+
+            condition.local_coupling(before, after, side_weights, weights,
+                                     normals, first, coupling);
+            fold_columns(coupling, positions, std::ssize(dofs), folded);
+            add_to_matrix(tangent_, dofs, multipliers, folded.transpose());
+        });
+
+    finalize(tangent_);
+}
+
+template<typename Basis, std::size_t n>
+void Assembler<Basis, n>::assemble_residual(
+    const SkeletonMultiplierCondition<Basis, n>& condition,
+    const Eigen::MatrixX<Scalar>& data,
+    const Eigen::VectorX<Scalar>& cell_weights, Vec coefficients)
+    requires (dim == 2)
+{
+    check_skeleton_multipliers(condition, cell_weights);
+
+    if (data.rows() != condition.quadrature().num_points()
+        || data.cols() != static_cast<Eigen::Index>(n))
+        throw std::invalid_argument("Assembler: "
+                                    "the data must have a row per point and "
+                                    "a column per component");
+
+    check_coefficients(coefficients);
+    const int first_unknown = first_multiplier(condition);
+
+    const Entries entries(coefficients);
+    Eigen::MatrixX<Scalar> imposed;
+    Eigen::MatrixX<Scalar> local;
+    Eigen::MatrixX<Scalar> coupling;
+    Eigen::MatrixX<Scalar> constraint;
+    Eigen::VectorX<Scalar> local_load;
+    Eigen::VectorX<Scalar> constraint_load;
+    Eigen::VectorX<Scalar> face_coefficients;
+    Eigen::VectorX<Scalar> multiplier_coefficients;
+    Eigen::VectorX<Scalar> folded;
+    std::vector<int> dofs;
+    std::vector<int> positions;
+    std::vector<int> multipliers;
+
+    visit_jump_faces(
+        patch_, space_, condition.flags(), condition.quadrature(),
+        &condition.projection(), condition.order(), cell_weights,
+        [&](int cell_before, int cell_after, int first, int count,
+            const auto& before, const auto& after, const auto& shifted_before,
+            const auto& shifted_after, const auto& side_weights,
+            const auto& weights, const auto& normals) {
+            face_dofs(cell_before, cell_after, dofs, positions);
+            condition.active_on(first, count, multipliers);
+
+            for (int& multiplier : multipliers)
+                multiplier += first_unknown;
+
+            entries.gather(dofs, positions, face_coefficients);
+            entries.gather(multipliers, multiplier_coefficients);
+            imposed = data.middleRows(first, count);
+
+            condition.local_tangent(before, after, shifted_before,
+                                    shifted_after, side_weights, weights,
+                                    normals, first, local);
+            condition.local_load(before, after, shifted_before,
+                                 shifted_after, side_weights, weights,
+                                 normals, imposed, first, local_load);
+            condition.local_coupling(before, after, side_weights, weights,
+                                     normals, first, coupling);
+            condition.local_constraint(shifted_before, shifted_after,
+                                       side_weights, weights, normals,
+                                       imposed, first, constraint,
+                                       constraint_load);
+
+            // R_u += K u − F + Cᵀ λ in the rows of both cells, and
+            // R_λ = B u − G in those of the multipliers
+            fold_face(Eigen::VectorX<Scalar>(
+                          local * face_coefficients - local_load
+                          + coupling.transpose() * multiplier_coefficients),
+                      positions, std::ssize(dofs), folded);
+            add_to_residual(dofs, folded);
+            add_to_residual(multipliers, constraint * face_coefficients
+                                             - constraint_load);
+        });
+
+    finalize(residual_);
+}
+
+template<typename Basis, std::size_t n>
+void Assembler<Basis, n>::check_skeleton_multipliers(
+    const SkeletonMultiplierCondition<Basis, n>& condition,
+    const Eigen::VectorX<Scalar>& cell_weights) const requires (dim == 2)
+{
+    // Without the faces coupled, the pattern would not reach across them
+    if (!couple_faces_)
+        throw std::invalid_argument("Assembler: "
+                                    "a skeleton condition needs the faces "
+                                    "coupled");
+
+    check_projection(condition.projection(), condition.order(),
+                     condition.quadrature().num_points());
+    check_cell_weights(cell_weights, space_.num_elements());
+}
+
+template<typename Basis, std::size_t n>
+int Assembler<Basis, n>::first_multiplier(
+    const SkeletonMultiplierCondition<Basis, n>& condition) const
+    requires (dim == 2)
+{
+    for (std::size_t k = 0; k < skeleton_multipliers_.size(); ++k) {
+        if (&skeleton_multipliers_[k].get() == &condition)
+            return first_multipliers_[multipliers_.size() + k];
+    }
+
+    throw std::invalid_argument("Assembler: "
+                                "the condition must be given at "
+                                "construction");
 }
 
 template<typename Basis, std::size_t n>

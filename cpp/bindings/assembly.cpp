@@ -294,7 +294,9 @@ void assembly(py::module_& module)
              py::arg("data").noconvert(), py::keep_alive<1, 2>(),
              py::keep_alive<1, 3>(), py::keep_alive<1, 4>(),
              py::keep_alive<1, 6>())
-        .def("add_multiplier_integral", &Form2d::add_multiplier_integral,
+        .def("add_multiplier_integral",
+             py::overload_cast<const LagrangeMultiplierCondition2d&, Data>(
+                 &Form2d::add_multiplier_integral),
              py::arg("condition"), py::arg("data").noconvert(),
              py::keep_alive<1, 2>(), py::keep_alive<1, 3>())
         .def("add_skeleton_integral",
