@@ -27,12 +27,17 @@ from petsc4py import PETSc
 from iguana import cpp as _cpp
 from iguana.condition import (LagrangeMultiplierCondition, NeumannCondition,
                               NitscheCondition, PenaltyCondition,
+                              SkeletonMultiplierCondition,
                               SkeletonNitscheCondition)
 from iguana.element import ElasticityElement, PoissonElement, StokesElement
 from iguana.fspace import FunctionSpace, MixedFunctionSpace
 from iguana.patch import PlanarPatch
 from iguana.quadrature import QuadratureDomain
 from iguana.stabilization import GhostPenalty, VolumeGhostPenalty
+
+# The conditions across the faces where the cell weights jump, which take
+# the weights and couple the cells on either side
+_ACROSS_FACES = (SkeletonNitscheCondition, SkeletonMultiplierCondition)
 
 
 class _Problem:
@@ -50,7 +55,8 @@ class _Problem:
         cell_weights: npt.ArrayLike | None,
         conditions: Sequence[PenaltyCondition | NitscheCondition
                              | LagrangeMultiplierCondition
-                             | NeumannCondition | SkeletonNitscheCondition],
+                             | NeumannCondition | SkeletonNitscheCondition
+                             | SkeletonMultiplierCondition],
         stabilizations: Sequence[GhostPenalty | VolumeGhostPenalty],
         pressure_reference: npt.ArrayLike | None,
     ) -> None:
@@ -101,7 +107,7 @@ class _Problem:
         stabilizations = list(stabilizations)
         _check_terms(element, patch, conditions, stabilizations)
 
-        on_faces = any(isinstance(condition, SkeletonNitscheCondition)
+        on_faces = any(isinstance(condition, _ACROSS_FACES)
                        for condition in conditions)
 
         # A column per component of the source, contiguous, as the form
@@ -123,7 +129,7 @@ class _Problem:
                                        self._source, self._cell_weights)
 
         for condition in conditions:
-            if isinstance(condition, SkeletonNitscheCondition):
+            if isinstance(condition, _ACROSS_FACES):
                 condition._add_to(self._form, self._cell_weights)
             else:
                 condition._add_to(self._form)
@@ -133,16 +139,20 @@ class _Problem:
 
         # Terms across faces couple the cells on either side, and the
         # multipliers follow the degrees of freedom of the space, condition
-        # after condition, each compiled one in turn
+        # after condition, each compiled one in turn, those across faces
+        # last
         couple_faces = on_faces or bool(stabilizations)
-        self._multipliers = [
-            condition for condition in conditions
-            if isinstance(condition, LagrangeMultiplierCondition)]
-        compiled = [compiled for condition in self._multipliers
-                    for compiled in condition._cpp_conditions]
+        boundary = [condition for condition in conditions
+                    if isinstance(condition, LagrangeMultiplierCondition)]
+        faces = [condition for condition in conditions
+                 if isinstance(condition, SkeletonMultiplierCondition)]
+        self._multipliers = boundary + faces
+        compiled = [[compiled for condition in kind
+                     for compiled in condition._cpp_conditions]
+                    for kind in (boundary, faces)]
         self._assembler = _cpp.Assembler2d(space._cpp_object,
                                            patch._cpp_object, couple_faces,
-                                           compiled)
+                                           *compiled)
         self._tangent = self._assembler.tangent
         self._mass = self._assembler.mass
         self._residual = self._assembler.residual
@@ -154,7 +164,8 @@ class _Problem:
         self._x = self._residual.duplicate()
         self._num_entries = (self._x.getSize()
                              - sum(condition.num_multipliers
-                                   for condition in compiled))
+                                   for kind in compiled
+                                   for condition in kind))
 
     @property
     def source(self) -> npt.NDArray[np.float64]:
@@ -220,7 +231,8 @@ class LinearProblem(_Problem):
         conditions: Sequence[PenaltyCondition | NitscheCondition
                              | LagrangeMultiplierCondition
                              | NeumannCondition
-                             | SkeletonNitscheCondition] = (),
+                             | SkeletonNitscheCondition
+                             | SkeletonMultiplierCondition] = (),
         stabilizations: Sequence[GhostPenalty | VolumeGhostPenalty] = (),
         step: float | None = None,
         pressure_reference: npt.ArrayLike | None = None,
@@ -273,8 +285,9 @@ class LinearProblem(_Problem):
             conditions: Conditions on traces of the element along
                 boundaries in the patch of the space, penalties, Nitsche or
                 Lagrange multiplier conditions imposing values, or Neumann
-                conditions loading fluxes, or Nitsche conditions on the
-                faces where the cell weights jump, which need them.
+                conditions loading fluxes, or Nitsche or multiplier
+                conditions on the faces where the cell weights jump, which
+                need them.
             stabilizations: Ghost penalties on traces of the element across
                 the faces of the cells of the patch of the space, which need
                 an affine map. They extend the field beyond the physical
@@ -296,8 +309,8 @@ class LinearProblem(_Problem):
                 function space nor a mixed space on a planar patch, if the
                 quadrature is not a domain quadrature, if a condition is
                 neither a penalty, a Nitsche, a Lagrange multiplier, a
-                Neumann nor a skeleton Nitsche condition, or if a
-                stabilization is not a ghost penalty.
+                Neumann, a skeleton Nitsche nor a skeleton multiplier
+                condition, or if a stabilization is not a ghost penalty.
             ValueError: If the space does not give each unknown of the
                 element a component of one field or a field of its own, or
                 is a mixed space for an elasticity element, if
@@ -306,8 +319,8 @@ class LinearProblem(_Problem):
                 the patch of the space, if a condition or a stabilization
                 acts on a trace of another element, if the source does not
                 give each point the values the element takes, if the cell
-                weights are not one per cell, if a skeleton Nitsche
-                condition is given without them, if the time step is not
+                weights are not one per cell, if a condition across faces
+                is given without them, if the time step is not
                 positive or is given with a skeleton Nitsche condition
                 shifted with the equation, or if a pressure reference is
                 given for an element without a pressure or is not a point of
@@ -472,7 +485,8 @@ class NonlinearProblem(_Problem):
         conditions: Sequence[PenaltyCondition | NitscheCondition
                              | LagrangeMultiplierCondition
                              | NeumannCondition
-                             | SkeletonNitscheCondition] = (),
+                             | SkeletonNitscheCondition
+                             | SkeletonMultiplierCondition] = (),
         stabilizations: Sequence[GhostPenalty | VolumeGhostPenalty] = (),
         pressure_reference: npt.ArrayLike | None = None,
         petsc_options: dict[str, object] | None = None,
@@ -534,8 +548,8 @@ class NonlinearProblem(_Problem):
                 function space nor a mixed space on a planar patch, if the
                 quadrature is not a domain quadrature, if a condition is
                 neither a penalty, a Nitsche, a Lagrange multiplier, a
-                Neumann nor a skeleton Nitsche condition, or if a
-                stabilization is not a ghost penalty.
+                Neumann, a skeleton Nitsche nor a skeleton multiplier
+                condition, or if a stabilization is not a ghost penalty.
             ValueError: If the space does not give each unknown of the
                 element a component of one field or a field of its own, or
                 is a mixed space for an elasticity element, if a
@@ -545,7 +559,7 @@ class NonlinearProblem(_Problem):
                 the space, if a condition or a stabilization acts on a
                 trace of another element, if the source does not give each
                 point the values the element takes, if the cell weights are
-                not one per cell, if a skeleton Nitsche condition is given
+                not one per cell, if a condition across faces is given
                 without them, or if a pressure reference is given for an
                 element without a pressure or is not a point of the plane.
         """
@@ -649,7 +663,8 @@ def _check_terms(
     patch: PlanarPatch,
     conditions: list[PenaltyCondition | NitscheCondition
                      | LagrangeMultiplierCondition | NeumannCondition
-                     | SkeletonNitscheCondition],
+                     | SkeletonNitscheCondition
+                     | SkeletonMultiplierCondition],
     stabilizations: list[GhostPenalty | VolumeGhostPenalty],
 ) -> None:
     """Check that the conditions and stabilizations of a problem are of the
@@ -662,17 +677,16 @@ def _check_terms(
     for condition in conditions:
         if not isinstance(condition, (PenaltyCondition, NitscheCondition,
                                       LagrangeMultiplierCondition,
-                                      NeumannCondition,
-                                      SkeletonNitscheCondition)):
+                                      NeumannCondition, *_ACROSS_FACES)):
             raise TypeError('the conditions must be penalty, Nitsche, '
-                            'Lagrange multiplier, Neumann or skeleton '
-                            'Nitsche conditions')
+                            'Lagrange multiplier, Neumann, skeleton '
+                            'Nitsche or skeleton multiplier conditions')
 
         if not isinstance(condition.trace, type(element).U):
             raise ValueError('the trace of a condition must be one of the '
                              'element')
 
-        if isinstance(condition, SkeletonNitscheCondition):
+        if isinstance(condition, _ACROSS_FACES):
             if condition.patch is not patch:
                 raise ValueError('the faces of a condition must lie on the '
                                  'patch of the space')
@@ -736,9 +750,9 @@ def _cell_weights(
     """Weights of the test functions on the cells of a quadrature, one
     without them, checked to be one per cell. They are contiguous, as the
     form of the problem reads them where they lie."""
-    # Without weights, every skeleton condition would see no jump
+    # Without weights, every condition across faces would see no jump
     if cell_weights is None and on_faces:
-        raise ValueError('skeleton Nitsche conditions need cell weights')
+        raise ValueError('conditions across faces need cell weights')
 
     # The quadrature lies on the elements of the patch, its cells
     num_cells = quadrature.grid.num_elements

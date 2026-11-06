@@ -1150,6 +1150,12 @@ class SkeletonMultiplierCondition:
         return self._elements
 
     @property
+    def closest_points(self) -> npt.NDArray[np.float64]:
+        """Closest point on the boundary of each face point, where the
+        values and the multipliers apply, of shape `(num_points, 2)`."""
+        return np.array(self._projection.positions)
+
+    @property
     def multipliers(self) -> npt.NDArray[np.float64] | None:
         """Values of the multipliers at the closest point of each face point,
         of shape `(num_points,)`, once a problem has solved for them, or
