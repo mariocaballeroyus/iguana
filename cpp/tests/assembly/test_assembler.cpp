@@ -280,15 +280,20 @@ Basis five_by_five()
     return Basis(TensorGrid<double, 2>({fifths, fifths}));
 }
 
-/// @brief Tilted quadrilateral inside the rectangle, counterclockwise, whose
-///        sides cross the knot lines of five_by_five() and stay a cell away
-///        from the edge of its grid, as the faces of the generalized shifted
-///        boundary method need
+/// @brief Corners of a tilted quadrilateral inside the rectangle,
+///        counterclockwise, whose sides cross the knot lines of
+///        five_by_five() and stay a cell away from the edge of its grid, as
+///        the faces of the generalized shifted boundary method need
+std::array<Eigen::RowVector2d, 4> inner_corners()
+{
+    return {Eigen::RowVector2d(.5, .7), Eigen::RowVector2d(1.5, .8),
+            Eigen::RowVector2d(1.4, 2.3), Eigen::RowVector2d(.6, 2.2)};
+}
+
+/// @brief The quadrilateral of inner_corners(), one face per side
 iguana::Boundary<double, 2> inner_quadrilateral()
 {
-    const std::array<Eigen::RowVector2d, 4> corners{
-        Eigen::RowVector2d(.5, .7), Eigen::RowVector2d(1.5, .8),
-        Eigen::RowVector2d(1.4, 2.3), Eigen::RowVector2d(.6, 2.2)};
+    const std::array<Eigen::RowVector2d, 4> corners = inner_corners();
     std::vector<iguana::Boundary<double, 2>::Face> faces;
 
     for (std::size_t side = 0; side < 4; ++side)
@@ -2848,5 +2853,249 @@ TEST_CASE("Lagrange multipliers need a basis over each face, n components "
                       std::invalid_argument);
     REQUIRE_THROWS_AS(assembler.assemble_residual(condition, short_data,
                                                   of_system),
+                      std::invalid_argument);
+}
+
+TEST_CASE("Skeleton multipliers impose a quadratic flow across the faces "
+          "where the weights jump", "[assembler][multipliers]")
+{
+    using Element = iguana::StokesStabilizedElement<Basis, 2>;
+
+    const Basis basis = five_by_five();
+    const iguana::Patch<Basis, 2> patch = rectangle(basis);
+    const iguana::Boundary<double, 2> boundary = inner_quadrilateral();
+    const int count = basis.grid().num_elements();
+
+    // The volume fractions weigh the cells, of a space that keeps every
+    // function and a quadrature over every cell
+    const Eigen::VectorXd fractions =
+        iguana::volume_fractions(patch, boundary);
+    const CellClassification<double, 2> classification(
+        iguana::cell_types(fractions));
+    const iguana::FunctionSpace<Basis> space(
+        basis,
+        CellClassification<double, 2>(std::vector<CellType>(
+            static_cast<std::size_t>(count), CellType::inside)),
+        3);
+
+    iguana::QuadratureDomain<double, 2> cells;
+
+    for (const CellType type :
+         {CellType::inside, CellType::cut, CellType::outside})
+        cells.fill(basis.grid(), classification, type,
+                   iguana::GaussLegendre<double, 2>(3));
+
+    const iguana::QuadratureSkeleton<double, 2> faces(
+        basis.grid(), iguana::jump_faces(basis.grid(), classification),
+        iguana::GaussLegendre<double, 1>(3));
+    const iguana::BoundaryProjection<double> projection =
+        iguana::project_closest_points(patch, boundary, faces.points());
+    const iguana::QuadratureSkeleton<double, 2> ghost_faces(
+        basis.grid(), iguana::ghost_faces(basis.grid(), classification),
+        iguana::GaussLegendre<double, 1>(3));
+
+    const double viscosity = 1.5;
+    const Element element(viscosity, 3.);
+    const std::array<Element::U, 2> traces{Element::U(0), Element::U(1)};
+    const std::array<Element::T, 2> viscous{
+        Element::T(viscosity, 0, false), Element::T(viscosity, 1, false)};
+    const Element::P pressure;
+
+    // Linear multipliers of two elements on each side, which hold the
+    // pressure p = x + y there
+    const iguana::SkeletonMultiplierCondition<Basis, 2> condition(
+        {std::cref(traces[0]), std::cref(traces[1])},
+        {std::cref(viscous[0]), std::cref(viscous[1])}, pressure,
+        side_bases(), faces, projection, 2, 40. * viscosity);
+
+    // f = −div(2μ ε(u)) + ∇p = (1 − 2μ, 1) for the quadratic flow
+    Eigen::MatrixXd source(cells.num_points(), 2);
+    source.col(0).setConstant(1. - 2. * viscosity);
+    source.col(1).setConstant(1.);
+
+    // The velocity at the closest points
+    const Eigen::VectorXd x = projection.positions.col(0);
+    const Eigen::VectorXd y = projection.positions.col(1);
+    Eigen::MatrixXd data(x.size(), 2);
+    data << x.cwiseProduct(x), -2. * x.cwiseProduct(y);
+
+    const iguana::SkeletonGhostPenalty<Basis, 2> pressure_ghost(
+        pressure, -.1 / viscosity, 2);
+    const std::array<iguana::SkeletonGhostPenalty<Basis, 2>, 2> ghosts{
+        iguana::SkeletonGhostPenalty<Basis, 2>(traces[0], .1 * viscosity),
+        iguana::SkeletonGhostPenalty<Basis, 2>(traces[1], .1 * viscosity)};
+
+    iguana::Assembler<Basis, 2> assembler(space, patch, true, {},
+                                          {std::cref(condition)});
+
+    const auto assemble = [&](Vec coefficients) {
+        assembler.assemble_tangent(element, cells, source, fractions,
+                                   coefficients);
+        assembler.assemble_residual(element, cells, source, fractions,
+                                    coefficients);
+        assembler.assemble_tangent(condition, fractions);
+        assembler.assemble_residual(condition, data, fractions,
+                                    coefficients);
+
+        for (const auto& ghost : ghosts) {
+            assembler.assemble_tangent(ghost, ghost_faces, coefficients);
+            assembler.assemble_residual(ghost, ghost_faces, coefficients);
+        }
+
+        assembler.assemble_tangent(pressure_ghost, ghost_faces, coefficients);
+        assembler.assemble_residual(pressure_ghost, ghost_faces, coefficients);
+    };
+
+    const Eigen::VectorXd flow = quadratic_flow(patch);
+    const Eigen::VectorXd multipliers = side_coefficients(
+        inner_corners(), [](const Eigen::RowVector2d& point,
+                            const Eigen::RowVector2d&) {
+            return point.sum();
+        });
+
+    Eigen::VectorXd exact(flow.size() + multipliers.size());
+    exact << flow, multipliers;
+    assemble(Coefficients(exact));
+
+    // The weighted volume terms leave the jumps of the weights times the
+    // traction on the faces, whose viscous part the condition cancels and
+    // whose pressure the multipliers do, carried from the sides to the
+    // faces, and the expansions of order two reach the data exactly
+    REQUIRE(residual_of(assembler).cwiseAbs().maxCoeff()
+            < 1e-11 * (stiffness_of(assembler) * exact).cwiseAbs().maxCoeff());
+
+    // The two cells of each face gathered in the rows of its terms, and the
+    // coupling and its constraint where the residual places them
+    REQUIRE(tangent_defect(assembler, static_cast<int>(exact.size()),
+                           assemble)
+            < 1e-12);
+}
+
+TEST_CASE("Skeleton multipliers need a trace and a flux per component, a "
+          "basis read at every multiplier and the assembler they were given "
+          "to", "[assembler][multipliers]")
+{
+    using Element = iguana::StokesStabilizedElement<Basis, 2>;
+    using Condition = iguana::SkeletonMultiplierCondition<Basis, 2>;
+
+    const Basis basis = five_by_five();
+    const iguana::Patch<Basis, 2> patch = rectangle(basis);
+    const iguana::Boundary<double, 2> boundary = inner_quadrilateral();
+    const Eigen::VectorXd fractions =
+        iguana::volume_fractions(patch, boundary);
+    const CellClassification<double, 2> classification(
+        iguana::cell_types(fractions));
+    const iguana::FunctionSpace<Basis> space(
+        basis,
+        CellClassification<double, 2>(std::vector<CellType>(
+            static_cast<std::size_t>(basis.grid().num_elements()),
+            CellType::inside)),
+        3);
+    const iguana::QuadratureSkeleton<double, 2> faces(
+        basis.grid(), iguana::jump_faces(basis.grid(), classification),
+        iguana::GaussLegendre<double, 1>(3));
+    const iguana::BoundaryProjection<double> projection =
+        iguana::project_closest_points(patch, boundary, faces.points());
+
+    const Element::U along_x(0);
+    const Element::U along_y(1);
+    const Element::T viscous_x(1., 0, false);
+    const Element::T viscous_y(1., 1, false);
+    const Element::P pressure;
+    const Condition::Traces velocity{std::cref(along_x), std::cref(along_y)};
+    const Condition::Fluxes fluxes{std::cref(viscous_x), std::cref(viscous_y)};
+
+    // A trace short of the components, a negative order, no penalty for the
+    // symmetric method and a negative one for the skew-symmetric method
+    REQUIRE_THROWS_AS(Condition({std::cref(along_x)}, fluxes, pressure,
+                                side_bases(), faces, projection, 2, 1.),
+                      std::invalid_argument);
+    REQUIRE_THROWS_AS(Condition(velocity, fluxes, pressure, side_bases(),
+                                faces, projection, -1, 1.),
+                      std::invalid_argument);
+    REQUIRE_THROWS_AS(Condition(velocity, fluxes, pressure, side_bases(),
+                                faces, projection, 2, 0.),
+                      std::invalid_argument);
+    REQUIRE_THROWS_AS(Condition(velocity, fluxes, pressure, side_bases(),
+                                faces, projection, 2, -1., false),
+                      std::invalid_argument);
+
+    // A side without a basis, a basis short of its side, and multipliers so
+    // fine that some no closest point reads
+    std::vector<iguana::BSpline<double>> bases = side_bases();
+    bases.pop_back();
+
+    REQUIRE_THROWS_AS(Condition(velocity, fluxes, pressure, bases, faces,
+                                projection, 2, 1.),
+                      std::invalid_argument);
+
+    bases = side_bases();
+    bases.back() = iguana::BSpline<double>(1, {0., 0., .5, .5});
+
+    REQUIRE_THROWS_AS(Condition(velocity, fluxes, pressure, bases, faces,
+                                projection, 2, 1.),
+                      std::invalid_argument);
+
+    std::vector<double> fine(1001);
+    std::ranges::generate(fine, [k = 0]() mutable { return k++ / 1000.; });
+    bases.assign(4, iguana::BSpline<double>(0, fine));
+
+    REQUIRE_THROWS_AS(Condition(velocity, fluxes, pressure, bases, faces,
+                                projection, 2, 1.),
+                      std::invalid_argument);
+
+    // One coefficient short of the multipliers
+    const Condition condition(velocity, fluxes, pressure, side_bases(), faces,
+                              projection, 2, 1.);
+
+    REQUIRE_THROWS_AS(condition.values(Eigen::VectorXd::Zero(11)),
+                      std::invalid_argument);
+
+    // An assembler without the condition, one given it twice, and one
+    // without the faces coupled
+    iguana::Assembler<Basis, 2> without(space, patch, true);
+
+    REQUIRE_THROWS_AS(without.assemble_tangent(condition, fractions),
+                      std::invalid_argument);
+    REQUIRE_THROWS_AS((iguana::Assembler<Basis, 2>(
+                          space, patch, true, {},
+                          {std::cref(condition), std::cref(condition)})),
+                      std::invalid_argument);
+
+    iguana::Assembler<Basis, 2> uncoupled(space, patch, false, {},
+                                          {std::cref(condition)});
+
+    REQUIRE_THROWS_AS(uncoupled.assemble_tangent(condition, fractions),
+                      std::invalid_argument);
+
+    // A projection of other points, here the points twice, cell weights
+    // short of the cells, data short of the points, and the coefficients of
+    // the space alone
+    Eigen::MatrixXd twice(2 * faces.num_points(), 2);
+    twice << faces.points(), faces.points();
+    const iguana::BoundaryProjection<double> other =
+        iguana::project_closest_points(patch, boundary, twice);
+    const Condition mismatched(velocity, fluxes, pressure, side_bases(),
+                               faces, other, 2, 1.);
+
+    iguana::Assembler<Basis, 2> assembler(
+        space, patch, true, {}, {std::cref(condition), std::cref(mismatched)});
+    const Eigen::VectorXd short_weights =
+        fractions.head(fractions.size() - 1);
+    const Eigen::MatrixXd data = Eigen::MatrixXd::Zero(faces.num_points(), 2);
+    const Eigen::MatrixXd short_data = data.topRows(data.rows() - 1);
+    const Coefficients of_space(Eigen::VectorXd::Zero(space.num_dofs()));
+    const Coefficients of_system(
+        Eigen::VectorXd::Zero(space.num_dofs() + 24));
+
+    REQUIRE_THROWS_AS(assembler.assemble_tangent(mismatched, fractions),
+                      std::invalid_argument);
+    REQUIRE_THROWS_AS(assembler.assemble_tangent(condition, short_weights),
+                      std::invalid_argument);
+    REQUIRE_THROWS_AS(assembler.assemble_residual(condition, short_data,
+                                                  fractions, of_system),
+                      std::invalid_argument);
+    REQUIRE_THROWS_AS(assembler.assemble_residual(condition, data, fractions,
+                                                  of_space),
                       std::invalid_argument);
 }
