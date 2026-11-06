@@ -18,8 +18,9 @@ from iguana import (Boundary, CellType, Derivatives, ElasticityElement,
                     LagrangeMultiplierCondition, MixedFunctionSpace,
                     NeumannCondition, NitscheCondition, PenaltyCondition,
                     PoissonElement, QuadratureBoundary, QuadratureDomain,
-                    SkeletonNitscheCondition, StokesElement,
-                    SurrogateBoundary, classify_cells)
+                    SkeletonMultiplierCondition, SkeletonNitscheCondition,
+                    StokesElement, SurrogateBoundary, classify_cells,
+                    trace_at_points)
 
 try:
     from petsc4py import PETSc
@@ -415,6 +416,71 @@ def test_pressure_free_test_side_across_faces():
 
     assert np.abs(u_x - exact_x).max() < 1e-8
     assert np.abs(u_y - exact_y).max() < 1e-8
+
+
+def test_stokes_flow_by_skeleton_multipliers():
+    """Inside a square, on a divergence-conforming space that keeps every
+    function, multipliers on its sides impose the normal velocity across the
+    faces where the weights jump, and Nitsche's method the tangential one.
+    The continuity equations take nothing from the boundary, the flow is
+    exact in the square, and the multipliers are the pressure at the closest
+    points, with the constant its reference fixes, to the round-off that the
+    saddle point amplifies more than Nitsche's method alone."""
+    patch = iguana.create_rectangle(lengths=(2., 3.), elements=(6, 6))
+    boundary = square()
+    cell_types, fractions = classify_cells(patch, boundary)
+    space = MixedFunctionSpace.divergence_conforming(patch)
+    _, velocity, body_force = stokes()
+    element = StokesElement(1.5)
+
+    quadrature = QuadratureDomain(patch, cell_types)
+
+    for cell_type in (CellType.inside, CellType.cut, CellType.outside):
+        quadrature.fill_gauss_legendre(cell_type, 4)
+
+    condition = SkeletonMultiplierCondition(element.u, patch, cell_types,
+                                            boundary, velocity,
+                                            40. * element.viscosity)
+    assert condition.multipliers is None
+
+    # On the bottom of the patch, beyond the square, the extension of the
+    # flow holds its normal velocity, so that the multipliers of a boundary
+    # condition there, numbered before those of the faces, vanish
+    bottom = LagrangeMultiplierCondition(
+        element.u, QuadratureBoundary(patch, Boundary([iguana.create_curve(
+            degree=1, knots=[0., 0., 1., 1.],
+            control_points=[(0., 0.), (2., 0.)])]), 3),
+        velocity, normal=True)
+
+    ghosts = [GhostPenalty(trace, patch, cell_types, .1)
+              for trace in (element.u, element.p)]
+    problem = LinearProblem(element, space, quadrature, body_force,
+                            cell_weights=fractions,
+                            conditions=[condition, bottom],
+                            stabilizations=ghosts,
+                            pressure_reference=(1., 1.75),
+                            petsc_options_prefix='multipliers_gsbm_')
+    u_x, u_y, p = problem.solve()
+
+    # The load of the continuity equations, before those of the multipliers
+    load = problem.b.getArray()[space.offsets[2]:space.num_dofs]
+
+    assert np.abs(load).max() == 0.
+
+    # Points of the square, where the flow is physical
+    points = np.array(list(itertools.product(np.linspace(.55, 1.45, 7),
+                                             np.linspace(1.3, 2.2, 7))))
+    computed = trace_at_points(element.u, space, (u_x, u_y, p), points)
+
+    assert np.abs(computed - velocity(points)).max() < 1e-9
+
+    # The pressure x + y, linear, has its values at the control points as
+    # coefficients, up to the constant of the reference
+    constant = p[0] - space.fields[2].control_points[0].sum()
+
+    assert np.abs(condition.multipliers - constant
+                  - condition.closest_points.sum(axis=1)).max() < 1e-7
+    assert np.abs(bottom.multipliers).max() < 1e-7
 
 
 def test_stokes_flow_by_the_generalized_shifted_boundary_method():

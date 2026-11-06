@@ -12,8 +12,8 @@ from iguana import (Boundary, CellType, ElasticityElement, FunctionSpace,
                     LagrangeMultiplierCondition, NeumannCondition,
                     NitscheCondition, PenaltyCondition, PoissonElement,
                     QuadratureBoundary, QuadratureDomain,
-                    SkeletonNitscheCondition, StokesElement, SurrogateBoundary,
-                    classify_cells, cpp)
+                    SkeletonMultiplierCondition, SkeletonNitscheCondition,
+                    StokesElement, SurrogateBoundary, classify_cells, cpp)
 
 try:
     from iguana.petsc import LinearProblem, NonlinearProblem
@@ -534,6 +534,101 @@ def test_invalid_skeleton_nitsche_conditions():
 
     with pytest.raises(ValueError):
         LinearProblem(element, space, quadrature, source,
+                      cell_weights=fractions, conditions=[other],
+                      petsc_options_prefix='invalid_')
+
+    # Values set later are checked as at initialization
+    with pytest.raises(ValueError):
+        condition.values = [0.]
+
+
+@pytest.mark.petsc
+def test_invalid_skeleton_multiplier_conditions():
+    patch = rectangle()
+    cell_types, fractions = classify_cells(patch, square_sides())
+    fluid = StokesElement(1., 3.)
+    sides = square_sides()
+
+    def zero(x):
+        return np.zeros((len(x), 2))
+
+    # The velocity of a fluid alone, on a planar patch, along a boundary
+    with pytest.raises(TypeError):
+        SkeletonMultiplierCondition(PoissonElement().u, patch, cell_types,
+                                    sides, zero, 1.)
+
+    with pytest.raises(TypeError):
+        SkeletonMultiplierCondition(fluid.u, patch.isocurves()[0],
+                                    cell_types, sides, zero, 1.)
+
+    with pytest.raises(TypeError):
+        SkeletonMultiplierCondition(fluid.u, patch, cell_types, patch, zero,
+                                    1.)
+
+    with pytest.raises(ValueError):
+        SkeletonMultiplierCondition(fluid.u, patch, cell_types[:-1], sides,
+                                    zero, 1.)
+
+    with pytest.raises(ValueError):
+        SkeletonMultiplierCondition(fluid.u, patch, cell_types, sides, zero,
+                                    1., num_points=0)
+
+    with pytest.raises(ValueError):
+        SkeletonMultiplierCondition(fluid.u, patch, cell_types, sides,
+                                    lambda x: x[:, 0], 1.)
+
+    # The skew-symmetric method needs no penalty, but not a negative one
+    with pytest.raises(ValueError):
+        SkeletonMultiplierCondition(fluid.u, patch, cell_types, sides, zero,
+                                    0.)
+
+    with pytest.raises(ValueError):
+        SkeletonMultiplierCondition(fluid.u, patch, cell_types, sides, zero,
+                                    -1., symmetric=False)
+
+    with pytest.raises(ValueError):
+        SkeletonMultiplierCondition(fluid.u, patch, cell_types, sides, zero,
+                                    1., order=-1)
+
+    with pytest.raises(ValueError):
+        SkeletonMultiplierCondition(fluid.u, patch, cell_types, sides, zero,
+                                    1., degree=-1)
+
+    # The elements of each face, positive, for every face or one per face,
+    # and coarse enough for every multiplier to be read
+    for elements in (0, [1, 2], 400):
+        with pytest.raises(ValueError):
+            SkeletonMultiplierCondition(fluid.u, patch, cell_types, sides,
+                                        zero, 1., elements=elements)
+
+    # The map of the patch must be affine
+    bent = patch.control_points.copy()
+    bent[20, 1] += .1
+    curved = iguana.PlanarPatch(cpp.PlanarPatch(
+        basis=patch._cpp_object.basis, coefficients=bent))
+
+    with pytest.raises(ValueError):
+        SkeletonMultiplierCondition(fluid.u, curved, cell_types, sides, zero,
+                                    1.)
+
+    # A problem gives the condition the weights of the cells, which it
+    # needs, and its faces must lie on the patch of the space
+    space = FunctionSpace(patch, [CellType.inside] * len(cell_types),
+                          block_size=3)
+    quadrature = QuadratureDomain(patch)
+    quadrature.fill_gauss_legendre(CellType.inside, 3)
+    source = np.zeros((quadrature.num_points, 2))
+    condition = SkeletonMultiplierCondition(fluid.u, patch, cell_types,
+                                            sides, zero, 1.)
+    other = SkeletonMultiplierCondition(fluid.u, rectangle(), cell_types,
+                                        sides, zero, 1.)
+
+    with pytest.raises(ValueError):
+        LinearProblem(fluid, space, quadrature, source,
+                      conditions=[condition], petsc_options_prefix='invalid_')
+
+    with pytest.raises(ValueError):
+        LinearProblem(fluid, space, quadrature, source,
                       cell_weights=fractions, conditions=[other],
                       petsc_options_prefix='invalid_')
 
