@@ -12,7 +12,8 @@ from iguana import cpp
 from iguana.boundary import Boundary
 from iguana.condition import (Derivatives, LagrangeMultiplierCondition,
                               NeumannCondition, NitscheCondition,
-                              PenaltyCondition, SkeletonNitscheCondition)
+                              PenaltyCondition, SkeletonMultiplierCondition,
+                              SkeletonNitscheCondition)
 from iguana.element import ElasticityElement, PoissonElement, StokesElement
 from iguana.embedding import CellType, SurrogateBoundary, classify_cells
 from iguana.evaluation import flux_at_points, trace_at_points
@@ -32,7 +33,8 @@ __all__ = ['Boundary', 'CellType', 'CurvePatch', 'Derivatives',
            'MixedFunctionSpace', 'NeumannCondition', 'NitscheCondition',
            'PenaltyCondition', 'PlanarPatch', 'PoissonElement',
            'QuadratureBoundary', 'QuadratureDomain',
-           'SkeletonNitscheCondition', 'StokesElement', 'SurfacePatch',
-           'SurrogateBoundary', 'VolumeGhostPenalty', 'VolumePatch',
-           'classify_cells', 'create_box', 'create_curve', 'create_rectangle',
-           'create_surface', 'flux_at_points', 'trace_at_points']
+           'SkeletonMultiplierCondition', 'SkeletonNitscheCondition',
+           'StokesElement', 'SurfacePatch', 'SurrogateBoundary',
+           'VolumeGhostPenalty', 'VolumePatch', 'classify_cells',
+           'create_box', 'create_curve', 'create_rectangle', 'create_surface',
+           'flux_at_points', 'trace_at_points']
