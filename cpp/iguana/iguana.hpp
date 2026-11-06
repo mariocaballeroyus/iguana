@@ -59,6 +59,7 @@
 #include "condition/nitsche_condition.hpp"
 #include "condition/neumann_condition.hpp"
 #include "condition/skeleton_nitsche_condition.hpp"
+#include "condition/skeleton_multiplier_condition.hpp"
 #include "condition/skeleton_ghost_penalty.hpp"
 #include "condition/volume_ghost_penalty.hpp"
 #include "evaluation/field_evaluation.hpp"

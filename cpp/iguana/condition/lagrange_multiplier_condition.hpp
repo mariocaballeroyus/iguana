@@ -39,7 +39,12 @@ namespace iguana
  *          degrees of freedom of the cell, and the load of the multipliers,
  *          which the assembler adds with the transpose of the coupling. The
  *          multipliers follow the boundary as it moves, as they live on its
- *          faces rather than on the grid
+ *          faces rather than on the grid. The volume terms must leave their
+ *          boundary terms on the boundary itself, as on a boundary fitted
+ *          by the patch or with cut cells integrated over their part inside
+ *          it. In the Generalized Shifted Boundary Method they leave them
+ *          on the faces where the weights jump, which only
+ *          SkeletonMultiplierCondition balances
  *
  * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
  * @tparam n Dimension of the physical space of the patch
