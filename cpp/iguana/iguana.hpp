@@ -54,6 +54,7 @@
 #include "condition/condition.hpp"
 #include "condition/skeleton_condition.hpp"
 #include "condition/penalty_condition.hpp"
+#include "condition/lagrange_multiplier_condition.hpp"
 #include "condition/nitsche_condition.hpp"
 #include "condition/neumann_condition.hpp"
 #include "condition/skeleton_nitsche_condition.hpp"

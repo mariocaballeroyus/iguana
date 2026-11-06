@@ -5,10 +5,11 @@
 
 A condition prescribes data along a boundary through a trace of an element:
 a penalty imposes values on the trace, Nitsche's method imposes them
-consistently through the flux conjugate to the trace, and a Neumann
-condition loads the trace of the test functions with natural data, such as
-a flux. Nitsche's method on faces imposes them across the faces of the cells
-where their weights jump, as the generalized shifted boundary method does.
+consistently through the flux conjugate to the trace, Lagrange multipliers
+impose them exactly as unknowns of their own, and a Neumann condition loads
+the trace of the test functions with natural data, such as a flux.
+Nitsche's method on faces imposes them across the faces of the cells where
+their weights jump, as the generalized shifted boundary method does.
 A trace of several components, such as the velocity of `StokesElement`,
 takes as many values per point, each acting on its component. A condition
 holds its data and where it applies, and a problem assembles it with the
@@ -26,9 +27,9 @@ import numpy.typing as npt
 from iguana import cpp as _cpp
 from iguana.boundary import Boundary
 from iguana.element import ElasticityElement, PoissonElement, StokesElement
-from iguana.embedding import CellType
+from iguana.embedding import CellType, SurrogateBoundary
 from iguana.grid import HierarchicalGrid
-from iguana.patch import PlanarPatch
+from iguana.patch import PlanarPatch, _uniform_knots
 from iguana.quadrature import QuadratureBoundary
 
 # The traces conditions act on, of one value per point or of several
@@ -392,6 +393,227 @@ class NeumannCondition:
 
     def __repr__(self) -> str:
         return f'NeumannCondition({self._trace!r})'
+
+
+class LagrangeMultiplierCondition:
+    """Values imposed exactly on a trace of an element along a boundary
+    through Lagrange multipliers."""
+
+    def __init__(
+        self,
+        trace: PoissonElement.U | StokesElement.U | ElasticityElement.U,
+        quadrature: QuadratureBoundary,
+        values: (npt.ArrayLike
+                 | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
+        *,
+        normal: bool = False,
+        degree: int | None = None,
+        elements: int | Sequence[int] | None = None,
+    ) -> None:
+        """Initialize the condition imposing values on a trace.
+
+        The multipliers are unknowns of their own, which the problem solves
+        for with the field, as a saddle point. They are B-splines on each
+        face of the boundary, in the parameter of the face, with no
+        continuity across its ends. They must be coarser than the cells of
+        the patch for the problem to be stable. Solved, they are the flux
+        conjugate to the trace with its sign changed: −∂u/∂n for the field
+        u of `PoissonElement`, and minus the traction for the velocity of
+        `StokesElement` or the displacement of `ElasticityElement`. On a
+        boundary inside the domain of the field, they are the jump of the
+        flux across it.
+
+        With `normal`, one multiplier per point imposes the normal
+        component u · n of a vector trace alone, leaving its tangential
+        component free, as on a slip wall.
+
+        Args:
+            trace: The trace whose values are imposed, such as the field u
+                of `PoissonElement`, the velocity u of `StokesElement` or
+                the displacement u of `ElasticityElement`.
+            quadrature: The quadrature of the boundary the values are
+                imposed along, a boundary of curves, whose faces the
+                multipliers follow as it moves.
+            values: The values imposed at each point of the quadrature, in
+                its order, one per point or two for a vector, or a
+                function that takes their positions, of shape
+                `(num_points, 2)`, and returns them. With `normal`, their
+                normal component is imposed.
+            normal: Whether to impose the normal component of a vector
+                trace alone.
+            degree: Degree of the multipliers, nonnegative. Without it, one
+                less than the highest degree of the patch.
+            elements: Number of elements of the multipliers on each face,
+                positive, one for every face or one per face. Without it,
+                one per two cells of the patch the face crosses, and at
+                least one.
+
+        Raises:
+            TypeError: If the trace is not the trace of an element, or if
+                the quadrature is not a boundary quadrature.
+            ValueError: If the quadrature lies along a surrogate boundary,
+                whose faces are sides of cells, if `normal` is asked of a
+                trace of one value per point, if the values are not those
+                of the trace at each point, if the degree is negative, or
+                if the elements are not positive or not one per face.
+        """
+        if not isinstance(trace, _TRACES):
+            raise TypeError('the trace must be the trace of an element')
+
+        if not isinstance(quadrature, QuadratureBoundary):
+            raise TypeError('the quadrature must be a boundary quadrature')
+
+        # A shifted quadrature lies along a surrogate boundary too
+        if isinstance(quadrature.boundary, SurrogateBoundary):
+            raise ValueError('the quadrature must lie along a boundary of '
+                             'curves')
+
+        if normal and trace._shape == ():
+            raise ValueError('only a vector trace has a normal component')
+
+        self._trace = trace
+        self._quadrature = quadrature
+        self._normal = bool(normal)
+        self._values = _values(quadrature.positions, values, trace._shape)
+
+        # The normal component, which the form reads where it lies
+        self._normal_values = (self._normal_component() if self._normal
+                               else None)
+
+        faces = quadrature.boundary.faces
+
+        if degree is None:
+            degree = max(max(quadrature.patch.degrees) - 1, 0)
+
+        if degree < 0:
+            raise ValueError('the degree must be non-negative')
+
+        if elements is None:
+            elements = np.maximum(_cells_crossed(quadrature) // 2, 1)
+        elif np.ndim(elements) == 0:
+            elements = [elements] * len(faces)
+
+        elements = np.asarray(elements)
+
+        if elements.shape != (len(faces),) or np.any(elements < 1):
+            raise ValueError('the elements must be positive, one for every '
+                             'face or one per face')
+
+        self._degree = int(degree)
+        self._elements = tuple(int(count) for count in elements)
+
+        # A basis on the interval of the parameter of each face, which the
+        # knot vector of the face clamps
+        bases = [_cpp.BSpline(self._degree,
+                              face.knots[0] + (face.knots[-1] - face.knots[0])
+                              * _uniform_knots(self._degree, count))
+                 for face, count in zip(faces, self._elements)]
+
+        # One condition for the normal, or one per component
+        traces = trace._cpp_traces()
+
+        if self._normal:
+            self._cpp_conditions = [_cpp.LagrangeMultiplierCondition2d(
+                traces, bases, quadrature._cpp_object)]
+        else:
+            self._cpp_conditions = [
+                _cpp.LagrangeMultiplierCondition2d(component, bases,
+                                                   quadrature._cpp_object)
+                for component in traces]
+
+        # Coefficients of the multipliers of each compiled condition, which
+        # a solve sets
+        self._coefficients: list[npt.NDArray[np.float64]] | None = None
+
+    @property
+    def trace(
+        self,
+    ) -> PoissonElement.U | StokesElement.U | ElasticityElement.U:
+        """The trace whose values are imposed."""
+        return self._trace
+
+    @property
+    def quadrature(self) -> QuadratureBoundary:
+        """The quadrature of the boundary the values are imposed along."""
+        return self._quadrature
+
+    @property
+    def values(self) -> npt.NDArray[np.float64]:
+        """Values imposed at each point of the quadrature, of shape
+        `(num_points,)`, or `(num_points, 2)` for a vector, of which only
+        the normal component is imposed with `normal`. They are set as at
+        initialization, by their values or by a function of the positions
+        of the points."""
+        return _given(self._values, self._trace._shape)
+
+    @values.setter
+    def values(
+        self,
+        values: (npt.ArrayLike
+                 | Callable[[npt.NDArray[np.float64]], npt.ArrayLike]),
+    ) -> None:
+        self._values[...] = _values(self._quadrature.positions, values,
+                                    self._trace._shape)
+
+        if self._normal:
+            self._normal_values[...] = self._normal_component()
+
+    @property
+    def normal(self) -> bool:
+        """Whether the normal component of a vector trace alone is
+        imposed."""
+        return self._normal
+
+    @property
+    def degree(self) -> int:
+        """Degree of the multipliers."""
+        return self._degree
+
+    @property
+    def elements(self) -> tuple[int, ...]:
+        """Number of elements of the multipliers on each face."""
+        return self._elements
+
+    @property
+    def multipliers(self) -> npt.NDArray[np.float64] | None:
+        """Values of the multipliers at each point of the quadrature once a
+        problem has solved for them, or `None` before: of shape
+        `(num_points,)`, or `(num_points, 2)` for a vector without
+        `normal`."""
+        if self._coefficients is None:
+            return None
+
+        values = [condition.values(coefficients)
+                  for condition, coefficients in zip(self._cpp_conditions,
+                                                     self._coefficients)]
+
+        if len(values) == 1:
+            return values[0]
+
+        return np.column_stack(values)
+
+    def _normal_component(self) -> npt.NDArray[np.float64]:
+        """Normal component of the values at each point, along the normals
+        of the quadrature."""
+        return np.einsum('ij,ji->i', self._quadrature.normals, self._values)
+
+    def _add_to(self, form: _cpp.Form2d) -> None:
+        """Add the integrals of the compiled conditions to the compiled form
+        of a planar problem, which reads their values where they lie. Its
+        assembler must number their multipliers."""
+        if self._normal:
+            form.add_multiplier_integral(self._cpp_conditions[0],
+                                         self._normal_values)
+            return
+
+        for condition, values in zip(self._cpp_conditions, self._values):
+            form.add_multiplier_integral(condition, values)
+
+    def __repr__(self) -> str:
+        normal = ', normal=True' if self._normal else ''
+
+        return (f'LagrangeMultiplierCondition({self._trace!r}, '
+                f'degree={self._degree}{normal})')
 
 
 class Derivatives:
@@ -824,6 +1046,23 @@ def _add_along(
         form.add_boundary_integral(condition, quadrature._cpp_object,
                                    quadrature._projection, quadrature.order,
                                    values)
+
+
+def _cells_crossed(
+    quadrature: QuadratureBoundary,
+) -> npt.NDArray[np.int_]:
+    """Number of cells of the patch each face of the boundary of a
+    quadrature crosses, those holding its points, which lie inside the
+    cells."""
+    points = quadrature._cpp_object.points
+    breaks = [np.unique(knots) for knots in quadrature.patch.knots]
+    index = [np.searchsorted(values, points[:, direction])
+             for direction, values in enumerate(breaks)]
+    cells = index[0] + len(breaks[0]) * index[1]
+    faces = quadrature.faces
+
+    return np.array([len(np.unique(cells[faces == face]))
+                     for face in range(len(quadrature.boundary.faces))])
 
 
 def _values(

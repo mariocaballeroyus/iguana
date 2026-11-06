@@ -8,17 +8,18 @@ import pytest
 
 import iguana
 from iguana import (Boundary, CellType, ElasticityElement, FunctionSpace,
-                    GhostPenalty, HierarchicalGrid, NeumannCondition,
+                    GhostPenalty, HierarchicalGrid,
+                    LagrangeMultiplierCondition, NeumannCondition,
                     NitscheCondition, PenaltyCondition, PoissonElement,
                     QuadratureBoundary, QuadratureDomain,
                     SkeletonNitscheCondition, StokesElement, SurrogateBoundary,
                     classify_cells, cpp)
 
 try:
-    from iguana.petsc import LinearProblem
+    from iguana.petsc import LinearProblem, NonlinearProblem
 except ImportError:
     # A build without PETSc skips the tests that solve
-    LinearProblem = None
+    LinearProblem = NonlinearProblem = None
 
 # Sides of the rectangle, and of the square inside it, whose edges halve
 # the cells they cut, so that no cut is a sliver
@@ -199,6 +200,43 @@ def test_nitsche_condition_imposes_a_linear_field():
 
 
 @pytest.mark.petsc
+def test_lagrange_multipliers_impose_a_linear_field():
+    """On the square cut from the cells, Lagrange multipliers impose the
+    linear field exactly, their values its flux with the sign changed:
+    steady, over a time step from the field itself, and in one step of
+    Newton's method."""
+    patch, space, quadrature = square_problem()
+    boundary = square_boundary(patch)
+    element = PoissonElement()
+    source = np.zeros(quadrature.num_points)
+    exact = space.control_points @ GRADIENT
+
+    condition = LagrangeMultiplierCondition(element.u, boundary,
+                                            lambda x: x @ GRADIENT)
+    assert condition.multipliers is None
+
+    steady = LinearProblem(element, space, quadrature, source,
+                           conditions=[condition],
+                           petsc_options_prefix='multipliers_')
+    transient = LinearProblem(element, space, quadrature, source,
+                              conditions=[condition], step=.1,
+                              petsc_options_prefix='multipliers_')
+    transient.previous = exact
+    newton = NonlinearProblem(element, space, quadrature, source,
+                              conditions=[condition],
+                              petsc_options_prefix='multipliers_')
+
+    for problem in (steady, transient, newton):
+        u = problem.solve()
+
+        assert np.abs(u - exact).max() < 1e-10
+        assert np.abs(condition.multipliers
+                      + boundary.normals @ GRADIENT).max() < 1e-10
+
+    assert newton.solver.getIterationNumber() == 1
+
+
+@pytest.mark.petsc
 def test_skeleton_nitsche_condition_imposes_a_linear_field():
     """With the volume fractions of the square weighting the cells, of a
     space that keeps every function and a quadrature over every cell,
@@ -367,6 +405,34 @@ def test_invalid_arguments():
 
     assert np.array_equal(
         NitscheCondition(fluid.u, boundary, velocity, 1.).values, velocity)
+
+    with pytest.raises(TypeError):
+        LagrangeMultiplierCondition('u', boundary, values)
+
+    with pytest.raises(TypeError):
+        LagrangeMultiplierCondition(element.u, quadrature, values)
+
+    with pytest.raises(ValueError):
+        LagrangeMultiplierCondition(element.u, boundary, values[:-1])
+
+    # The faces of a surrogate boundary are the sides of its cells, which
+    # move with the boundary
+    with pytest.raises(ValueError):
+        LagrangeMultiplierCondition(element.u, shifted,
+                                    np.zeros(shifted.num_points))
+
+    # A field of one value per point has no normal component
+    with pytest.raises(ValueError):
+        LagrangeMultiplierCondition(element.u, boundary, values, normal=True)
+
+    with pytest.raises(ValueError):
+        LagrangeMultiplierCondition(element.u, boundary, values, degree=-1)
+
+    # The elements of each face, positive, for every face or one per face
+    for elements in (0, [1, 2]):
+        with pytest.raises(ValueError):
+            LagrangeMultiplierCondition(element.u, boundary, values,
+                                        elements=elements)
 
 
 @pytest.mark.petsc

@@ -25,8 +25,9 @@ import numpy.typing as npt
 from petsc4py import PETSc
 
 from iguana import cpp as _cpp
-from iguana.condition import (NeumannCondition, NitscheCondition,
-                              PenaltyCondition, SkeletonNitscheCondition)
+from iguana.condition import (LagrangeMultiplierCondition, NeumannCondition,
+                              NitscheCondition, PenaltyCondition,
+                              SkeletonNitscheCondition)
 from iguana.element import ElasticityElement, PoissonElement, StokesElement
 from iguana.fspace import FunctionSpace, MixedFunctionSpace
 from iguana.patch import PlanarPatch
@@ -48,6 +49,7 @@ class _Problem:
         *,
         cell_weights: npt.ArrayLike | None,
         conditions: Sequence[PenaltyCondition | NitscheCondition
+                             | LagrangeMultiplierCondition
                              | NeumannCondition | SkeletonNitscheCondition],
         stabilizations: Sequence[GhostPenalty | VolumeGhostPenalty],
         pressure_reference: npt.ArrayLike | None,
@@ -129,18 +131,30 @@ class _Problem:
         for stabilization in stabilizations:
             stabilization._add_to(self._form)
 
-        # Terms across faces couple the cells on either side
+        # Terms across faces couple the cells on either side, and the
+        # multipliers follow the degrees of freedom of the space, condition
+        # after condition, each compiled one in turn
         couple_faces = on_faces or bool(stabilizations)
+        self._multipliers = [
+            condition for condition in conditions
+            if isinstance(condition, LagrangeMultiplierCondition)]
+        compiled = [compiled for condition in self._multipliers
+                    for compiled in condition._cpp_conditions]
         self._assembler = _cpp.Assembler2d(space._cpp_object,
-                                           patch._cpp_object, couple_faces)
+                                           patch._cpp_object, couple_faces,
+                                           compiled)
         self._tangent = self._assembler.tangent
         self._mass = self._assembler.mass
         self._residual = self._assembler.residual
 
         # The solution has a coefficient per degree of freedom and
-        # component, field after field on a mixed space
+        # component, field after field on a mixed space, and then one per
+        # multiplier
         self._space = space
         self._x = self._residual.duplicate()
+        self._num_entries = (self._x.getSize()
+                             - sum(condition.num_multipliers
+                                   for condition in compiled))
 
     @property
     def source(self) -> npt.NDArray[np.float64]:
@@ -169,6 +183,25 @@ class _Problem:
         # In place, where the form reads it
         self._source[...] = source.reshape(len(self._source), -1)
 
+    def _solution(
+        self,
+        entries: npt.NDArray[np.float64],
+    ) -> npt.NDArray[np.float64] | tuple[npt.NDArray[np.float64], ...]:
+        """Coefficients of the space from the entries of a solution, whose
+        multipliers each condition imposing values through them takes."""
+        offset = self._num_entries
+
+        for condition in self._multipliers:
+            condition._coefficients = []
+
+            for compiled in condition._cpp_conditions:
+                count = compiled.num_multipliers
+                condition._coefficients.append(
+                    entries[offset:offset + count].copy())
+                offset += count
+
+        return self._space._coefficients(entries[:self._num_entries])
+
 
 class LinearProblem(_Problem):
     """Linear problem of an element on a space, assembled into PETSc and
@@ -185,6 +218,7 @@ class LinearProblem(_Problem):
         petsc_options_prefix: str,
         cell_weights: npt.ArrayLike | None = None,
         conditions: Sequence[PenaltyCondition | NitscheCondition
+                             | LagrangeMultiplierCondition
                              | NeumannCondition
                              | SkeletonNitscheCondition] = (),
         stabilizations: Sequence[GhostPenalty | VolumeGhostPenalty] = (),
@@ -201,6 +235,11 @@ class LinearProblem(_Problem):
         problem instead, from the previous solution u_p: K becomes
         K + M / step and F becomes F + M u_p / step, with the mass M of the
         element weighted by the cells like its other terms.
+
+        Lagrange multiplier conditions add their multipliers λ to the
+        unknowns, a saddle point [K Bᵀ; B 0] [u; λ] = [F; G] that the
+        default factorization solves. A time step leaves their equations
+        B u = G as they are, as the multipliers carry no mass.
 
         With the velocity of a fluid imposed on the whole boundary, the
         pressure is only determined up to a constant, which a pressure
@@ -232,10 +271,10 @@ class LinearProblem(_Problem):
                 method. Cells of weight zero add nothing. Without them, every
                 cell weighs one.
             conditions: Conditions on traces of the element along
-                boundaries in the patch of the space, penalties or Nitsche
-                conditions imposing values, or Neumann conditions loading
-                fluxes, or Nitsche conditions on the faces where the cell
-                weights jump, which need them.
+                boundaries in the patch of the space, penalties, Nitsche or
+                Lagrange multiplier conditions imposing values, or Neumann
+                conditions loading fluxes, or Nitsche conditions on the
+                faces where the cell weights jump, which need them.
             stabilizations: Ghost penalties on traces of the element across
                 the faces of the cells of the patch of the space, which need
                 an affine map. They extend the field beyond the physical
@@ -256,9 +295,9 @@ class LinearProblem(_Problem):
                 elasticity element, if the space is neither a
                 function space nor a mixed space on a planar patch, if the
                 quadrature is not a domain quadrature, if a condition is
-                neither a penalty, a Nitsche, a Neumann nor a skeleton
-                Nitsche condition, or if a stabilization is not a ghost
-                penalty.
+                neither a penalty, a Nitsche, a Lagrange multiplier, a
+                Neumann nor a skeleton Nitsche condition, or if a
+                stabilization is not a ghost penalty.
             ValueError: If the space does not give each unknown of the
                 element a component of one field or a field of its own, or
                 is a mixed space for an elasticity element, if
@@ -345,7 +384,9 @@ class LinearProblem(_Problem):
         if self._previous is None:
             return None
 
-        return self._space._coefficients(self._previous.getArray())
+        entries = self._previous.getArray()
+
+        return self._space._coefficients(entries[:self._num_entries])
 
     @previous.setter
     def previous(
@@ -355,7 +396,10 @@ class LinearProblem(_Problem):
         if self._previous is None:
             raise ValueError('a steady problem has no previous solution')
 
-        self._previous.setArray(self._space._entries(previous))
+        # The multipliers carry no mass, so theirs stay zero
+        entries = np.zeros(self._previous.getSize())
+        entries[:self._num_entries] = self._space._entries(previous)
+        self._previous.setArray(entries)
 
     def solve(
         self,
@@ -367,7 +411,8 @@ class LinearProblem(_Problem):
             `(num_dofs,)`, or `(num_dofs, block_size)` for a space of
             several components, the velocity and the pressure of a Stokes
             element in that order. On a mixed space, a tuple of those of
-            each field, in its order.
+            each field, in its order. The multipliers of the conditions
+            imposing values through them are read from the conditions.
 
         Raises:
             ValueError: If a `GhostPenalty` is given on a patch whose map is
@@ -407,7 +452,7 @@ class LinearProblem(_Problem):
         if self._solver.getConvergedReason() < 0:
             raise RuntimeError('the linear solver did not converge')
 
-        return self._space._coefficients(self._x.getArray())
+        return self._solution(self._x.getArray())
 
 
 class NonlinearProblem(_Problem):
@@ -425,6 +470,7 @@ class NonlinearProblem(_Problem):
         petsc_options_prefix: str,
         cell_weights: npt.ArrayLike | None = None,
         conditions: Sequence[PenaltyCondition | NitscheCondition
+                             | LagrangeMultiplierCondition
                              | NeumannCondition
                              | SkeletonNitscheCondition] = (),
         stabilizations: Sequence[GhostPenalty | VolumeGhostPenalty] = (),
@@ -441,8 +487,10 @@ class NonlinearProblem(_Problem):
         step solves.
 
         A solid is solved under large displacements, and its values imposed
-        by penalties, as the traction of a Nitsche condition is that of small
-        displacements.
+        by penalties or Lagrange multipliers, as the traction of a Nitsche
+        condition is that of small displacements. Multipliers impose them on
+        the reference configuration, where they are the traction of the
+        first Piola-Kirchhoff stress with its sign changed.
 
         A pressure reference fixes the constant pressure as for a linear
         problem: the pinned pressure stays zero, its row and column of the
@@ -485,9 +533,9 @@ class NonlinearProblem(_Problem):
                 elasticity element, if the space is neither a
                 function space nor a mixed space on a planar patch, if the
                 quadrature is not a domain quadrature, if a condition is
-                neither a penalty, a Nitsche, a Neumann nor a skeleton
-                Nitsche condition, or if a stabilization is not a ghost
-                penalty.
+                neither a penalty, a Nitsche, a Lagrange multiplier, a
+                Neumann nor a skeleton Nitsche condition, or if a
+                stabilization is not a ghost penalty.
             ValueError: If the space does not give each unknown of the
                 element a component of one field or a field of its own, or
                 is a mixed space for an elasticity element, if a
@@ -548,15 +596,20 @@ class NonlinearProblem(_Problem):
         """Coefficients of each degree of freedom from which the next solve
         starts, shaped as the solution: zero at first, then the last
         solution, or the last iterate of a solve that did not converge. The
-        pinned pressure starts from zero whatever its guess."""
-        return self._space._coefficients(self._x.getArray())
+        pinned pressure starts from zero whatever its guess, and the
+        multipliers from where the last solve left them."""
+        entries = self._x.getArray()
+
+        return self._space._coefficients(entries[:self._num_entries])
 
     @guess.setter
     def guess(
         self,
         guess: npt.ArrayLike | Sequence[npt.ArrayLike],
     ) -> None:
-        self._x.setArray(self._space._entries(guess))
+        entries = self._x.getArray().copy()
+        entries[:self._num_entries] = self._space._entries(guess)
+        self._x.setArray(entries)
 
     def solve(
         self,
@@ -565,7 +618,8 @@ class NonlinearProblem(_Problem):
 
         Returns:
             The coefficients of each degree of freedom, shaped as those of
-            a linear problem.
+            a linear problem, the multipliers read from the conditions as
+            there.
 
         Raises:
             ValueError: If a `GhostPenalty` is given on a patch whose map is
@@ -587,13 +641,14 @@ class NonlinearProblem(_Problem):
         if self._solver.getConvergedReason() < 0:
             raise RuntimeError('the nonlinear solver did not converge')
 
-        return self._space._coefficients(self._x.getArray())
+        return self._solution(self._x.getArray())
 
 
 def _check_terms(
     element: PoissonElement | StokesElement | ElasticityElement,
     patch: PlanarPatch,
-    conditions: list[PenaltyCondition | NitscheCondition | NeumannCondition
+    conditions: list[PenaltyCondition | NitscheCondition
+                     | LagrangeMultiplierCondition | NeumannCondition
                      | SkeletonNitscheCondition],
     stabilizations: list[GhostPenalty | VolumeGhostPenalty],
 ) -> None:
@@ -606,10 +661,12 @@ def _check_terms(
 
     for condition in conditions:
         if not isinstance(condition, (PenaltyCondition, NitscheCondition,
+                                      LagrangeMultiplierCondition,
                                       NeumannCondition,
                                       SkeletonNitscheCondition)):
             raise TypeError('the conditions must be penalty, Nitsche, '
-                            'Neumann or skeleton Nitsche conditions')
+                            'Lagrange multiplier, Neumann or skeleton '
+                            'Nitsche conditions')
 
         if not isinstance(condition.trace, type(element).U):
             raise ValueError('the trace of a condition must be one of the '

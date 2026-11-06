@@ -229,6 +229,54 @@ TEST_CASE("Points of a circle lie on it, with normals pointing away from "
                  WithinAbs(4. * std::numbers::pi, 1e-12));
 }
 
+TEST_CASE("Each point keeps its parameter on its face",
+          "[quadrature_boundary]")
+{
+    // On a segment from one vertex to the next, the parameter places the
+    // point between them
+    const std::array<Eigen::RowVector2d, 3> vertices{
+        Eigen::RowVector2d(-2.5, -2.2), Eigen::RowVector2d(2.6, -1.4),
+        Eigen::RowVector2d(-.2, 2.5)};
+
+    std::vector<Face> faces;
+
+    for (std::size_t side = 0; side < 3; ++side)
+        faces.push_back(segment(vertices[side], vertices[(side + 1) % 3]));
+
+    const Embedded embedded(patch_of({-3., -1., .5, 3.}, {-3., -1.5, 1., 3.}),
+                            Boundary<double, 2>(faces, {1, 1, 1}));
+    const Quadrature on_curves(embedded, Gauss(3));
+
+    for (int point = 0; point < on_curves.num_points(); ++point) {
+        const std::size_t side =
+            static_cast<std::size_t>(on_curves.faces()(point));
+        const Eigen::RowVector2d along =
+            vertices[(side + 1) % 3] - vertices[side];
+
+        REQUIRE((on_curves.points().row(point) - vertices[side]
+                 - on_curves.parameters()(point) * along)
+                    .norm()
+                < 1e-14);
+    }
+
+    // On a face of a surrogate boundary, it is the coordinate along it,
+    // across its normal
+    const TensorGrid<double, 2> grid(
+        {KnotVector<double>(1, {0., 0., .4, 1., 1.}),
+         KnotVector<double>(1, {0., 0., .3, 1., 1.})});
+    const Surrogate surrogate(grid, iguana::CellClassification<double, 2>(
+                                        std::vector<CellType>(
+                                            4, CellType::inside)));
+    const Quadrature on_cells(surrogate, Gauss(2));
+
+    for (int point = 0; point < on_cells.num_points(); ++point) {
+        const Eigen::Index along = on_cells.normals()(point, 0) == 0. ? 0 : 1;
+
+        REQUIRE(on_cells.parameters()(point)
+                == on_cells.points()(point, along));
+    }
+}
+
 TEST_CASE("A surrogate boundary carries a rule on each face of its cells",
           "[quadrature_boundary]")
 {
