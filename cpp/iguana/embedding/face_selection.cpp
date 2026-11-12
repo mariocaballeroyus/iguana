@@ -32,8 +32,10 @@ std::vector<int> ghost_faces(const TensorGrid<T, d>& grid,
         const bool outside = before == CellType::outside
                              && after == CellType::outside;
 
-        // A face of either kind, unless only the other one is selected
-        if ((cut && faces != GhostFaces::outside)
+        // Any face for a global penalty, else a face of either kind, unless
+        // only the other one is selected
+        if (faces == GhostFaces::global
+            || (cut && faces != GhostFaces::outside)
             || (outside && faces != GhostFaces::cut))
             selected.push_back(face);
     }

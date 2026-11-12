@@ -21,7 +21,9 @@ namespace iguana
  *
  * The faces of the cut cells and those between two outside cells partition
  * the faces of a ghost penalty, so that two penalties of different
- * strengths may act on each
+ * strengths may act on each. A global ghost penalty acts on every interior
+ * face instead, those between inside cells too, the same faces wherever
+ * the boundary lies
  */
 enum class GhostFaces
 {
@@ -32,7 +34,10 @@ enum class GhostFaces
     cut,
 
     /// @brief The faces between two outside cells
-    outside
+    outside,
+
+    /// @brief Every interior face of the grid
+    global
 };
 
 /**
@@ -42,7 +47,8 @@ enum class GhostFaces
  * @details Used in the Generalized Shifted Boundary Method to penalize the
  *          derivative jumps on faces with mean volume fraction below one and
  *          volume fraction jump below one in magnitude: the faces of the cut
- *          cells and those between two outside cells, or either kind alone
+ *          cells and those between two outside cells, or either kind alone.
+ *          A global ghost penalty acts on every interior face instead
  *
  * @tparam T Floating-point type
  * @tparam d Number of parametric directions
