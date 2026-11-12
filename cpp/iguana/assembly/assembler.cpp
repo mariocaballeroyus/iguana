@@ -247,6 +247,30 @@ void differentiate_values(ElementValues<Basis, n>& values,
 }
 
 /**
+ * @brief Replaces the values at the points of one face by a derivative of
+ *        orders per field and direction, in physical space
+ *
+ * @throws std::invalid_argument If the patch is not a B-spline one, whose
+ *         basis alone provides the derivatives
+ */
+template<typename Basis, std::size_t n>
+void differentiate_values(
+    ElementValues<Basis, n>& values,
+    const std::vector<std::array<int, Basis::dimension>>& orders)
+{
+    using Scalar = typename Basis::Scalar;
+    constexpr std::size_t dim = Basis::dimension;
+
+    if constexpr (std::same_as<Basis, TensorBSpline<Scalar, dim>>) {
+        values.differentiate(orders);
+    }
+    else if constexpr (std::same_as<Basis, TensorNURBS<Scalar, dim>>) {
+        throw std::invalid_argument("Assembler: "
+                                    "a ghost penalty needs a B-spline patch");
+    }
+}
+
+/**
  * @brief Whether every interior knot of a knot vector is simple, so that
  *        its splines have maximal continuity and only their derivatives of
  *        the order of the degree jump between its elements
@@ -845,6 +869,71 @@ void visit_ghost_faces(
 
 /**
  * @brief Visits the faces of a skeleton quadrature with the values of both
+ *        of their cells derived as a mixed ghost penalty reads them, and
+ *        the face weights
+ *
+ * @param pressure Basis of the pressure, whose degree across each face is
+ *        the order of the derivatives
+ * @param visit Called with the cells before and after the face, the values
+ *        of each, the weights and the degree k of the pressure across it
+ */
+template<typename Basis, std::size_t n, typename Visit>
+void visit_mixed_ghost_faces(
+    const Patch<Basis, n>& patch, const MixedFunctionSpace<Basis>& space,
+    ValueFlags flags,
+    const QuadratureSkeleton<typename Basis::Scalar, Basis::dimension>&
+        quadrature,
+    const Basis& pressure, Visit&& visit)
+{
+    using Scalar = typename Basis::Scalar;
+    constexpr std::size_t dim = Basis::dimension;
+
+    ElementValues<Basis, n> before(patch, space.bases(), flags);
+    ElementValues<Basis, n> after(patch, space.bases(), flags);
+    Eigen::MatrixX<Scalar> points;
+    Eigen::MatrixX<Scalar> normals;
+    Eigen::VectorX<Scalar> measures;
+    Eigen::VectorX<Scalar> weights;
+    std::vector<std::array<int, dim>> orders(n + 1);
+
+    for (int face = 0; face < quadrature.num_faces(); ++face) {
+        const int first = quadrature.offsets()(face);
+        const int count = quadrature.offsets()(face + 1) - first;
+        const int cell_before = quadrature.cells()(face, 0);
+        const int cell_after = quadrature.cells()(face, 1);
+        const std::size_t direction =
+            static_cast<std::size_t>(quadrature.directions()(face));
+        const int degree = pressure.grid().knots(direction).degree();
+
+        // ∂ₙᵏ ∂_c u_c of each component c, its term of ∂ₙᵏ div u, then ∂ₙᵏ p
+        for (std::size_t field = 0; field <= n; ++field) {
+            orders[field].fill(0);
+            orders[field][direction] = degree;
+
+            if (field < n)
+                ++orders[field][field];
+        }
+
+        points = quadrature.points().middleRows(first, count);
+        before.reinit(cell_before, points);
+        after.reinit(cell_after, points);
+        differentiate_values(before, orders);
+        differentiate_values(after, orders);
+
+        // Face weights, the quadrature weights times the measure of the face
+        // through the map, which is continuous across it
+        normals = quadrature.normals().middleRows(first, count);
+        Patch<Basis, n>::boundary_measure_on_element(before.tangents(),
+                                                     normals, measures);
+        weights = quadrature.weights().segment(first, count);
+        weights = weights.cwiseProduct(measures);
+
+        visit(cell_before, cell_after, before, after, weights, degree);
+    }
+}
+
+/**
+ * @brief Visits the faces of a skeleton quadrature with the values of both
  *        of their cells at the points a domain quadrature holds on each,
  *        every cell with its own polynomial, extended into the other, and
  *        the volume weights of each cell
@@ -1039,6 +1128,56 @@ void check_volume_ghost(bool couple_faces,
         throw std::invalid_argument("Assembler: "
                                     "a ghost penalty must act on a field of "
                                     "the space");
+}
+
+/**
+ * @brief Basis of the pressure of a mixed ghost penalty, checked to suit the
+ *        assembly
+ *
+ * @throws std::invalid_argument As Assembler::assemble_tangent() documents
+ *         for a mixed ghost penalty
+ */
+template<typename Basis, std::size_t n>
+const Basis& mixed_ghost_basis(bool couple_faces,
+                               const Patch<Basis, n>& patch,
+                               const MixedFunctionSpace<Basis>& space)
+{
+    // Without the faces coupled, the pattern would grow with each new face
+    if (!couple_faces)
+        throw std::invalid_argument("Assembler: "
+                                    "a ghost penalty needs the faces coupled");
+
+    // On a diagonal map the derivatives along the directions add up into
+    // the physical divergence
+    const Eigen::Matrix<typename Basis::Scalar, n, Basis::dimension>&
+        linear = patch.linear_part();
+    const bool diagonal = linear.isDiagonal(0);
+
+    if (!patch.is_affine() || !diagonal)
+        throw std::invalid_argument("Assembler: "
+                                    "a mixed ghost penalty needs an affine "
+                                    "patch with a diagonal map");
+
+    if (space.num_fields() != n + 1)
+        throw std::invalid_argument("Assembler: "
+                                    "a mixed ghost penalty needs the "
+                                    "components of the velocity and the "
+                                    "pressure as the fields of the space");
+
+    // A repeated knot would let lower derivatives jump unpenalized
+    for (std::size_t field = 0; field <= n; ++field) {
+        const Basis& basis = space.field(field).basis();
+
+        for (std::size_t direction = 0; direction < Basis::dimension;
+             ++direction) {
+            if (!simple_interior_knots(basis.grid().knots(direction)))
+                throw std::invalid_argument("Assembler: "
+                                            "a ghost penalty needs simple "
+                                            "interior knots");
+        }
+    }
+
+    return space.field(n).basis();
 }
 
 /// @brief Whether a list of conditions holds one twice
@@ -1456,6 +1595,70 @@ void Assembler<Basis, n>::assemble_residual(
 
     visit_ghost_faces(
         patch_, space_, penalty.flags(), quadrature, basis,
+        [&](int cell_before, int cell_after, const auto& before,
+            const auto& after, const auto& weights, int degree) {
+            face_dofs(cell_before, cell_after, dofs, positions);
+            entries.gather(dofs, positions, face_coefficients);
+            penalty.local_residual(before, after, weights, degree,
+                                   face_coefficients, local);
+
+            fold_face(local, positions, std::ssize(dofs), folded);
+            add_to_residual(dofs, folded);
+        });
+
+    finalize(residual_);
+}
+
+template<typename Basis, std::size_t n>
+void Assembler<Basis, n>::assemble_tangent(
+    const SkeletonMixedGhostPenalty<Basis, n>& penalty,
+    const QuadratureSkeleton<Scalar, dim>& quadrature, Vec coefficients)
+    requires (dim == 2)
+{
+    const Basis& pressure = mixed_ghost_basis(couple_faces_, patch_, space_);
+    check_coefficients(coefficients);
+
+    const Entries entries(coefficients);
+    Eigen::VectorX<Scalar> face_coefficients;
+    Eigen::MatrixX<Scalar> local;
+    Eigen::MatrixX<Scalar> folded;
+    std::vector<int> dofs;
+    std::vector<int> positions;
+
+    visit_mixed_ghost_faces(
+        patch_, space_, penalty.flags(), quadrature, pressure,
+        [&](int cell_before, int cell_after, const auto& before,
+            const auto& after, const auto& weights, int degree) {
+            face_dofs(cell_before, cell_after, dofs, positions);
+            entries.gather(dofs, positions, face_coefficients);
+            penalty.local_tangent(before, after, weights, degree,
+                                  face_coefficients, local);
+
+            fold_face(local, positions, std::ssize(dofs), folded);
+            add_to_matrix(tangent_, dofs, folded);
+        });
+
+    finalize(tangent_);
+}
+
+template<typename Basis, std::size_t n>
+void Assembler<Basis, n>::assemble_residual(
+    const SkeletonMixedGhostPenalty<Basis, n>& penalty,
+    const QuadratureSkeleton<Scalar, dim>& quadrature, Vec coefficients)
+    requires (dim == 2)
+{
+    const Basis& pressure = mixed_ghost_basis(couple_faces_, patch_, space_);
+    check_coefficients(coefficients);
+
+    const Entries entries(coefficients);
+    Eigen::VectorX<Scalar> face_coefficients;
+    Eigen::VectorX<Scalar> local;
+    Eigen::VectorX<Scalar> folded;
+    std::vector<int> dofs;
+    std::vector<int> positions;
+
+    visit_mixed_ghost_faces(
+        patch_, space_, penalty.flags(), quadrature, pressure,
         [&](int cell_before, int cell_after, const auto& before,
             const auto& after, const auto& weights, int degree) {
             face_dofs(cell_before, cell_after, dofs, positions);

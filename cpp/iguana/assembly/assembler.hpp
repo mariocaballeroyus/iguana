@@ -19,6 +19,7 @@
 #include "iguana/condition/lagrange_multiplier_condition.hpp"
 #include "iguana/condition/skeleton_condition.hpp"
 #include "iguana/condition/skeleton_ghost_penalty.hpp"
+#include "iguana/condition/skeleton_mixed_ghost_penalty.hpp"
 #include "iguana/condition/skeleton_multiplier_condition.hpp"
 #include "iguana/condition/volume_ghost_penalty.hpp"
 #include "iguana/element/element.hpp"
@@ -543,6 +544,54 @@ public:
      * @pre As for the tangent of a ghost penalty
      */
     void assemble_residual(const SkeletonGhostPenalty<Basis, n>& penalty,
+                           const QuadratureSkeleton<Scalar, dim>& quadrature,
+                           Vec coefficients) requires (dim == 2);
+
+    /**
+     * @brief Adds the tangent of a mixed ghost penalty over the points of a
+     *        skeleton quadrature, at coefficients
+     *
+     * On each face, the values of the cells before and after it, each with
+     * its own polynomial, are differentiated at the same points: each
+     * component of the velocity once along its own direction and k times
+     * across the face, the pressure k times across it, with k the degree of
+     * the pressure there. The patch maps the weights of the quadrature into
+     * face weights, and the local tangent couples the degrees of freedom of
+     * both cells
+     *
+     * @param penalty Mixed ghost penalty whose local tangent is added
+     * @param quadrature Quadrature over interior faces of the grid of the
+     *        basis
+     * @param coefficients Coefficients of the unknowns of the system, one each
+     *
+     * @throws std::invalid_argument If the faces are not coupled, if the map
+     *         of the patch is not affine with a diagonal linear part, if the
+     *         patch is not a B-spline one, if the space does not have the n
+     *         components of the velocity and the pressure as its fields, if
+     *         a knot vector of a field repeats an interior knot, or if
+     *         @p coefficients does not have one entry per unknown
+     *
+     * @pre As for the tangent of a ghost penalty
+     */
+    void assemble_tangent(const SkeletonMixedGhostPenalty<Basis, n>& penalty,
+                          const QuadratureSkeleton<Scalar, dim>& quadrature,
+                          Vec coefficients) requires (dim == 2);
+
+    /**
+     * @brief Adds the residual of a mixed ghost penalty over the points of a
+     *        skeleton quadrature, at coefficients
+     *
+     * @param penalty Mixed ghost penalty whose local residual is added
+     * @param quadrature Quadrature over interior faces of the grid of the
+     *        basis
+     * @param coefficients Coefficients of the unknowns of the system, one each
+     *
+     * @throws std::invalid_argument As for the tangent of a mixed ghost
+     *         penalty
+     *
+     * @pre As for the tangent of a ghost penalty
+     */
+    void assemble_residual(const SkeletonMixedGhostPenalty<Basis, n>& penalty,
                            const QuadratureSkeleton<Scalar, dim>& quadrature,
                            Vec coefficients) requires (dim == 2);
 

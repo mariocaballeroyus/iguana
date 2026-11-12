@@ -18,6 +18,7 @@
 #include "iguana/condition/lagrange_multiplier_condition.hpp"
 #include "iguana/condition/skeleton_condition.hpp"
 #include "iguana/condition/skeleton_ghost_penalty.hpp"
+#include "iguana/condition/skeleton_mixed_ghost_penalty.hpp"
 #include "iguana/condition/skeleton_multiplier_condition.hpp"
 #include "iguana/condition/volume_ghost_penalty.hpp"
 #include "iguana/element/element.hpp"
@@ -338,6 +339,34 @@ public:
      */
     void add_skeleton_integral(
         const SkeletonGhostPenalty<Basis, n>& penalty,
+        const QuadratureSkeleton<Scalar, dim>& quadrature) requires (dim == 2)
+    {
+        tangents_.push_back([&penalty, &quadrature](
+                                Assembler<Basis, n>& assembler,
+                                Vec coefficients) {
+            assembler.assemble_tangent(penalty, quadrature, coefficients);
+        });
+        residuals_.push_back([&penalty, &quadrature](
+                                 Assembler<Basis, n>& assembler,
+                                 Vec coefficients) {
+            assembler.assemble_residual(penalty, quadrature, coefficients);
+        });
+    }
+
+    /**
+     * @brief Adds the tangent and residual of a mixed ghost penalty across
+     *        the faces of a skeleton quadrature
+     *
+     * @param penalty Mixed ghost penalty whose local tangent and residual
+     *        are added
+     * @param quadrature Quadrature over interior faces of the grid of the
+     *        basis
+     *
+     * @pre @p penalty and @p quadrature outlive the form. The assembly checks
+     *      them as Assembler::assemble_tangent() does
+     */
+    void add_skeleton_integral(
+        const SkeletonMixedGhostPenalty<Basis, n>& penalty,
         const QuadratureSkeleton<Scalar, dim>& quadrature) requires (dim == 2)
     {
         tangents_.push_back([&penalty, &quadrature](
