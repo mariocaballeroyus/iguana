@@ -6,6 +6,8 @@
 #include <iguana/iguana.hpp>
 
 #include <array>
+#include <cstddef>
+#include <numeric>
 #include <stdexcept>
 #include <vector>
 
@@ -71,6 +73,15 @@ TEST_CASE("The ghost faces surround the cut and outside cells",
                                           iguana::GhostFaces::outside))
             == std::vector<std::array<int, 3>>{
                 {0, 6, 7}, {0, 7, 8}, {1, 2, 5}, {1, 5, 8}});
+
+    // Every interior face for a global penalty, those between inside cells
+    // and between an inside and an outside cell too
+    std::vector<int> every(static_cast<std::size_t>(grid.num_faces()));
+    std::iota(every.begin(), every.end(), 0);
+
+    REQUIRE(iguana::ghost_faces(grid, classification,
+                                iguana::GhostFaces::global)
+            == every);
 
     // One cell type for nine elements
     const CellClassification<double, 2> one_cell({CellType::inside});
