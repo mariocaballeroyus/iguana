@@ -23,16 +23,17 @@ from iguana.patch import (CurvePatch, PlanarPatch, SurfacePatch, VolumePatch,
                           create_box, create_curve, create_rectangle,
                           create_surface)
 from iguana.quadrature import QuadratureBoundary, QuadratureDomain
-from iguana.stabilization import GhostPenalty, VolumeGhostPenalty
+from iguana.stabilization import (GhostPenalty, MixedGhostPenalty,
+                                  VolumeGhostPenalty)
 
 __version__ = cpp.__version__
 
 __all__ = ['Boundary', 'CellType', 'CurvePatch', 'Derivatives',
            'ElasticityElement', 'FunctionSpace', 'GhostPenalty',
            'HierarchicalGrid', 'LagrangeMultiplierCondition',
-           'MixedFunctionSpace', 'NeumannCondition', 'NitscheCondition',
-           'PenaltyCondition', 'PlanarPatch', 'PoissonElement',
-           'QuadratureBoundary', 'QuadratureDomain',
+           'MixedFunctionSpace', 'MixedGhostPenalty', 'NeumannCondition',
+           'NitscheCondition', 'PenaltyCondition', 'PlanarPatch',
+           'PoissonElement', 'QuadratureBoundary', 'QuadratureDomain',
            'SkeletonMultiplierCondition', 'SkeletonNitscheCondition',
            'StokesElement', 'SurfacePatch', 'SurrogateBoundary',
            'VolumeGhostPenalty', 'VolumePatch', 'classify_cells',

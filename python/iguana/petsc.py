@@ -33,7 +33,8 @@ from iguana.element import ElasticityElement, PoissonElement, StokesElement
 from iguana.fspace import FunctionSpace, MixedFunctionSpace
 from iguana.patch import PlanarPatch
 from iguana.quadrature import QuadratureDomain
-from iguana.stabilization import GhostPenalty, VolumeGhostPenalty
+from iguana.stabilization import (GhostPenalty, MixedGhostPenalty,
+                                  VolumeGhostPenalty)
 
 # The conditions across the faces where the cell weights jump, which take
 # the weights and couple the cells on either side
@@ -57,7 +58,8 @@ class _Problem:
                              | LagrangeMultiplierCondition
                              | NeumannCondition | SkeletonNitscheCondition
                              | SkeletonMultiplierCondition],
-        stabilizations: Sequence[GhostPenalty | VolumeGhostPenalty],
+        stabilizations: Sequence[GhostPenalty | VolumeGhostPenalty
+                                 | MixedGhostPenalty],
         pressure_reference: npt.ArrayLike | None,
     ) -> None:
         """Initialize the form and the assembler of the problem, checking
@@ -233,7 +235,8 @@ class LinearProblem(_Problem):
                              | NeumannCondition
                              | SkeletonNitscheCondition
                              | SkeletonMultiplierCondition] = (),
-        stabilizations: Sequence[GhostPenalty | VolumeGhostPenalty] = (),
+        stabilizations: Sequence[GhostPenalty | VolumeGhostPenalty
+                                 | MixedGhostPenalty] = (),
         step: float | None = None,
         pressure_reference: npt.ArrayLike | None = None,
         petsc_options: dict[str, object] | None = None,
@@ -293,7 +296,8 @@ class LinearProblem(_Problem):
                 an affine map. They extend the field beyond the physical
                 domain, as a space keeping the functions of every cell
                 needs, the velocity and the pressure of a fluid each by its
-                own.
+                own, or the pressure of a divergence-conforming space by a
+                mixed ghost penalty instead.
             step: The time step of backward Euler, positive. Without it, the
                 problem is steady.
             pressure_reference: The point near which the pressure is zero,
@@ -429,7 +433,11 @@ class LinearProblem(_Problem):
 
         Raises:
             ValueError: If a `GhostPenalty` is given on a patch whose map is
-                not affine, or that repeats an interior knot.
+                not affine, or that repeats an interior knot, or if a
+                `MixedGhostPenalty` is given on a patch whose map is not
+                affine with a diagonal linear part, or that repeats an
+                interior knot, or on a space without a field for each
+                component of the velocity and one for the pressure.
             RuntimeError: If the linear solver does not converge.
         """
         # Before factorizing, so as not to hold the factors of a problem this
@@ -487,7 +495,8 @@ class NonlinearProblem(_Problem):
                              | NeumannCondition
                              | SkeletonNitscheCondition
                              | SkeletonMultiplierCondition] = (),
-        stabilizations: Sequence[GhostPenalty | VolumeGhostPenalty] = (),
+        stabilizations: Sequence[GhostPenalty | VolumeGhostPenalty
+                                 | MixedGhostPenalty] = (),
         pressure_reference: npt.ArrayLike | None = None,
         petsc_options: dict[str, object] | None = None,
     ) -> None:
@@ -637,7 +646,11 @@ class NonlinearProblem(_Problem):
 
         Raises:
             ValueError: If a `GhostPenalty` is given on a patch whose map is
-                not affine, or that repeats an interior knot.
+                not affine, or that repeats an interior knot, or if a
+                `MixedGhostPenalty` is given on a patch whose map is not
+                affine with a diagonal linear part, or that repeats an
+                interior knot, or on a space without a field for each
+                component of the velocity and one for the pressure.
             RuntimeError: If the nonlinear solver does not converge.
         """
         # Before factorizing, so as not to hold the factors of a problem this
@@ -665,7 +678,8 @@ def _check_terms(
                      | LagrangeMultiplierCondition | NeumannCondition
                      | SkeletonNitscheCondition
                      | SkeletonMultiplierCondition],
-    stabilizations: list[GhostPenalty | VolumeGhostPenalty],
+    stabilizations: list[GhostPenalty | VolumeGhostPenalty
+                         | MixedGhostPenalty],
 ) -> None:
     """Check that the conditions and stabilizations of a problem are of the
     kinds it assembles, act on traces of its element and lie on the patch of
@@ -695,10 +709,16 @@ def _check_terms(
                              'patch of the space')
 
     for stabilization in stabilizations:
-        if not isinstance(stabilization, (GhostPenalty, VolumeGhostPenalty)):
+        if not isinstance(stabilization, (GhostPenalty, VolumeGhostPenalty,
+                                          MixedGhostPenalty)):
             raise TypeError('the stabilizations must be ghost penalties')
 
-        if not isinstance(stabilization.trace, traces):
+        # A mixed ghost penalty acts on the velocity and the pressure at once
+        if isinstance(stabilization, MixedGhostPenalty):
+            if not isinstance(element, StokesElement):
+                raise ValueError('a mixed ghost penalty needs a Stokes '
+                                 'element')
+        elif not isinstance(stabilization.trace, traces):
             raise ValueError('the trace of a stabilization must be one of '
                              'the element')
 
