@@ -55,8 +55,8 @@ def _ghost_faces(
     if not penalty > 0.:
         raise ValueError('the penalty must be positive')
 
-    if faces not in ('all', 'cut', 'outside'):
-        raise ValueError('the faces must be all, cut or outside')
+    if faces not in ('all', 'cut', 'outside', 'global'):
+        raise ValueError('the faces must be all, cut, outside or global')
 
     return _cpp.ghost_faces(
         patch=patch._cpp_object,
@@ -95,6 +95,14 @@ class GhostPenalty:
         weaker one deep in the void. Without one on the faces between
         outside cells, the functions of those cells alone are left free.
 
+        Or it may act on every interior face of the patch, a global ghost
+        penalty, those between inside cells too. Its faces, and so its
+        terms, are then the same wherever the boundary lies, so that a
+        problem on a moving domain keeps them from one time step to the
+        next, instead of switching them on and off as the boundary crosses
+        the cells. Inside the physical domain it vanishes on any field that
+        is one polynomial across the faces, as beyond it.
+
         The traces of a fluid scale the penalty as their fields need: the
         velocity by the viscosity, on each of its components, and the
         pressure by minus h^2 over the viscosity, on the side of the
@@ -113,14 +121,15 @@ class GhostPenalty:
             penalty: The penalty, positive, which the size of the cells
                 scales.
             faces: The faces it acts on: `'all'`, `'cut'`, those of the cut
-                cells, or `'outside'`, those between two outside cells.
+                cells, `'outside'`, those between two outside cells, or
+                `'global'`, every interior face.
 
         Raises:
             TypeError: If the trace is not one of a Poisson or a Stokes
                 element, or if the patch is not a planar patch.
             ValueError: If there is not one cell type per element, if the
-                penalty is not positive, or if the faces are not all, cut
-                or outside.
+                penalty is not positive, or if the faces are not all, cut,
+                outside or global.
         """
         selected = _ghost_faces(trace, patch, cell_types, penalty, faces)
 
@@ -159,7 +168,8 @@ class GhostPenalty:
 
     @property
     def faces(self) -> str:
-        """The faces it acts on, `'all'`, `'cut'` or `'outside'`."""
+        """The faces it acts on, `'all'`, `'cut'`, `'outside'` or
+        `'global'`."""
         return self._faces
 
     def _add_to(self, form: _cpp.Form2d) -> None:
@@ -205,7 +215,8 @@ class VolumeGhostPenalty:
         2 / ((p!)^2 (2p + 1)) times this one.
 
         The traces of a fluid scale the penalty as for `GhostPenalty`, and
-        it may act on either kind of face alone in the same way.
+        it may act on either kind of face alone, or on every interior face,
+        in the same way.
 
         Args:
             trace: The trace whose polynomials are compared, such as the
@@ -218,14 +229,15 @@ class VolumeGhostPenalty:
             penalty: The penalty, positive, which the size of the cells
                 scales.
             faces: The faces it acts on: `'all'`, `'cut'`, those of the cut
-                cells, or `'outside'`, those between two outside cells.
+                cells, `'outside'`, those between two outside cells, or
+                `'global'`, every interior face.
 
         Raises:
             TypeError: If the trace is not one of a Poisson or a Stokes
                 element, or if the patch is not a planar patch.
             ValueError: If there is not one cell type per element, if the
-                penalty is not positive, or if the faces are not all, cut
-                or outside.
+                penalty is not positive, or if the faces are not all, cut,
+                outside or global.
         """
         selected = _ghost_faces(trace, patch, cell_types, penalty, faces)
 
@@ -268,7 +280,8 @@ class VolumeGhostPenalty:
 
     @property
     def faces(self) -> str:
-        """The faces it acts on, `'all'`, `'cut'` or `'outside'`."""
+        """The faces it acts on, `'all'`, `'cut'`, `'outside'` or
+        `'global'`."""
         return self._faces
 
     def _add_to(self, form: _cpp.Form2d) -> None:
@@ -339,14 +352,15 @@ class MixedGhostPenalty:
             penalty: The penalty, positive, which the size of the cells
                 scales.
             faces: The faces it acts on: `'all'`, `'cut'`, those of the cut
-                cells, or `'outside'`, those between two outside cells.
+                cells, `'outside'`, those between two outside cells, or
+                `'global'`, every interior face.
 
         Raises:
             TypeError: If the element is not a Stokes element, or if the
                 patch is not a planar patch.
             ValueError: If there is not one cell type per element, if the
-                penalty is not positive, or if the faces are not all, cut
-                or outside.
+                penalty is not positive, or if the faces are not all, cut,
+                outside or global.
         """
         if not isinstance(element, StokesElement):
             raise TypeError('the element must be a Stokes element')
@@ -388,7 +402,8 @@ class MixedGhostPenalty:
 
     @property
     def faces(self) -> str:
-        """The faces it acts on, `'all'`, `'cut'` or `'outside'`."""
+        """The faces it acts on, `'all'`, `'cut'`, `'outside'` or
+        `'global'`."""
         return self._faces
 
     def _add_to(self, form: _cpp.Form2d) -> None:
