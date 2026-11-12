@@ -23,7 +23,11 @@ namespace iguana
  * @details The functions of a face vanish on the others, so that the field
  *          may jump where two faces meet. In the parameters of the faces,
  *          the basis is the same wherever the boundary lies, whatever grid
- *          it crosses
+ *          it crosses. On a face that is a closed curve, the basis may wrap
+ *          around: its B-spline extends p spans past each end of the
+ *          interval, with spans that repeat after one period, and each of
+ *          its last p functions is the first p ones again, so that the field
+ *          is smooth across the point where the curve closes
  *
  * @tparam T Floating-point type
  */
@@ -35,12 +39,31 @@ public:
      * @brief Constructs the basis from that of each face
      *
      * @param bases Basis of each face, on the interval of its parameter
+     * @param periodic Whether the basis of each face wraps around, none
+     *        when empty
+     *
+     * @throws std::invalid_argument If @p periodic is neither empty nor of
+     *         one flag per face, if a periodic basis has no more than 2p
+     *         functions, keeping no more than p once wrapped, or if the
+     *         spans of its knots do not repeat after one period
      */
-    explicit BoundaryBasis(std::vector<BSpline<T>> bases);
+    explicit BoundaryBasis(std::vector<BSpline<T>> bases,
+                           std::vector<bool> periodic = {});
 
     /// @brief Number of functions, of all the faces
     constexpr int num_functions() const noexcept
     { return offsets_.back(); }
+
+    /**
+     * @brief Integral of each function over the parameter of its face
+     *
+     * @details A function of a periodic face that wraps around gathers the
+     *          parts of two functions of its B-spline inside the interval,
+     *          which add up to the whole of the second by periodicity
+     *
+     * @return One integral per function
+     */
+    Eigen::VectorX<T> integrals() const;
 
     /**
      * @brief Checks that points lie on faces of the basis, inside the
@@ -102,6 +125,9 @@ public:
 private:
     /// @brief Basis of each face
     std::vector<BSpline<T>> bases_;
+
+    /// @brief Whether the basis of each face wraps around
+    std::vector<bool> periodic_;
 
     /// @brief First function of each face, followed by their number
     std::vector<int> offsets_;
