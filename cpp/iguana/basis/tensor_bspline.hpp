@@ -129,26 +129,25 @@ public:
                          Eigen::MatrixX<T>& values) const;
 
     /**
-     * @brief Evaluates the derivatives of one order of the non-zero
-     *        functions on an element along one direction
+     * @brief Evaluates a derivative of the non-zero functions on an
+     *        element, of one order along each direction
      *
-     * The derivative differentiates the univariate factor of the direction
-     * alone, as many times as the order, and vanishes above its degree
+     * The derivative differentiates the univariate factor of each direction
+     * as many times as its order, and vanishes above its degree
      *
      * @param first_active First active function in each direction
      * @param points Evaluation points, with size (num_points, dimension)
-     * @param direction Direction of the derivatives
-     * @param order Order of the derivatives
+     * @param orders Order of the derivative along each direction
      * @param derivatives Output of size (num_active(), num_points), with the
      *        rows of eval_on_element(). It is resized when necessary
      *
      * @pre @p first_active belongs to an existing element, @p points has
-     *      dimension columns and every point lies inside that element,
-     *      @p direction lies in [0, dimension), and @p order is non-negative
+     *      dimension columns and every point lies inside that element, and
+     *      every order is non-negative
      */
     void deriv_on_element(const std::array<int, d>& first_active,
                           const Eigen::MatrixX<T>& points,
-                          std::size_t direction, int order,
+                          const std::array<int, d>& orders,
                           Eigen::MatrixX<T>& derivatives) const;
 
     /**

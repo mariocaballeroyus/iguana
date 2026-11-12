@@ -221,9 +221,11 @@ void ElementValues<Basis, n>::differentiate(std::size_t direction)
 
     for (Field& field : fields_) {
         const int degree = field.basis.grid().knots(direction).degree();
+        std::array<int, dim> orders{};
+        orders[direction] = degree;
 
-        field.basis.deriv_on_element(field.first_active, points_, direction,
-                                     degree, field.values);
+        field.basis.deriv_on_element(field.first_active, points_, orders,
+                                     field.values);
 
         const Eigen::VectorX<Scalar> scales =
             (line_measures.array() / measures_.array())
