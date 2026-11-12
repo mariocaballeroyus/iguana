@@ -235,6 +235,30 @@ void ElementValues<Basis, n>::differentiate(std::size_t direction)
 }
 
 template<typename Basis, std::size_t n>
+void ElementValues<Basis, n>::differentiate(
+    const std::vector<std::array<int, dim>>& orders)
+    requires std::same_as<Basis, TensorBSpline<Scalar, dim>>
+{
+    for (std::size_t index = 0; index < fields_.size(); ++index) {
+        Field& field = fields_[index];
+        field.basis.deriv_on_element(field.first_active, points_,
+                                     orders[index], field.values);
+
+        // J_kk^(−a_k) per direction, with the sign of J_kk
+        Eigen::ArrayX<Scalar> scales =
+            Eigen::ArrayX<Scalar>::Ones(points_.rows());
+
+        for (std::size_t direction = 0; direction < dim; ++direction) {
+            const Eigen::Index k = static_cast<Eigen::Index>(direction);
+            const Scalar order = static_cast<Scalar>(orders[index][direction]);
+            scales *= tangents_[direction].col(k).array().inverse().pow(order);
+        }
+
+        field.values *= scales.matrix().asDiagonal();
+    }
+}
+
+template<typename Basis, std::size_t n>
 void ElementValues<Basis, n>::evaluate(Field& field, int element,
                                        const Eigen::MatrixX<Scalar>& points)
 {

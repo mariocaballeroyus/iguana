@@ -217,6 +217,29 @@ public:
     void differentiate(std::size_t direction)
         requires std::same_as<Basis, TensorBSpline<Scalar, dim>>;
 
+    /**
+     * @brief Replaces the values of every field by a derivative of its own
+     *        orders along the directions, in physical space on a map whose
+     *        Jacobian is diagonal
+     *
+     *     ∂^a / ∂x^a = Π_k J_kk^(−a_k) ∂^(a_k) / ∂ξ_k^(a_k)
+     *
+     * @details Derivatives of different fields and directions are then in
+     *          the same physical units, so that they add up, as the terms of
+     *          a divergence do. The gradients, tangents, measures and
+     *          physical gradients and Hessians stay those of the last
+     *          reinit()
+     *
+     * @param orders Orders of the derivative along the directions, one
+     *        array per field
+     *
+     * @pre reinit() was called, @p orders has one entry per field, every
+     *      order is non-negative, and the Jacobian is diagonal at the
+     *      points
+     */
+    void differentiate(const std::vector<std::array<int, dim>>& orders)
+        requires std::same_as<Basis, TensorBSpline<Scalar, dim>>;
+
     /// @brief Number of fields, one per basis
     constexpr std::size_t num_fields() const noexcept
     { return fields_.size(); }
