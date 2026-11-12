@@ -501,7 +501,8 @@ void sparsity_pattern(const MixedFunctionSpace<Basis>& space,
  * Each multiplier pairs with the degrees of freedom of the cells where it
  * is active, those of both cells of every face where it is read for a
  * skeleton condition, both ways, and with itself, so that its row has a
- * diagonal
+ * diagonal. The multipliers of a loop of a skeleton condition pair with
+ * each other instead, for the row that ties them to the pressure
  *
  * @param space Space whose degrees of freedom number the rows of the
  *        pattern
@@ -527,8 +528,9 @@ void add_multipliers(
     const int num_dofs = space.num_dofs();
 
     // The degrees of freedom of the cells where each multiplier is active,
-    // condition after condition
+    // condition after condition, and the multipliers of its loop
     std::vector<std::vector<int>> multiplier_dofs;
+    std::vector<std::vector<int>> loop_multipliers;
     std::vector<int> active;
     std::vector<int> dofs;
 
@@ -558,6 +560,16 @@ void add_multipliers(
             quadrature = condition.quadrature();
         const std::size_t first = multiplier_dofs.size();
         multiplier_dofs.resize(first + condition.num_multipliers());
+        loop_multipliers.resize(multiplier_dofs.size());
+
+        for (const std::vector<int>& loop : condition.loops()) {
+            for (const int multiplier : loop) {
+                std::vector<int>& paired = loop_multipliers[first + multiplier];
+
+                for (const int other : loop)
+                    paired.push_back(static_cast<int>(first) + other);
+            }
+        }
 
         for (int face = 0; face < quadrature.num_faces(); ++face) {
             const int first_point = quadrature.offsets()(face);
@@ -609,12 +621,24 @@ void add_multipliers(
             static_cast<PetscInt>(extended_columns.size()));
     }
 
+    loop_multipliers.resize(multiplier_dofs.size());
+
     for (std::size_t multiplier = 0; multiplier < multiplier_dofs.size();
          ++multiplier) {
         extended_columns.insert(extended_columns.end(),
                                 multiplier_dofs[multiplier].begin(),
                                 multiplier_dofs[multiplier].end());
-        extended_columns.push_back(num_dofs + static_cast<int>(multiplier));
+
+        // Its loop, increasing and itself included, or its diagonal alone
+        const std::vector<int>& paired = loop_multipliers[multiplier];
+
+        if (paired.empty())
+            extended_columns.push_back(num_dofs
+                                       + static_cast<int>(multiplier));
+
+        for (const int other : paired)
+            extended_columns.push_back(num_dofs + other);
+
         extended_offsets.push_back(
             static_cast<PetscInt>(extended_columns.size()));
     }
@@ -1973,6 +1997,7 @@ void Assembler<Basis, n>::assemble_tangent(
     Eigen::MatrixX<Scalar> folded;
     Eigen::MatrixX<Scalar> coupling;
     Eigen::MatrixX<Scalar> constraint;
+    Eigen::MatrixX<Scalar> pinning;
     Eigen::VectorX<Scalar> load;
     std::vector<int> dofs;
     std::vector<int> positions;
@@ -2011,6 +2036,14 @@ void Assembler<Basis, n>::assemble_tangent(
                                      normals, first, coupling);
             fold_columns(coupling, positions, std::ssize(dofs), folded);
             add_to_matrix(tangent_, dofs, multipliers, folded.transpose());
+
+            // P between the multipliers of the loops, which tie them to the
+            // pressure
+            if (!condition.loops().empty()) {
+                condition.local_pinning(side_weights, weights, first,
+                                        pinning);
+                add_to_matrix(tangent_, multipliers, pinning);
+            }
         });
 
     finalize(tangent_);
@@ -2039,6 +2072,7 @@ void Assembler<Basis, n>::assemble_residual(
     Eigen::MatrixX<Scalar> local;
     Eigen::MatrixX<Scalar> coupling;
     Eigen::MatrixX<Scalar> constraint;
+    Eigen::MatrixX<Scalar> pinning;
     Eigen::VectorX<Scalar> local_load;
     Eigen::VectorX<Scalar> constraint_load;
     Eigen::VectorX<Scalar> face_coefficients;
@@ -2077,16 +2111,19 @@ void Assembler<Basis, n>::assemble_residual(
                                        side_weights, weights, normals,
                                        imposed, first, constraint,
                                        constraint_load);
+            condition.local_pinning(side_weights, weights, first, pinning);
 
             // R_u += K u − F + Cᵀ λ in the rows of both cells, and
-            // R_λ = B u − G in those of the multipliers
+            // R_λ = B u + P λ − G in those of the multipliers
             fold_face(Eigen::VectorX<Scalar>(
                           local * face_coefficients - local_load
                           + coupling.transpose() * multiplier_coefficients),
                       positions, std::ssize(dofs), folded);
             add_to_residual(dofs, folded);
-            add_to_residual(multipliers, constraint * face_coefficients
-                                             - constraint_load);
+            add_to_residual(multipliers,
+                            constraint * face_coefficients
+                                + pinning * multiplier_coefficients
+                                - constraint_load);
         });
 
     finalize(residual_);
