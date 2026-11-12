@@ -139,11 +139,13 @@ SkeletonMultiplierCondition<Basis, n>::SkeletonMultiplierCondition(
     std::vector<BSpline<Scalar>> bases,
     const QuadratureSkeleton<Scalar, dim>& quadrature,
     const BoundaryProjection<Scalar>& projection, int order, Scalar penalty,
-    bool symmetric)
+    bool symmetric, std::vector<bool> periodic,
+    const std::vector<std::vector<int>>& loops)
     : velocity_(std::move(velocity)), fluxes_(std::move(fluxes)),
-      pressure_(pressure), basis_(std::move(bases)), quadrature_(quadrature),
-      projection_(projection), order_(order), penalty_(penalty),
-      symmetric_(symmetric)
+      pressure_(pressure), basis_(std::move(bases), std::move(periodic)),
+      shares_(Eigen::VectorX<Scalar>::Zero(basis_.num_functions())),
+      quadrature_(quadrature), projection_(projection), order_(order),
+      penalty_(penalty), symmetric_(symmetric)
 {
     if (velocity_.size() != n || fluxes_.size() != n)
         throw std::invalid_argument("SkeletonMultiplierCondition: "
@@ -174,6 +176,57 @@ SkeletonMultiplierCondition<Basis, n>::SkeletonMultiplierCondition(
         throw std::invalid_argument("SkeletonMultiplierCondition: "
                                     "every multiplier must be read at a "
                                     "closest point");
+
+    if (loops.empty())
+        return;
+
+    // The multipliers of each loop, those of its faces
+    face_loops_.assign(static_cast<std::size_t>(basis_.num_faces()), -1);
+    multiplier_loops_.assign(static_cast<std::size_t>(num_multipliers()), -1);
+
+    for (std::size_t loop = 0; loop < loops.size(); ++loop) {
+        if (loops[loop].empty())
+            throw std::invalid_argument("SkeletonMultiplierCondition: "
+                                        "a loop needs a face");
+
+        std::vector<int> multipliers;
+
+        for (const int face : loops[loop]) {
+            if (face < 0 || face >= basis_.num_faces()
+                || face_loops_[static_cast<std::size_t>(face)] != -1)
+                throw std::invalid_argument("SkeletonMultiplierCondition: "
+                                            "every face of the boundary must "
+                                            "lie in exactly one loop");
+
+            face_loops_[static_cast<std::size_t>(face)] =
+                static_cast<int>(loop);
+
+            for (int k = basis_.first_function(face);
+                 k < basis_.first_function(face + 1); ++k) {
+                multipliers.push_back(k);
+                multiplier_loops_[static_cast<std::size_t>(k)] =
+                    static_cast<int>(loop);
+            }
+        }
+
+        std::ranges::sort(multipliers);
+        loops_.push_back(std::move(multipliers));
+    }
+
+    if (std::ranges::find(face_loops_, -1) != face_loops_.end())
+        throw std::invalid_argument("SkeletonMultiplierCondition: "
+                                    "every face of the boundary must lie in "
+                                    "exactly one loop");
+
+    // c_k = m_k / Σ_{i ∈ L} m_i, the constant shared by the integrals
+    const Eigen::VectorX<Scalar> integrals = basis_.integrals();
+
+    for (const std::vector<int>& multipliers : loops_) {
+        const Scalar total = integrals(multipliers).sum();
+
+        for (const int k : multipliers)
+            shares_(k) = integrals(k) / total;
+    }
 }
 
 template<typename Basis, std::size_t n>
@@ -198,8 +251,24 @@ template<typename Basis, std::size_t n>
 void SkeletonMultiplierCondition<Basis, n>::active_on(
     int first, int count, std::vector<int>& multipliers) const
 {
-    basis_.active_on(projection_.faces, projection_.parameters, first, count,
-                     multipliers);
+    if (loops_.empty()) {
+        basis_.active_on(projection_.faces, projection_.parameters, first,
+                         count, multipliers);
+        return;
+    }
+
+    // The shares of the constant reach every multiplier of the loop
+    multipliers.clear();
+
+    for (int q = first; q < first + count; ++q) {
+        const std::vector<int>& loop =
+            loops_[static_cast<std::size_t>(loop_of(q))];
+        multipliers.insert(multipliers.end(), loop.begin(), loop.end());
+    }
+
+    std::ranges::sort(multipliers);
+    multipliers.erase(std::ranges::unique(multipliers).begin(),
+                      multipliers.end());
 }
 
 template<typename Basis, std::size_t n>
@@ -229,6 +298,27 @@ SkeletonMultiplierCondition<Basis, n>::multiplier_values(int first,
     }
 
     return values;
+}
+
+template<typename Basis, std::size_t n>
+int SkeletonMultiplierCondition<Basis, n>::loop_of(int point) const
+{
+    return face_loops_[static_cast<std::size_t>(projection_.faces(point))];
+}
+
+template<typename Basis, std::size_t n>
+Eigen::VectorX<typename Basis::Scalar>
+SkeletonMultiplierCondition<Basis, n>::on_loop(
+    const Eigen::VectorX<Scalar>& weights, int first, int loop) const
+{
+    Eigen::VectorX<Scalar> result = weights;
+
+    for (Eigen::Index q = 0; q < weights.size(); ++q) {
+        if (loop_of(first + static_cast<int>(q)) != loop)
+            result(q) = 0;
+    }
+
+    return result;
 }
 
 template<typename Basis, std::size_t n>
@@ -382,16 +472,92 @@ void SkeletonMultiplierCondition<Basis, n>::local_constraint(
     const Eigen::MatrixX<Scalar> shifted =
         traces_along(velocity_, shifted_before, shifted_after, gamma,
                      normals);
-    const Eigen::MatrixX<Scalar> tested =
-        jump * multiplier_values(first, static_cast<int>(weights.size()))
-        * weights.asDiagonal();
+    const int count = static_cast<int>(weights.size());
+    std::vector<int> multipliers;
+    active_on(first, count, multipliers);
 
-    // B_kj = j ( μ_k ∘ s, {{S N_j}}_γ · n )_F
-    //      ≈ Σ_q w_q j μ_k(s_q) ({{S N_j}}_γ · n)(x_q)
+    // μ_k ∘ s − c_k, the share of the constant taken out on the points of
+    // the loop of k
+    Eigen::MatrixX<Scalar> tested = multiplier_values(first, count);
+
+    if (!loops_.empty()) {
+        const Eigen::VectorX<Scalar> ones = Eigen::VectorX<Scalar>::Ones(count);
+
+        for (std::size_t row = 0; row < multipliers.size(); ++row) {
+            const int k = multipliers[row];
+            const int loop = multiplier_loops_[static_cast<std::size_t>(k)];
+            tested.row(static_cast<Eigen::Index>(row)) -=
+                shares_(k) * on_loop(ones, first, loop).transpose();
+        }
+    }
+
+    tested = jump * tested * weights.asDiagonal();
+
+    // B_kj = j ( μ_k ∘ s − c_k, {{S N_j}}_γ · n )_F
+    //      ≈ Σ_q w_q j (μ_k(s_q) − c_k) ({{S N_j}}_γ · n)(x_q)
     constraint = tested * shifted.transpose();
 
-    // G_k = j ( μ_k ∘ s, g · n )_F
+    // G_k = j ( μ_k ∘ s − c_k, g · n )_F
     load = tested * (data.array() * normals.array()).rowwise().sum().matrix();
+
+    // The last multiplier ℓ of each loop ties λ to the shifted pressure
+    Eigen::MatrixX<Scalar> rows_before;
+    Eigen::MatrixX<Scalar> rows_after;
+    pressure_.local_trace(shifted_before, rows_before);
+    pressure_.local_trace(shifted_after, rows_after);
+    const Eigen::MatrixX<Scalar> pressure =
+        mean_rows(rows_before, rows_after, gamma);
+
+    for (std::size_t loop = 0; loop < loops_.size(); ++loop) {
+        const auto row =
+            std::ranges::find(multipliers, loops_[loop].back())
+            - multipliers.begin();
+
+        if (row == std::ssize(multipliers))
+            continue;
+
+        // B_ℓj = − |j| ( 1, {{S P_j}}_γ )_F
+        //      ≈ − Σ_q w_q |j| {{S P_j}}_γ(x_q)
+        const Eigen::VectorX<Scalar> tying =
+            std::abs(jump) * on_loop(weights, first, static_cast<int>(loop));
+        constraint.row(row) = -(pressure * tying).transpose();
+        load(row) = 0;
+    }
+}
+
+template<typename Basis, std::size_t n>
+void SkeletonMultiplierCondition<Basis, n>::local_pinning(
+    const std::array<Scalar, 2>& cell_weights,
+    const Eigen::VectorX<Scalar>& weights, int first,
+    Eigen::MatrixX<Scalar>& pinning) const
+{
+    const Scalar jump = cell_weights[0] - cell_weights[1];
+    const int count = static_cast<int>(weights.size());
+    std::vector<int> multipliers;
+    active_on(first, count, multipliers);
+
+    const Eigen::Index size = std::ssize(multipliers);
+    pinning.setZero(size, size);
+
+    if (loops_.empty())
+        return;
+
+    const Eigen::MatrixX<Scalar> values = multiplier_values(first, count);
+
+    for (std::size_t loop = 0; loop < loops_.size(); ++loop) {
+        const auto row =
+            std::ranges::find(multipliers, loops_[loop].back())
+            - multipliers.begin();
+
+        if (row == size)
+            continue;
+
+        // P_ℓk = |j| ( 1, μ_k ∘ s )_F
+        //      ≈ Σ_q w_q |j| μ_k(s_q)
+        const Eigen::VectorX<Scalar> tying =
+            std::abs(jump) * on_loop(weights, first, static_cast<int>(loop));
+        pinning.row(row) = (values * tying).transpose();
+    }
 }
 
 template<typename Basis, std::size_t n>

@@ -54,6 +54,21 @@ public:
     constexpr int num_functions() const noexcept
     { return offsets_.back(); }
 
+    /// @brief Number of faces
+    constexpr int num_faces() const noexcept
+    { return static_cast<int>(bases_.size()); }
+
+    /**
+     * @brief First function of a face, those of the face running up to the
+     *        first of the next one
+     *
+     * @param face Face, num_faces() giving num_functions()
+     *
+     * @pre @p face lies in [0, num_faces()]
+     */
+    constexpr int first_function(int face) const noexcept
+    { return offsets_[static_cast<std::size_t>(face)]; }
+
     /**
      * @brief Integral of each function over the parameter of its face
      *

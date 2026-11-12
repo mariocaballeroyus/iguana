@@ -35,7 +35,9 @@ namespace iguana
  *     + s j ( {{2μ ε(v) n}}_γ · τ, ({{S u}}_γ − g) · τ )_F
  *     + β |j| ( {{S v}}_γ · τ, ({{S u}}_γ − g) · τ / h )_F
  *     + j ( v · n, λ ∘ s − {{S p}}_γ + {{p}}_γ )_F
- *     + j ( μ ∘ s, ({{S u}}_γ − g) · n )_F
+ *     + j ( μ_k ∘ s − c_k, ({{S u}}_γ − g) · n )_F,    k ≠ ℓ
+ *     + |j| ( 1, λ ∘ s − {{S p}}_γ )_F,                k = ℓ
+ *     c_k = m_k / Σ_{i ∈ L} m_i,    m_k = ∫ μ_k dt
  *
  * @details The counterpart of LagrangeMultiplierCondition in the
  *          Generalized Shifted Boundary Method, whose weighted volume terms
@@ -51,7 +53,18 @@ namespace iguana
  *          point, takes Nitsche's penalty and adjoint term, and nothing is
  *          tested by the pressure functions, so that a divergence-conforming
  *          velocity stays free of divergence. The multipliers must be
- *          coarser than the cells, for the saddle point to be stable
+ *          coarser than the cells, for the saddle point to be stable.
+ *
+ *          On a divergence-conforming velocity, free of divergence in every
+ *          cell, the constant multiplier would test the net flux through a
+ *          closed loop of the boundary, which the continuity equations
+ *          already impose, and leave the level of λ undetermined. Given the
+ *          loops of the boundary, each loop L takes the constant out of the
+ *          test functions of its multipliers, as shares c of their
+ *          integrals in the parameters of their faces, and its last
+ *          multiplier ℓ ties the level of λ to the pressure at the closest
+ *          points instead, adding to the matrix of the multipliers. Without
+ *          loops, the shares vanish and no multiplier is tied
  *
  * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
  * @tparam n Dimension of the physical space of the patch, two, the
@@ -94,12 +107,18 @@ public:
      *        non-negative for the skew-symmetric one
      * @param symmetric Whether the adjoint term is that of the symmetric
      *        method, rather than the skew-symmetric one
+     * @param periodic Whether the basis of each face wraps around, for a
+     *        face that is a closed curve, as BoundaryBasis takes it
+     * @param loops Faces of each closed loop of the boundary, none to leave
+     *        the level of the multipliers to their constant
      *
      * @throws std::invalid_argument If there are not n traces and n fluxes,
      *         if the order is negative, if the penalty is negative, or zero
-     *         for the symmetric method, if a closest point lies on a face
-     *         without a basis or outside the interval of its basis, or if no
-     *         closest point reads a multiplier
+     *         for the symmetric method, if BoundaryBasis rejects the bases,
+     *         if a closest point lies on a face without a basis or outside
+     *         the interval of its basis, if no closest point reads a
+     *         multiplier, or if, given loops, a loop is empty or a face of
+     *         the boundary does not lie in exactly one
      *
      * @pre The traces, the fluxes, @p quadrature and @p projection outlive
      *      the condition, which keeps references to them
@@ -109,7 +128,8 @@ public:
         std::vector<BSpline<Scalar>> bases,
         const QuadratureSkeleton<Scalar, dim>& quadrature,
         const BoundaryProjection<Scalar>& projection, int order,
-        Scalar penalty, bool symmetric = true);
+        Scalar penalty, bool symmetric = true, std::vector<bool> periodic = {},
+        const std::vector<std::vector<int>>& loops = {});
 
     /// @brief Number of multipliers, of all the faces of the boundary
     constexpr int num_multipliers() const noexcept
@@ -136,12 +156,18 @@ public:
     constexpr bool symmetric() const noexcept
     { return symmetric_; }
 
+    /// @brief Multipliers of each loop, increasing, its last one ℓ tying
+    ///        the level of λ to the pressure
+    constexpr const std::vector<std::vector<int>>& loops() const noexcept
+    { return loops_; }
+
     /// @brief Optional values the traces and fluxes read from ElementValues
     ValueFlags flags() const noexcept;
 
     /**
      * @brief Multipliers read at points of the quadrature, each once in
-     *        increasing order
+     *        increasing order, all those of the loop of each closest point
+     *        given loops
      *
      * @param first First point
      * @param count Number of points
@@ -241,7 +267,9 @@ public:
      * @brief Constraint of the multipliers read on one face on the normal
      *        component of the shifted velocity, a row per multiplier of
      *        active_on() and a column per row of local_tangent(), and its
-     *        load, the normal component of the velocity imposed
+     *        load, the normal component of the velocity imposed. The row
+     *        of the last multiplier of a loop takes the shifted pressure
+     *        instead, without load
      *
      * @param shifted_before Values of the cell before the face expanded to
      *        the closest points
@@ -269,6 +297,22 @@ public:
                           Eigen::VectorX<Scalar>& load) const;
 
     /**
+     * @brief Multipliers tied to the pressure on one face, a row and a
+     *        column per multiplier of active_on(), nonzero only in the row
+     *        of the last multiplier of each loop
+     *
+     * @param cell_weights Weights of the test functions on the two cells
+     * @param weights Face weights, one per point
+     * @param first First of the points in the quadrature
+     * @param pinning Output, overwritten
+     *
+     * @pre As for local_tangent()
+     */
+    void local_pinning(const std::array<Scalar, 2>& cell_weights,
+                       const Eigen::VectorX<Scalar>& weights, int first,
+                       Eigen::MatrixX<Scalar>& pinning) const;
+
+    /**
      * @brief Value of the multipliers at the closest point of each point of
      *        the quadrature
      *
@@ -288,6 +332,16 @@ private:
      */
     Eigen::MatrixX<Scalar> multiplier_values(int first, int count) const;
 
+    /// @brief Loop of the closest point of a point of the quadrature
+    int loop_of(int point) const;
+
+    /**
+     * @brief Weights of the points of a face on a loop, those whose closest
+     *        point lies on it, and zero for the others
+     */
+    Eigen::VectorX<Scalar> on_loop(const Eigen::VectorX<Scalar>& weights,
+                                   int first, int loop) const;
+
     /// @brief Traces of the components of the velocity
     Traces velocity_;
 
@@ -299,6 +353,18 @@ private:
 
     /// @brief Basis of the multipliers on the faces of the boundary
     BoundaryBasis<Scalar> basis_;
+
+    /// @brief Multipliers of each loop, increasing
+    std::vector<std::vector<int>> loops_;
+
+    /// @brief Loop of each face of the boundary, empty without loops
+    std::vector<int> face_loops_;
+
+    /// @brief Loop of each multiplier, empty without loops
+    std::vector<int> multiplier_loops_;
+
+    /// @brief Share c_k of the constant of each multiplier in its loop
+    Eigen::VectorX<Scalar> shares_;
 
     /// @brief Quadrature over the faces where the weights may jump
     const QuadratureSkeleton<Scalar, dim>& quadrature_;
