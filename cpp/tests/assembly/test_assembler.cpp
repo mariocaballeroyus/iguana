@@ -2111,6 +2111,194 @@ TEST_CASE("A ghost penalty needs coupled faces, simple interior knots and an "
                       std::invalid_argument);
 }
 
+TEST_CASE("A mixed ghost penalty pairs the jumps of the divergence of the "
+          "velocity and of the pressure across faces", "[assembler]")
+{
+    // A divergence-conforming space on the elements of the patch, every cell
+    // inside, so that each function keeps its own index
+    const iguana::Patch<Basis, 2> patch = rectangle(uneven());
+    const CellClassification<double, 2> classification =
+        all_cells(CellType::inside);
+    const iguana::FunctionSpace<Basis> x_velocity(cubic_by_quadratic(),
+                                                  classification);
+    const iguana::FunctionSpace<Basis> y_velocity(quadratic_by_cubic(),
+                                                  classification);
+    const iguana::FunctionSpace<Basis> pressure(uneven(), classification);
+    const iguana::MixedFunctionSpace<Basis> space(
+        {x_velocity, y_velocity, pressure});
+
+    // With every cell cut, every interior face is a ghost face, and four
+    // points integrate the products of the jumps, of degree four along them
+    const iguana::QuadratureSkeleton<double, 2> quadrature(
+        patch.basis().grid(),
+        iguana::ghost_faces(patch.basis().grid(), all_cells(CellType::cut)),
+        iguana::GaussLegendre<double, 1>(4));
+
+    const double penalty = .3;
+    const iguana::SkeletonMixedGhostPenalty<Basis, 2> ghost(penalty);
+    iguana::Assembler<Basis, 2> assembler(space, patch, true);
+    const Eigen::Index entries = stiffness_of(assembler).nonZeros();
+
+    const auto assemble = [&](Vec coefficients) {
+        assembler.assemble_tangent(ghost, quadrature, coefficients);
+        assembler.assemble_residual(ghost, quadrature, coefficients);
+    };
+
+    assemble(Coefficients(Eigen::VectorXd::Zero(space.num_dofs())));
+
+    // The faces were coupled beforehand, so the pattern holds
+    REQUIRE(stiffness_of(assembler).nonZeros() == entries);
+
+    const Eigen::SparseMatrix<double, Eigen::RowMajor> stiffness =
+        stiffness_of(assembler);
+
+    const KnotVector<double>& x_along_x = x_velocity.basis().grid().knots(0);
+    const KnotVector<double>& y_along_x = y_velocity.basis().grid().knots(0);
+    const KnotVector<double>& y_along_y = y_velocity.basis().grid().knots(1);
+    const KnotVector<double>& p_along_x = pressure.basis().grid().knots(0);
+    const KnotVector<double>& p_along_y = pressure.basis().grid().knots(1);
+    const Eigen::VectorXd x_ones =
+        Eigen::VectorXd::Ones(x_velocity.basis().axis(1).num_functions());
+    const Eigen::VectorXd p_x_ones =
+        Eigen::VectorXd::Ones(pressure.basis().axis(0).num_functions());
+    const Eigen::VectorXd p_y_ones =
+        Eigen::VectorXd::Ones(pressure.basis().axis(1).num_functions());
+
+    // u = ((x − a)_+^3, −3 (x − a)_+^2 y), with a = .6 width, has no
+    // divergence, though the derivatives of each component jump across
+    // x = a, and the pressure x^2 is one polynomial, so neither jumps
+    Eigen::VectorXd flow(space.num_dofs());
+    flow << std::pow(width, 3)
+                * product(truncated_power(x_along_x, .6), x_ones),
+        -3. * width * width * height
+            * product(truncated_power(y_along_x, .6), grevilles(y_along_y)),
+        width * width * product(squares(p_along_x), p_y_ones);
+
+    REQUIRE((stiffness * flow).cwiseAbs().maxCoeff() < 1e-12);
+
+    // (xi − .6)_+^3 along x alone, whose divergence jumps in its second
+    // derivative across xi = .6, by 3! / width^3 in physical space, and
+    // the pressure (xi − .6)_+^2 + (eta − .7)_+^2, whose second derivative
+    // across that line jumps by 2 / width^2
+    Eigen::VectorXd kinks = Eigen::VectorXd::Zero(space.num_dofs());
+    kinks.head(x_velocity.num_dofs()) =
+        product(truncated_power(x_along_x, .6), x_ones);
+    kinks.tail(pressure.num_dofs()) =
+        product(truncated_power(p_along_x, .6), p_y_ones)
+        + product(p_x_ones, truncated_power(p_along_y, .7));
+
+    // − 2 β h^5 times the product of the jumps over the faces of xi = .6,
+    // between cells of width .4 on either side, h the mean of their sizes;
+    // across eta = .7 the divergence has no jump
+    const double divergence_jump = 6. / std::pow(width, 3);
+    const double pressure_jump = 2. / std::pow(width, 2);
+    double expected = 0.;
+
+    for (const double span : {.7, .3}) {
+        const double size = std::sqrt(width * .4 * height * span);
+        expected -= 2. * penalty * std::pow(size, 5) * divergence_jump
+                    * pressure_jump * height * span;
+    }
+
+    REQUIRE_THAT(kinks.dot(stiffness * kinks), WithinRel(expected, 1e-12));
+
+    // The fields of each cell gathered one after another, as the rows of
+    // the penalty
+    REQUIRE(tangent_defect(assembler, space.num_dofs(), assemble) < 1e-12);
+}
+
+TEST_CASE("A mixed ghost penalty needs coupled faces, an affine B-spline "
+          "patch with a diagonal map and the simple fields of a fluid",
+          "[assembler]")
+{
+    using Penalty = iguana::SkeletonMixedGhostPenalty<Basis, 2>;
+
+    const iguana::Patch<Basis, 2> patch = rectangle(uneven());
+    const CellClassification<double, 2> classification =
+        all_cells(CellType::inside);
+    const iguana::FunctionSpace<Basis> x_velocity(cubic_by_quadratic(),
+                                                  classification);
+    const iguana::FunctionSpace<Basis> y_velocity(quadratic_by_cubic(),
+                                                  classification);
+    const iguana::FunctionSpace<Basis> pressure(uneven(), classification);
+    const iguana::MixedFunctionSpace<Basis> space(
+        {x_velocity, y_velocity, pressure});
+    const iguana::QuadratureSkeleton<double, 2> quadrature(
+        patch.basis().grid(),
+        iguana::ghost_faces(patch.basis().grid(), all_cells(CellType::cut)),
+        iguana::GaussLegendre<double, 1>(4));
+
+    const Penalty ghost(1.);
+    const Coefficients zero(Eigen::VectorXd::Zero(space.num_dofs()));
+
+    REQUIRE_THROWS_AS(Penalty(0.), std::invalid_argument);
+
+    // Faces left out of the pattern
+    iguana::Assembler<Basis, 2> uncoupled(space, patch);
+
+    REQUIRE_THROWS_AS(uncoupled.assemble_tangent(ghost, quadrature, zero),
+                      std::invalid_argument);
+
+    // A shear keeps the map affine, but mixes the directions of the patch
+    // in the divergence
+    iguana::PointMatrix<double, 2> sheared = patch.coefficients();
+    sheared.col(0) += .5 * sheared.col(1);
+    const iguana::Patch<Basis, 2> sheared_patch(patch.basis(), sheared);
+    iguana::Assembler<Basis, 2> on_sheared(space, sheared_patch, true);
+
+    REQUIRE_THROWS_AS(on_sheared.assemble_tangent(ghost, quadrature, zero),
+                      std::invalid_argument);
+
+    // The velocity and the pressure as one field of three components
+    const iguana::FunctionSpace<Basis> blocked(uneven(), classification, 3);
+    iguana::Assembler<Basis, 2> on_blocked(blocked, patch, true);
+    const Coefficients blocked_zero(Eigen::VectorXd::Zero(blocked.num_dofs()));
+
+    REQUIRE_THROWS_AS(on_blocked.assemble_tangent(ghost, quadrature,
+                                                  blocked_zero),
+                      std::invalid_argument);
+
+    // A repeated knot of the velocity, across which lower derivatives of
+    // the divergence jump too
+    const Basis repeated(TensorGrid<double, 2>(
+        {KnotVector<double>(3, {0., 0., 0., 0., .2, .6, .6, 1., 1., 1., 1.}),
+         KnotVector<double>(2, {0., 0., 0., .7, 1., 1., 1.})}));
+    const iguana::FunctionSpace<Basis> repeated_velocity(repeated,
+                                                         classification);
+    const iguana::MixedFunctionSpace<Basis> repeated_space(
+        {repeated_velocity, y_velocity, pressure});
+    iguana::Assembler<Basis, 2> on_repeated(repeated_space, patch, true);
+    const Coefficients repeated_zero(
+        Eigen::VectorXd::Zero(repeated_space.num_dofs()));
+
+    REQUIRE_THROWS_AS(on_repeated.assemble_tangent(ghost, quadrature,
+                                                   repeated_zero),
+                      std::invalid_argument);
+
+    // A NURBS patch, affine with unit weights
+    using Rational = iguana::TensorNURBS<double, 2>;
+    const auto rational = [](const Basis& basis) {
+        return Rational(basis, Eigen::VectorXd::Ones(basis.num_functions()));
+    };
+    const iguana::Patch<Rational, 2> rational_patch(rational(uneven()),
+                                                    patch.coefficients());
+    const iguana::FunctionSpace<Rational> rational_x(
+        rational(cubic_by_quadratic()), classification);
+    const iguana::FunctionSpace<Rational> rational_y(
+        rational(quadratic_by_cubic()), classification);
+    const iguana::FunctionSpace<Rational> rational_p(rational(uneven()),
+                                                     classification);
+    const iguana::MixedFunctionSpace<Rational> rational_space(
+        {rational_x, rational_y, rational_p});
+    iguana::Assembler<Rational, 2> on_rational(rational_space, rational_patch,
+                                               true);
+    const iguana::SkeletonMixedGhostPenalty<Rational, 2> rational_ghost(1.);
+
+    REQUIRE_THROWS_AS(on_rational.assemble_tangent(rational_ghost, quadrature,
+                                                   zero),
+                      std::invalid_argument);
+}
+
 TEST_CASE("Skeleton Nitsche conditions with binary weights are Nitsche "
           "conditions on the surrogate boundary", "[assembler]")
 {

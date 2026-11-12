@@ -8,10 +8,11 @@ import pytest
 
 import iguana
 from iguana import (Boundary, CellType, FunctionSpace, GhostPenalty,
-                    NitscheCondition, PoissonElement, QuadratureBoundary,
-                    QuadratureDomain, SkeletonNitscheCondition,
-                    StokesElement, SurrogateBoundary, VolumeGhostPenalty,
-                    classify_cells, cpp)
+                    MixedFunctionSpace, MixedGhostPenalty, NitscheCondition,
+                    PoissonElement, QuadratureBoundary, QuadratureDomain,
+                    SkeletonNitscheCondition, StokesElement,
+                    SurrogateBoundary, VolumeGhostPenalty, classify_cells,
+                    cpp, flux_at_points, trace_at_points)
 
 try:
     from iguana.petsc import LinearProblem
@@ -34,11 +35,18 @@ def rectangle():
     return iguana.create_rectangle(lengths=(3., 2.), elements=(14, 14))
 
 
-def circle():
-    """The circle as four quadratic arcs joined at double knots."""
+def circle(clockwise=False):
+    """The circle as four quadratic arcs joined at double knots,
+    counterclockwise, or clockwise as an obstacle, whose domain is the
+    region around it."""
     corner = np.sqrt(.5)
     points = np.array([[1., 0.], [1., 1.], [0., 1.], [-1., 1.], [-1., 0.],
                        [-1., -1.], [0., -1.], [1., -1.], [1., 0.]])
+
+    # The knots and weights are symmetric, so reversing the points reverses
+    # the curve
+    if clockwise:
+        points = points[::-1]
 
     return Boundary([iguana.create_curve(
         degree=2, knots=[0., 0., 0., .25, .25, .5, .5, .75, .75, 1., 1., 1.],
@@ -145,6 +153,76 @@ def test_ghost_penalties_of_a_fluid_take_the_signs_of_its_blocks():
 
 
 @pytest.mark.petsc
+def test_mixed_ghost_penalty_keeps_the_velocity_divergence_free():
+    """Around the circle, an obstacle in a channel, on the
+    divergence-conforming space that keeps every function, the mixed ghost
+    penalty extends the pressure while the continuity equations keep the
+    velocity divergence-free in every cell, those inside the obstacle
+    included, which a ghost penalty on the pressure breaks. Nitsche's
+    method imposes the velocity without the pressure on its test side, and
+    the free outflow fixes the pressure, so no pressure is pinned."""
+    patch = rectangle()
+    obstacle = circle(clockwise=True)
+    cell_types, fractions = classify_cells(patch, obstacle)
+    space = MixedFunctionSpace.divergence_conforming(patch)
+    element = StokesElement(1.)
+
+    quadrature = QuadratureDomain(patch, cell_types)
+
+    for cell_type in (CellType.inside, CellType.cut, CellType.outside):
+        quadrature.fill_gauss_legendre(cell_type, 4)
+
+    # Poiseuille's flow in through the left side, which vanishes on the
+    # walls below and above, the right side left free
+    walls = Boundary([iguana.create_curve(
+        degree=1, knots=[0., 0., 1., 1.], control_points=ends)
+        for ends in ([(0., 0.), (3., 0.)], [(3., 2.), (0., 2.)],
+                     [(0., 2.), (0., 0.)])])
+
+    def inflow(points):
+        y = points[:, 1]
+        return np.column_stack([y * (2. - y), np.zeros(len(y))])
+
+    conditions = [
+        NitscheCondition(element.u, QuadratureBoundary(patch, walls, 4),
+                         inflow, 40., test_pressure=False),
+        SkeletonNitscheCondition(element.u, patch, cell_types, obstacle,
+                                 lambda x: np.zeros((len(x), 2)), 40.,
+                                 test_pressure=False)]
+
+    # Three points across each cell along each direction, off the knot
+    # lines
+    offsets = (np.arange(14)[:, None] + [.2, .5, .8]).ravel() / 14.
+    points = np.column_stack([coordinates.ravel() for coordinates in
+                              np.meshgrid(3. * offsets, 2. * offsets)])
+
+    def divergence(pressure_ghost):
+        ghosts = [GhostPenalty(element.u, patch, cell_types, .1),
+                  pressure_ghost]
+        solution = LinearProblem(element, space, quadrature,
+                                 np.zeros((quadrature.num_points, 2)),
+                                 cell_weights=fractions,
+                                 conditions=conditions,
+                                 stabilizations=ghosts,
+                                 petsc_options_prefix='mixed_ghost_').solve()
+
+        # The stress 2μ ε(u) − p I has the trace 2μ div u − 2p in the plane
+        trace = sum(flux_at_points(element.u, space, solution, points,
+                                   np.tile(normal, (len(points), 1)))[:, axis]
+                    for axis, normal in enumerate(np.eye(2)))
+        pressure = trace_at_points(element.p, space, solution, points)
+
+        return (trace + 2. * pressure) / (2. * element.viscosity)
+
+    mixed = divergence(MixedGhostPenalty(element, patch, cell_types, .1))
+    pressure = divergence(GhostPenalty(element.p, patch, cell_types, .1))
+    inside = np.linalg.norm(points - CENTRE, axis=1) < RADIUS
+
+    assert np.abs(mixed).max() < 1e-9
+    assert np.abs(pressure[inside]).max() > 1.
+
+
+@pytest.mark.petsc
 def test_invalid_ghost_penalties():
     patch = rectangle()
     cell_types = classify_cells(patch, circle()).cell_types
@@ -172,6 +250,15 @@ def test_invalid_ghost_penalties():
     with pytest.raises(ValueError):
         VolumeGhostPenalty(element.u, patch, cell_types, 0.)
 
+    # The mixed penalty pairs the velocity and the pressure of a fluid
+    fluid = StokesElement(1.)
+
+    with pytest.raises(TypeError):
+        MixedGhostPenalty(element, patch, cell_types, 1.)
+
+    with pytest.raises(ValueError):
+        MixedGhostPenalty(fluid, patch, cell_types, 0.)
+
     quadrature = QuadratureDomain(patch)
     quadrature.fill_gauss_legendre(CellType.inside, 3)
     source = np.zeros(quadrature.num_points)
@@ -188,6 +275,13 @@ def test_invalid_ghost_penalties():
         LinearProblem(element, FunctionSpace(patch), quadrature, source,
                       stabilizations=[pressure],
                       petsc_options_prefix='invalid_')
+
+    # The mixed penalty, foreign to the Poisson element
+    mixed = MixedGhostPenalty(fluid, patch, cell_types, 1.)
+
+    with pytest.raises(ValueError):
+        LinearProblem(element, FunctionSpace(patch), quadrature, source,
+                      stabilizations=[mixed], petsc_options_prefix='invalid_')
 
     # The cells must lie on the patch of the space
     other = GhostPenalty(element.u, rectangle(), cell_types, 1.)
