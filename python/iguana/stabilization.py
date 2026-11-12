@@ -8,7 +8,10 @@ controls the field where the problem alone leaves it loose. The ghost
 penalty extends the field smoothly across the faces of the cells beyond the
 physical domain, so that a space keeping every function of the background
 patch stays determined, on the jumps of the derivatives across the faces or
-on the polynomials of their cells. A problem assembles it with the element.
+on the polynomials of their cells. The mixed ghost penalty extends the
+pressure of a fluid through the divergence of its velocity instead, which
+keeps a divergence-conforming velocity divergence-free. A problem assembles
+it with the element.
 """
 
 from __future__ import annotations
@@ -283,4 +286,118 @@ class VolumeGhostPenalty:
     def __repr__(self) -> str:
         faces = '' if self._faces == 'all' else f', faces={self._faces!r}'
         return (f'VolumeGhostPenalty({self._trace!r}, '
+                f'penalty={self._penalty}{faces})')
+
+
+class MixedGhostPenalty:
+    """Penalty pairing the jumps of the divergence of the velocity of a
+    fluid with those of its pressure across the faces of the cells beyond
+    the physical domain."""
+
+    def __init__(
+        self,
+        element: StokesElement,
+        patch: PlanarPatch,
+        cell_types: Sequence[CellType],
+        penalty: float,
+        faces: str = 'all',
+    ) -> None:
+        """Initialize the mixed ghost penalty of a fluid.
+
+        The penalty acts on the faces `GhostPenalty` acts on. On each it
+        pairs the jumps of the derivatives along the normal of the
+        divergence of the velocity and of the pressure, of the order k of
+        the degree of the pressure across the face, the only ones that jump
+        for splines of maximal continuity, scaled by the size h of the
+        cells as h^(2k + 1). As the divergence and the pressure pair in the
+        Stokes form, it adds both pairings with a minus sign: the trial
+        divergence with the test pressure, and the test divergence with
+        the trial pressure.
+
+        It extends the pressure beyond the physical domain in place of a
+        `GhostPenalty` on it, while the pressure functions still test the
+        divergence alone. On the divergence-conforming space of
+        `MixedFunctionSpace`, whose divergence lies in the pressure space,
+        the continuity equations then keep the velocity divergence-free in
+        every cell, those beyond the physical domain included, which a
+        ghost penalty on the pressure breaks. The velocity still needs a
+        `GhostPenalty` of its own.
+
+        The patch must have an affine map whose linear part is diagonal, so
+        that the derivatives along its directions add up to the divergence,
+        and simple interior knots, and the space must have a field for each
+        component of the velocity and one for the pressure, which its
+        problem rejects when it solves.
+
+        Args:
+            element: The Stokes element of the fluid, whose velocity u and
+                pressure p the penalty pairs.
+            patch: The background patch, a planar patch with an affine map
+                whose linear part is diagonal, whose elements are the cells.
+            cell_types: The type of each element of the patch, with the
+                first direction running fastest.
+            penalty: The penalty, positive, which the size of the cells
+                scales.
+            faces: The faces it acts on: `'all'`, `'cut'`, those of the cut
+                cells, or `'outside'`, those between two outside cells.
+
+        Raises:
+            TypeError: If the element is not a Stokes element, or if the
+                patch is not a planar patch.
+            ValueError: If there is not one cell type per element, if the
+                penalty is not positive, or if the faces are not all, cut
+                or outside.
+        """
+        if not isinstance(element, StokesElement):
+            raise TypeError('the element must be a Stokes element')
+
+        selected = _ghost_faces(element.p, patch, cell_types, penalty, faces)
+
+        self._element = element
+        self._patch = patch
+        self._penalty = float(penalty)
+        self._faces = faces
+
+        # Along a face, the products of the jumps are polynomials of twice
+        # the degree along it, which one point more than the degree
+        # integrates exactly on an affine map, for fields up to one degree
+        # above the patch, as those of a divergence-conforming space
+        self._quadrature = _cpp.QuadratureSkeleton2d(
+            patch=patch._cpp_object, faces=selected,
+            num_points=max(patch.degrees) + 2)
+
+    @property
+    def element(self) -> StokesElement:
+        """The Stokes element of the fluid."""
+        return self._element
+
+    @property
+    def patch(self) -> PlanarPatch:
+        """The background patch, whose cells the faces separate."""
+        return self._patch
+
+    @property
+    def num_faces(self) -> int:
+        """Number of faces the penalty acts on."""
+        return self._quadrature.num_faces
+
+    @property
+    def penalty(self) -> float:
+        """The penalty."""
+        return self._penalty
+
+    @property
+    def faces(self) -> str:
+        """The faces it acts on, `'all'`, `'cut'` or `'outside'`."""
+        return self._faces
+
+    def _add_to(self, form: _cpp.Form2d) -> None:
+        """Add the integral of the penalty to the compiled form of a planar
+        problem, assembled with its faces coupled."""
+        penalty = _cpp.SkeletonMixedGhostPenalty2d(self._penalty)
+        form.add_skeleton_integral(penalty, self._quadrature)
+
+    def __repr__(self) -> str:
+        faces = '' if self._faces == 'all' else f', faces={self._faces!r}'
+        return (f'MixedGhostPenalty({self._element!r}, '
                 f'penalty={self._penalty}{faces})')

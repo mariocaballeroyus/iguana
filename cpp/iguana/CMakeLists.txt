@@ -46,6 +46,7 @@ add_library(iguana
     condition/skeleton_multiplier_condition.cpp
     condition/neumann_condition.cpp
     condition/skeleton_ghost_penalty.cpp
+    condition/skeleton_mixed_ghost_penalty.cpp
     condition/volume_ghost_penalty.cpp
     evaluation/field_evaluation.cpp)
 

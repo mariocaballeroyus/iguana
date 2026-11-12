@@ -221,14 +221,40 @@ void ElementValues<Basis, n>::differentiate(std::size_t direction)
 
     for (Field& field : fields_) {
         const int degree = field.basis.grid().knots(direction).degree();
+        std::array<int, dim> orders{};
+        orders[direction] = degree;
 
-        field.basis.deriv_on_element(field.first_active, points_, direction,
-                                     degree, field.values);
+        field.basis.deriv_on_element(field.first_active, points_, orders,
+                                     field.values);
 
         const Eigen::VectorX<Scalar> scales =
             (line_measures.array() / measures_.array())
                 .pow(static_cast<Scalar>(degree));
         field.values *= scales.asDiagonal();
+    }
+}
+
+template<typename Basis, std::size_t n>
+void ElementValues<Basis, n>::differentiate(
+    const std::vector<std::array<int, dim>>& orders)
+    requires std::same_as<Basis, TensorBSpline<Scalar, dim>>
+{
+    for (std::size_t index = 0; index < fields_.size(); ++index) {
+        Field& field = fields_[index];
+        field.basis.deriv_on_element(field.first_active, points_,
+                                     orders[index], field.values);
+
+        // J_kk^(−a_k) per direction, with the sign of J_kk
+        Eigen::ArrayX<Scalar> scales =
+            Eigen::ArrayX<Scalar>::Ones(points_.rows());
+
+        for (std::size_t direction = 0; direction < dim; ++direction) {
+            const Eigen::Index k = static_cast<Eigen::Index>(direction);
+            const Scalar order = static_cast<Scalar>(orders[index][direction]);
+            scales *= tangents_[direction].col(k).array().inverse().pow(order);
+        }
+
+        field.values *= scales.matrix().asDiagonal();
     }
 }
 

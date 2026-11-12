@@ -43,6 +43,8 @@ using SkeletonNitscheCondition2d =
     SkeletonNitscheCondition<TensorBSpline<double, 2>, 2>;
 using SkeletonGhostPenalty2d =
     SkeletonGhostPenalty<TensorBSpline<double, 2>, 2>;
+using SkeletonMixedGhostPenalty2d =
+    SkeletonMixedGhostPenalty<TensorBSpline<double, 2>, 2>;
 using VolumeGhostPenalty2d = VolumeGhostPenalty<TensorBSpline<double, 2>, 2>;
 using BoundaryProjection2d = BoundaryProjection<double>;
 using QuadratureBoundary2d = QuadratureBoundary<double, 2>;
@@ -58,6 +60,9 @@ using Source = Form2d::Source;
 ///        add_skeleton_integral that are not templates
 using AddGhostPenalty2d = void (Form2d::*)(const SkeletonGhostPenalty2d&,
                                            const QuadratureSkeleton2d&);
+using AddMixedGhostPenalty2d =
+    void (Form2d::*)(const SkeletonMixedGhostPenalty2d&,
+                     const QuadratureSkeleton2d&);
 using AddVolumeGhostPenalty2d = void (Form2d::*)(const VolumeGhostPenalty2d&,
                                                  const QuadratureSkeleton2d&,
                                                  const QuadratureDomain2d&);
@@ -189,6 +194,10 @@ void assembly(py::module_& module)
         .def(py::init<const Trace2d&, double, int>(), py::arg("trace"),
              py::arg("penalty"), py::arg("scaling") = 0,
              py::keep_alive<1, 2>());
+
+    py::class_<SkeletonMixedGhostPenalty2d>(module,
+                                            "SkeletonMixedGhostPenalty2d")
+        .def(py::init<double>(), py::arg("penalty"));
 
     py::class_<VolumeGhostPenalty2d>(module, "VolumeGhostPenalty2d")
         .def(py::init<const Trace2d&, double, int>(), py::arg("trace"),
@@ -344,6 +353,11 @@ void assembly(py::module_& module)
              py::keep_alive<1, 6>(), py::keep_alive<1, 7>())
         .def("add_skeleton_integral",
              static_cast<AddGhostPenalty2d>(&Form2d::add_skeleton_integral),
+             py::arg("penalty"), py::arg("quadrature"),
+             py::keep_alive<1, 2>(), py::keep_alive<1, 3>())
+        .def("add_skeleton_integral",
+             static_cast<AddMixedGhostPenalty2d>(
+                 &Form2d::add_skeleton_integral),
              py::arg("penalty"), py::arg("quadrature"),
              py::keep_alive<1, 2>(), py::keep_alive<1, 3>())
         .def("add_skeleton_integral",
