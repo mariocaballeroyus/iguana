@@ -127,7 +127,8 @@ void embedding(py::module_& module)
     py::enum_<GhostFaces>(module, "GhostFaces")
         .value("all", GhostFaces::all)
         .value("cut", GhostFaces::cut)
-        .value("outside", GhostFaces::outside);
+        .value("outside", GhostFaces::outside)
+        .value("global", GhostFaces::global);
 
     py::class_<CellClassification2d>(module, "CellClassification2d")
         .def(py::init<std::vector<CellType>>(), py::arg("cell_types"));

@@ -61,7 +61,8 @@ def test_ghost_penalty_extends_a_shifted_problem():
     the rest, so that a linear field is recovered at every degree of
     freedom, those of the cells outside the circle included. So it is with
     two penalties sharing the faces, a weaker one between outside cells,
-    and with the volume penalty."""
+    with the volume penalty, and with a global penalty on every interior
+    face, which vanishes on the linear field between inside cells too."""
     patch = rectangle()
     cell_types = classify_cells(patch, circle()).cell_types
     inside = [CellType.inside if cell == CellType.inside
@@ -79,12 +80,17 @@ def test_ghost_penalty_extends_a_shifted_problem():
     ghost = GhostPenalty(element.u, patch, cell_types, .1)
     cut = GhostPenalty(element.u, patch, cell_types, .1, faces='cut')
     void = GhostPenalty(element.u, patch, cell_types, .01, faces='outside')
+    every = GhostPenalty(element.u, patch, cell_types, .1, faces='global')
 
     volume = VolumeGhostPenalty(element.u, patch, cell_types, .1)
 
     assert cut.num_faces + void.num_faces == ghost.num_faces
 
-    for stabilizations in ([ghost], [cut, void], [volume]):
+    # Fourteen by fourteen elements, thirteen by fourteen interior faces
+    # normal to each direction
+    assert every.num_faces == 2 * 13 * 14
+
+    for stabilizations in ([ghost], [cut, void], [volume], [every]):
         u = LinearProblem(element, space, quadrature,
                           np.zeros(quadrature.num_points),
                           conditions=[condition],
