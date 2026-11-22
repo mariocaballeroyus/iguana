@@ -128,7 +128,32 @@ TEST_CASE("The lines of a grid bound the elements of the walk", "[grid]")
             REQUIRE(element.start()[direction] == lines[direction][index]);
             REQUIRE(element.end()[direction] == lines[direction][index + 1]);
         }
+
+        // The bounds by index are those of the walk, and the element holds
+        // its midpoint and its start, on the knot lines
+        REQUIRE(grid.element_start(element.index()) == element.start());
+        REQUIRE(grid.element_end(element.index()) == element.end());
+
+        std::array<double, 3> middle{};
+
+        for (std::size_t direction = 0; direction < 3; ++direction)
+            middle[direction] =
+                (element.start()[direction] + element.end()[direction]) / 2;
+
+        REQUIRE(element_holding(grid, middle) == element.index());
+        REQUIRE(element_holding(grid, element.start()) == element.index());
     }
+
+    // The same elements on knots of other degrees and multiplicities
+    const TensorGrid<double, 3> other(
+        {KnotVector<double>(1, {0., 0., 1., 2., 3., 3.}),
+         KnotVector<double>(3, {0., 0., 0., 0., 1., 2., 2., 2., 2.}),
+         KnotVector<double>(1, {1., 1., 1.5, 2., 2.5, 2.5})});
+
+    REQUIRE(same_elements(grid, other));
+    REQUIRE(!same_elements(grid, TensorGrid<double, 3>(
+                                     {grid.knots(0), grid.knots(0),
+                                      grid.knots(2)})));
 }
 
 TEST_CASE("The faces of a grid join each pair of neighboring elements once",

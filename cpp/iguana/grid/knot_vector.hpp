@@ -6,6 +6,7 @@
 #ifndef IGUANA_GRID_KNOT_VECTOR_HPP
 #define IGUANA_GRID_KNOT_VECTOR_HPP
 
+#include <array>
 #include <concepts>
 #include <cstddef>
 #include <vector>
@@ -83,6 +84,17 @@ public:
      */
     constexpr T element_end(int element) const noexcept
     { return knots_[element_span(element) + 1]; }
+
+    /**
+     * @brief First and last element on which a function of the spline space
+     *        is non-zero, those of the knot span of its support, which runs
+     *        from knot @p function to knot @p function + degree + 1
+     *
+     * @param function Function index
+     *
+     * @pre @p function lies in [0, num_knots - degree - 1)
+     */
+    std::array<int, 2> support(int function) const noexcept;
 
     /// @brief Parameter at which the parametric domain starts
     constexpr T domain_start() const noexcept

@@ -29,6 +29,30 @@ TensorGrid<T, d>::TensorGrid(std::array<KnotVector<T>, d> knots)
 }
 
 template<std::floating_point T, std::size_t d>
+std::array<T, d> TensorGrid<T, d>::element_start(int element) const noexcept
+{
+    const std::array<int, d> index = unflatten(element, element_counts());
+    std::array<T, d> start{};
+
+    for (std::size_t direction = 0; direction < d; ++direction)
+        start[direction] = knots_[direction].element_start(index[direction]);
+
+    return start;
+}
+
+template<std::floating_point T, std::size_t d>
+std::array<T, d> TensorGrid<T, d>::element_end(int element) const noexcept
+{
+    const std::array<int, d> index = unflatten(element, element_counts());
+    std::array<T, d> end{};
+
+    for (std::size_t direction = 0; direction < d; ++direction)
+        end[direction] = knots_[direction].element_end(index[direction]);
+
+    return end;
+}
+
+template<std::floating_point T, std::size_t d>
 std::size_t TensorGrid<T, d>::face_direction(int face) const noexcept
 {
     std::size_t direction = 0;
@@ -123,8 +147,44 @@ std::array<int, d> TensorGrid<T, d>::element_before(int face) const noexcept
     return unflatten(face - face_offsets_[direction], bounds);
 }
 
+template<std::floating_point T, std::size_t d>
+bool same_elements(const TensorGrid<T, d>& a, const TensorGrid<T, d>& b)
+{
+    return a.lines() == b.lines();
+}
+
+template<std::floating_point T, std::size_t d>
+int element_holding(const TensorGrid<T, d>& grid,
+                    const std::array<T, d>& parameters)
+{
+    std::array<int, d> index{};
+    std::array<int, d> counts{};
+
+    for (std::size_t direction = 0; direction < d; ++direction) {
+        const KnotVector<T>& knots = grid.knots(direction);
+        index[direction] = element_holding(knots, parameters[direction]);
+        counts[direction] = knots.num_elements();
+    }
+
+    return flatten(index, counts);
+}
+
 template class TensorGrid<double, 1>;
 template class TensorGrid<double, 2>;
 template class TensorGrid<double, 3>;
+
+template bool same_elements(const TensorGrid<double, 1>&,
+                            const TensorGrid<double, 1>&);
+template bool same_elements(const TensorGrid<double, 2>&,
+                            const TensorGrid<double, 2>&);
+template bool same_elements(const TensorGrid<double, 3>&,
+                            const TensorGrid<double, 3>&);
+
+template int element_holding(const TensorGrid<double, 1>&,
+                             const std::array<double, 1>&);
+template int element_holding(const TensorGrid<double, 2>&,
+                             const std::array<double, 2>&);
+template int element_holding(const TensorGrid<double, 3>&,
+                             const std::array<double, 3>&);
 
 } // namespace iguana

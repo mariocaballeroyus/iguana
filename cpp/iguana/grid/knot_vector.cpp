@@ -50,6 +50,19 @@ KnotVector<T>::KnotVector(int degree, std::vector<T> knots)
 }
 
 template<std::floating_point T>
+std::array<int, 2> KnotVector<T>::support(int function) const noexcept
+{
+    // The elements whose span starts at or after the first knot of the
+    // function, up to the one starting at its last knot but one
+    const auto first = std::ranges::lower_bound(element_spans_, function);
+    const auto last =
+        std::ranges::upper_bound(element_spans_, function + degree_);
+
+    return {static_cast<int>(std::distance(element_spans_.begin(), first)),
+            static_cast<int>(std::distance(element_spans_.begin(), last)) - 1};
+}
+
+template<std::floating_point T>
 Eigen::VectorX<T> greville_abscissae(const KnotVector<T>& knot_vector)
 {
     const std::vector<T>& knots = knot_vector.values();

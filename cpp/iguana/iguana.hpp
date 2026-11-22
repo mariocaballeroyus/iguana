@@ -10,6 +10,7 @@
 #include "basis/bspline.hpp"
 #include "basis/tensor_bspline.hpp"
 #include "basis/tensor_nurbs.hpp"
+#include "basis/thb_spline.hpp"
 #include "grid/hierarchical_grid.hpp"
 #include "grid/hierarchical_grid_iterator.hpp"
 #include "grid/knot_vector.hpp"

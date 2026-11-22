@@ -89,6 +89,70 @@ public:
     { bspline_.active_on_element(element, actives); }
 
     /**
+     * @brief Evaluates the non-zero functions on an element given by index,
+     *        as the overload taking its first active functions does
+     *
+     * @param element Element index
+     * @param points Evaluation points, with size (num_points, dimension)
+     * @param values Output of size (num_active(), num_points). It is resized
+     *        when necessary
+     *
+     * @pre @p element lies in [0, grid().num_elements()), @p points has
+     *      dimension columns, and every point lies inside that element
+     */
+    void eval_on_element(int element, const Eigen::MatrixX<T>& points,
+                         Eigen::MatrixX<T>& values) const
+    { eval_on_element(bspline_.first_active(element), points, values); }
+
+    /**
+     * @brief Evaluates the non-zero functions on an element given by index
+     *        and their gradients, as the overload taking its first active
+     *        functions does
+     *
+     * @param element Element index
+     * @param points Evaluation points, with size (num_points, dimension)
+     * @param values Output of size (num_active(), num_points). It is resized
+     *        when necessary
+     * @param gradients Output with one matrix per direction, of the size of
+     *        @p values. They are resized when necessary
+     *
+     * @pre @p element lies in [0, grid().num_elements()), @p points has
+     *      dimension columns, and every point lies inside that element
+     */
+    void grad_on_element(int element, const Eigen::MatrixX<T>& points,
+                         Eigen::MatrixX<T>& values,
+                         std::array<Eigen::MatrixX<T>, d>& gradients) const
+    {
+        grad_on_element(bspline_.first_active(element), points, values,
+                        gradients);
+    }
+
+    /**
+     * @brief Evaluates the non-zero functions on an element given by index,
+     *        their gradients and their Hessians, as the overload taking its
+     *        first active functions does
+     *
+     * @param element Element index
+     * @param points Evaluation points, with size (num_points, dimension)
+     * @param values Output of size (num_active(), num_points). It is resized
+     *        when necessary
+     * @param gradients Output filled as grad_on_element() fills it
+     * @param hessians Output with one matrix per pair of directions, of the
+     *        size of @p values. They are resized when necessary
+     *
+     * @pre @p element lies in [0, grid().num_elements()), @p points has
+     *      dimension columns, and every point lies inside that element
+     */
+    void hess_on_element(
+        int element, const Eigen::MatrixX<T>& points,
+        Eigen::MatrixX<T>& values, std::array<Eigen::MatrixX<T>, d>& gradients,
+        std::array<Eigen::MatrixX<T>, d * (d + 1) / 2>& hessians) const
+    {
+        hess_on_element(bspline_.first_active(element), points, values,
+                        gradients, hessians);
+    }
+
+    /**
      * @brief Evaluates the non-zero functions on an element
      *
      * The rows follow the order of active_on_element()

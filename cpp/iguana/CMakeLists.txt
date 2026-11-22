@@ -3,6 +3,7 @@ add_library(iguana
     basis/bspline.cpp
     basis/tensor_bspline.cpp
     basis/tensor_nurbs.cpp
+    basis/thb_spline.cpp
     grid/hierarchical_grid.cpp
     grid/hierarchical_grid_iterator.cpp
     grid/knot_vector.cpp

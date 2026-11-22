@@ -121,6 +121,12 @@ TEST_CASE("The elements are the non-empty knot spans of the parametric domain",
     REQUIRE(knots.element_start(1) == 1.5);
     REQUIRE(knots.element_end(1) == 2.);
     REQUIRE(knots.element_span(1) == 4);
+
+    // The supports of the five functions, [t_i, t_{i + 3}], reach the
+    // elements they overlap, the first and last functions one each
+    REQUIRE(knots.support(0) == std::array<int, 2>{0, 0});
+    REQUIRE(knots.support(2) == std::array<int, 2>{0, 1});
+    REQUIRE(knots.support(4) == std::array<int, 2>{1, 1});
 }
 
 TEST_CASE("Refinement writes the coarse functions in the fine ones",

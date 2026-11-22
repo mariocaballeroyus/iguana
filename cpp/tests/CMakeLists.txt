@@ -2,6 +2,7 @@ add_executable(iguana_tests
     basis/test_bspline.cpp
     basis/test_tensor_bspline.cpp
     basis/test_tensor_nurbs.cpp
+    basis/test_thb_spline.cpp
     grid/test_hierarchical_grid.cpp
     grid/test_knot_vector.cpp
     grid/test_tensor_grid_iterator.cpp
