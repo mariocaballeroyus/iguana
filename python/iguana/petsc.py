@@ -61,6 +61,7 @@ class _Problem:
         stabilizations: Sequence[GhostPenalty | VolumeGhostPenalty
                                  | MixedGhostPenalty],
         pressure_reference: npt.ArrayLike | None,
+        fixed: tuple[npt.ArrayLike, npt.ArrayLike] | None,
     ) -> None:
         """Initialize the form and the assembler of the problem, checking
         its terms as the problems document."""
@@ -121,8 +122,6 @@ class _Problem:
         self.source = source
         self._cell_weights = _cell_weights(quadrature, cell_weights, on_faces)
 
-        self._pinned = _pinned(element, space, pressure_reference)
-
         # The form reads the data where it lies, so a source or values set
         # later reach it without building it again
         self._form = _cpp.Form2d()
@@ -168,6 +167,9 @@ class _Problem:
                              - sum(condition.num_multipliers
                                    for kind in compiled
                                    for condition in kind))
+
+        self._held = _held(element, space, pressure_reference, fixed,
+                           self._num_entries)
 
     @property
     def source(self) -> npt.NDArray[np.float64]:
@@ -239,6 +241,7 @@ class LinearProblem(_Problem):
                                  | MixedGhostPenalty] = (),
         step: float | None = None,
         pressure_reference: npt.ArrayLike | None = None,
+        fixed: tuple[npt.ArrayLike, npt.ArrayLike] | None = None,
         petsc_options: dict[str, object] | None = None,
     ) -> None:
         """Initialize the problem of an element on a space.
@@ -256,12 +259,15 @@ class LinearProblem(_Problem):
         default factorization solves. A time step leaves their equations
         B u = G as they are, as the multipliers carry no mass.
 
-        With the velocity of a fluid imposed on the whole boundary, the
-        pressure is only determined up to a constant, which a pressure
-        reference fixes: the pressure of the function whose control point
-        lies nearest the reference is set to zero, by its row and column of
-        the system after each assembly. Any point serves, the constant
-        being the same everywhere.
+        Entries of the solution can be held at given values, as a strong
+        condition on the degrees of freedom of the functions along a side
+        of the patch: after each assembly their rows become those of the
+        identity and their columns move to the right-hand side. With the
+        velocity of a fluid imposed on the whole boundary, the pressure is
+        only determined up to a constant, which a pressure reference fixes
+        the same way: the pressure of the function whose control point lies
+        nearest the reference is held at zero. Any point serves, the
+        constant being the same everywhere.
 
         Args:
             element: The element stating the problem, a Poisson, a Stokes
@@ -303,6 +309,12 @@ class LinearProblem(_Problem):
             pressure_reference: The point near which the pressure is zero,
                 of shape `(2,)`, for an element with a pressure. Without it,
                 nothing fixes the constant pressure.
+            fixed: The entries of the solution held at values, as a pair of
+                their indices and their values, each of shape
+                `(num_fixed,)`. An entry is a degree of freedom times the
+                block size plus its component on a function space, and a
+                degree of freedom of a field from the offset of the field
+                on a mixed space. Without them, no entry is held.
             petsc_options: Options of the PETSc linear solver, such as
                 `{'ksp_type': 'gmres', 'pc_type': 'ilu'}`. Without them, the
                 solver factorizes the system, with MUMPS when PETSc has it.
@@ -326,15 +338,16 @@ class LinearProblem(_Problem):
                 weights are not one per cell, if a condition across faces
                 is given without them, if the time step is not
                 positive or is given with a skeleton Nitsche condition
-                shifted with the equation, or if a pressure reference is
+                shifted with the equation, if a pressure reference is
                 given for an element without a pressure or is not a point of
-                the plane.
+                the plane, or if the fixed entries are not a pair of indices
+                inside the system, each once, and one value each.
         """
         conditions = list(conditions)
         super().__init__(element, space, quadrature, source,
                          cell_weights=cell_weights, conditions=conditions,
                          stabilizations=stabilizations,
-                         pressure_reference=pressure_reference)
+                         pressure_reference=pressure_reference, fixed=fixed)
 
         if step is not None and not step > 0.:
             raise ValueError('the time step must be positive')
@@ -462,11 +475,14 @@ class LinearProblem(_Problem):
             self._mass.mult(self._previous, self._b)
             self._b.aypx(1. / self._step, self._residual)
 
-        # The pinned pressure, zero as the coefficients still are, left out
-        # of the other equations
-        if self._pinned is not None:
-            self._A.zeroRowsColumns([self._pinned], diag=1., x=self._x,
-                                    b=self._b)
+        # The held entries at their values, left out of the other equations,
+        # whose right-hand sides take their columns
+        entries, values = self._held
+
+        if entries.size:
+            self._x.setValues(entries, values)
+            self._x.assemble()
+            self._A.zeroRowsColumns(entries, diag=1., x=self._x, b=self._b)
 
         self._solver.solve(self._b, self._x)
 
@@ -498,6 +514,7 @@ class NonlinearProblem(_Problem):
         stabilizations: Sequence[GhostPenalty | VolumeGhostPenalty
                                  | MixedGhostPenalty] = (),
         pressure_reference: npt.ArrayLike | None = None,
+        fixed: tuple[npt.ArrayLike, npt.ArrayLike] | None = None,
         petsc_options: dict[str, object] | None = None,
     ) -> None:
         """Initialize the problem of an element on a space.
@@ -515,9 +532,10 @@ class NonlinearProblem(_Problem):
         the reference configuration, where they are the traction of the
         first Piola-Kirchhoff stress with its sign changed.
 
-        A pressure reference fixes the constant pressure as for a linear
-        problem: the pinned pressure stays zero, its row and column of the
-        tangent those of the identity.
+        Entries are held at values, and a pressure reference fixes the
+        constant pressure, as for a linear problem: the held entries stay
+        at their values, their residuals the distances from them and their
+        rows and columns of the tangent those of the identity.
 
         Args:
             element: The element stating the problem, a Poisson, a Stokes
@@ -545,6 +563,9 @@ class NonlinearProblem(_Problem):
             pressure_reference: The point near which the pressure is zero,
                 of shape `(2,)`, for an element with a pressure. Without it,
                 nothing fixes the constant pressure.
+            fixed: The entries of the solution held at values, as a pair of
+                their indices and their values, as for a linear problem.
+                Without them, no entry is held.
             petsc_options: Options of the PETSc nonlinear solver and of its
                 linear solver, such as `{'snes_rtol': 1e-10, 'ksp_type':
                 'gmres', 'pc_type': 'ilu'}`. Without them, Newton's method
@@ -569,8 +590,10 @@ class NonlinearProblem(_Problem):
                 trace of another element, if the source does not give each
                 point the values the element takes, if the cell weights are
                 not one per cell, if a condition across faces is given
-                without them, or if a pressure reference is given for an
-                element without a pressure or is not a point of the plane.
+                without them, if a pressure reference is given for an
+                element without a pressure or is not a point of the plane,
+                or if the fixed entries are not a pair of indices inside the
+                system, each once, and one value each.
         """
         conditions = list(conditions)
 
@@ -586,7 +609,7 @@ class NonlinearProblem(_Problem):
         super().__init__(element, space, quadrature, source,
                          cell_weights=cell_weights, conditions=conditions,
                          stabilizations=stabilizations,
-                         pressure_reference=pressure_reference)
+                         pressure_reference=pressure_reference, fixed=fixed)
 
         # The first solve starts from zero, and each later one from the
         # solution before, so that a parameter may be continued
@@ -619,7 +642,7 @@ class NonlinearProblem(_Problem):
         """Coefficients of each degree of freedom from which the next solve
         starts, shaped as the solution: zero at first, then the last
         solution, or the last iterate of a solve that did not converge. The
-        pinned pressure starts from zero whatever its guess, and the
+        held entries start from their values whatever their guess, and the
         multipliers from where the last solve left them."""
         entries = self._x.getArray()
 
@@ -657,10 +680,13 @@ class NonlinearProblem(_Problem):
         # one replaced at the same time
         _free_discarded()
 
-        # Zero from the start, so that the steps keep it there, the row and
-        # column of the tangent leaving it out of the other equations
-        if self._pinned is not None:
-            self._x.setValue(self._pinned, 0.)
+        # At their values from the start, so that the steps keep them there,
+        # their rows and columns of the tangent leaving them out of the other
+        # equations
+        entries, values = self._held
+
+        if entries.size:
+            self._x.setValues(entries, values)
             self._x.assemble()
 
         self._solver.solve(None, self._x)
@@ -727,17 +753,55 @@ def _check_terms(
                              'patch of the space')
 
 
-def _pinned(
+def _held(
     element: PoissonElement | StokesElement | ElasticityElement,
     space: FunctionSpace | MixedFunctionSpace,
     pressure_reference: npt.ArrayLike | None,
-) -> int | None:
-    """Row of the system of the pressure pinned near a reference point, that
-    of the function whose control point lies nearest, or none without a
-    reference."""
-    if pressure_reference is None:
-        return None
+    fixed: tuple[npt.ArrayLike, npt.ArrayLike] | None,
+    num_entries: int,
+) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.float64]]:
+    """Entries of the system held at values, the fixed ones at theirs and
+    the pressure pinned near a reference point, that of the function whose
+    control point lies nearest, at zero, checked to lie in the system, each
+    once."""
+    entries = np.zeros(0, dtype=PETSc.IntType)
+    values = np.zeros(0)
 
+    if fixed is not None:
+        try:
+            entries, values = fixed
+        except (TypeError, ValueError):
+            raise ValueError('the fixed entries must be a pair of indices '
+                             'and values') from None
+
+        entries = np.asarray(entries, dtype=PETSc.IntType).ravel()
+        values = np.asarray(values, dtype=np.float64).ravel()
+
+        if values.shape != entries.shape:
+            raise ValueError('the fixed entries must have one value each')
+
+        if entries.size and (entries.min() < 0
+                             or entries.max() >= num_entries):
+            raise ValueError('the fixed entries must lie in the system')
+
+    if pressure_reference is not None:
+        pinned = _pinned(element, space, pressure_reference)
+        entries = np.append(entries, pinned).astype(PETSc.IntType)
+        values = np.append(values, 0.)
+
+    if len(np.unique(entries)) != len(entries):
+        raise ValueError('an entry can be held only once')
+
+    return entries, values
+
+
+def _pinned(
+    element: PoissonElement | StokesElement | ElasticityElement,
+    space: FunctionSpace | MixedFunctionSpace,
+    pressure_reference: npt.ArrayLike,
+) -> int:
+    """Row of the system of the pressure pinned near a reference point, that
+    of the function whose control point lies nearest."""
     if element._pressure_component is None:
         raise ValueError('a pressure reference needs an element with a '
                          'pressure')
@@ -822,7 +886,7 @@ def _nonlinear_solver(
 
     # What the assembly reads rather than the problem, which holds the solver:
     # a discarded problem then leaves at once, not when Python seeks cycles
-    assembly = (problem._form, problem._assembler, problem._pinned)
+    assembly = (problem._form, problem._assembler, problem._held)
     solver.setFunction(_evaluate_residual, problem._b, args=assembly)
     solver.setJacobian(_evaluate_tangent, problem._tangent, args=assembly)
 
@@ -839,7 +903,7 @@ def _evaluate_residual(
     residual: PETSc.Vec,
     form: _cpp.Form2d,
     assembler: _cpp.Assembler2d,
-    pinned: int | None,
+    held: tuple[npt.NDArray[np.integer], npt.NDArray[np.float64]],
 ) -> None:
     """Assemble the residual at coefficients into the vector the solver
     gives, which its line search may change for one of its own."""
@@ -848,9 +912,11 @@ def _evaluate_residual(
     form.assemble_residual(assembler, x)
     assembled.copy(residual)
 
-    # The equation of the pinned pressure keeps it at zero
-    if pinned is not None:
-        residual.setValue(pinned, x.getValue(pinned))
+    # The equations of the held entries keep them at their values
+    entries, values = held
+
+    if entries.size:
+        residual.setValues(entries, x.getValues(entries) - values)
         residual.assemble()
 
 
@@ -861,7 +927,7 @@ def _evaluate_tangent(
     preconditioner: PETSc.Mat,
     form: _cpp.Form2d,
     assembler: _cpp.Assembler2d,
-    pinned: int | None,
+    held: tuple[npt.NDArray[np.integer], npt.NDArray[np.float64]],
 ) -> None:
     """Assemble the tangent at coefficients, the matrix the solver was
     given."""
@@ -871,8 +937,10 @@ def _evaluate_tangent(
 
     # Rows and columns rather than rows, whose structure PETSc would drop for
     # the next assembly
-    if pinned is not None:
-        assembled.zeroRowsColumns([pinned], diag=1.)
+    entries, _ = held
+
+    if entries.size:
+        assembled.zeroRowsColumns(entries, diag=1.)
 
 
 def _direct_options() -> dict[str, object]:

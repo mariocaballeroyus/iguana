@@ -1293,3 +1293,39 @@ def test_invalid_arguments():
     for wrong in (previous[:2], np.zeros(mixed.num_dofs)):
         with pytest.raises(ValueError):
             mixed_stepped.previous = wrong
+
+
+@pytest.mark.parametrize('problem_type', [LinearProblem, NonlinearProblem],
+                         ids=['linear', 'nonlinear'])
+def test_fixed_entries_hold_their_values(problem_type):
+    """The entries fixed hold their values through the solve, a strong
+    condition on the boundary: the quadratic splines hold
+    u = x (width - x) y (height - y), which vanishes on the boundary, so
+    with its boundary functions held at zero the Poisson element finds it
+    exactly, as does one Newton step. The fixed entries are a pair of
+    indices inside the system, each held once, and one value each."""
+    width, height = 2., 3.
+    patch = iguana.create_rectangle(lengths=(width, height), elements=(4, 3))
+    space = FunctionSpace(patch)
+
+    def source(points):
+        x, y = points.T
+        return 2. * (x * (width - x) + y * (height - y))
+
+    held = space.boundary_dofs
+    problem = problem_type(PoissonElement(), space, gauss_quadrature(patch),
+                           source, fixed=(held, np.zeros(len(held))),
+                           petsc_options_prefix='fixed_')
+    u = problem.solve()
+
+    along_x = width ** 2 * coefficients(patch.knots[0])
+    along_y = height ** 2 * coefficients(patch.knots[1])
+
+    assert np.allclose(u, np.kron(along_y, along_x), rtol=0., atol=1e-12)
+    assert np.array_equal(u[held], np.zeros(len(held)))
+
+    for fixed in ([0, 1, 2], ([0, 1], [0.]), ([0, space.num_dofs], [0., 0.]),
+                  ([0, 0], [0., 0.])):
+        with pytest.raises(ValueError):
+            problem_type(PoissonElement(), space, gauss_quadrature(patch),
+                         source, fixed=fixed, petsc_options_prefix='fixed_')
