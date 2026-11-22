@@ -5,6 +5,7 @@
 
 #include "patch.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
@@ -12,6 +13,7 @@
 #include <vector>
 
 #include <Eigen/LU>
+#include <Eigen/QR>
 
 #include "iguana/grid/knot_vector.hpp"
 #include "iguana/utils/multi_index.hpp"
@@ -39,23 +41,96 @@ Eigen::Matrix<Scalar, n, d> jacobian_at(
     return jacobian;
 }
 
-/// @brief Tensor-product B-spline of a B-spline basis, the basis itself
+/**
+ * @brief Greville points of a tensor-product B-spline basis, one per
+ *        function in its numbering, the products of the abscissae of its
+ *        directions
+ */
 template<std::floating_point T, std::size_t d>
-const TensorBSpline<T, d>& bspline_of(const TensorBSpline<T, d>& basis)
+Eigen::MatrixX<T> greville_points(const TensorBSpline<T, d>& basis)
 {
-    return basis;
+    std::array<Eigen::VectorX<T>, d> abscissae;
+    std::array<int, d> counts{};
+
+    for (std::size_t direction = 0; direction < d; ++direction) {
+        abscissae[direction] =
+            greville_abscissae(basis.axis(direction).knots());
+        counts[direction] = static_cast<int>(abscissae[direction].size());
+    }
+
+    Eigen::MatrixX<T> points(basis.num_functions(), d);
+
+    for (int function = 0; function < basis.num_functions(); ++function) {
+        const std::array<int, d> index = unflatten(function, counts);
+
+        for (std::size_t direction = 0; direction < d; ++direction)
+            points(function, direction) =
+                abscissae[direction](index[direction]);
+    }
+
+    return points;
 }
 
-/// @brief Tensor-product B-spline that a NURBS basis weights
+/// @brief Greville points of a NURBS basis, those of its B-splines
 template<std::floating_point T, std::size_t d>
-const TensorBSpline<T, d>& bspline_of(const TensorNURBS<T, d>& basis)
+Eigen::MatrixX<T> greville_points(const TensorNURBS<T, d>& basis)
 {
-    return basis.bspline();
+    return greville_points(basis.bspline());
+}
+
+/// @brief Greville points of a hierarchical basis, those of each function
+///        in the tensor basis of its level
+template<std::floating_point T, std::size_t d>
+Eigen::MatrixX<T> greville_points(const THBSpline<T, d>& basis)
+{
+    Eigen::MatrixX<T> points(basis.num_functions(), d);
+
+    for (int level = 0; level < basis.num_levels(); ++level) {
+        const Eigen::MatrixX<T> level_points =
+            greville_points(basis.level(level));
+        const std::vector<int>& active = basis.active_functions(level);
+
+        for (std::size_t k = 0; k < active.size(); ++k)
+            points.row(basis.offset(level) + static_cast<Eigen::Index>(k)) =
+                level_points.row(active[k]);
+    }
+
+    return points;
+}
+
+/// @brief Lowest degree of a basis over its directions
+template<std::floating_point T, std::size_t d>
+int min_degree(const TensorBSpline<T, d>& basis)
+{
+    int degree = basis.axis(0).degree();
+
+    for (std::size_t direction = 1; direction < d; ++direction)
+        degree = std::min(degree, basis.axis(direction).degree());
+
+    return degree;
+}
+
+template<std::floating_point T, std::size_t d>
+int min_degree(const TensorNURBS<T, d>& basis)
+{
+    return min_degree(basis.bspline());
+}
+
+template<std::floating_point T, std::size_t d>
+int min_degree(const THBSpline<T, d>& basis)
+{
+    return std::ranges::min(basis.degrees());
 }
 
 /// @brief Whether the weights of a basis are equal, as those of a B-spline
 template<std::floating_point T, std::size_t d>
 bool equal_weights(const TensorBSpline<T, d>&, T)
+{
+    return true;
+}
+
+template<std::floating_point T, std::size_t d>
+bool equal_weights(const THBSpline<T, d>&, T)
 {
     return true;
 }
@@ -75,11 +150,12 @@ bool equal_weights(const TensorNURBS<T, d>& basis, T tolerance)
  * @brief Whether the map of a basis and its control points is affine,
  *        x = a + A xi, and the map if it is
  *
- * The map is read off the first control point and the last one along each
- * direction, then checked at every control point against its Greville
- * point, within rounding relative to the size of the patch. A direction of
- * degree zero, or a NURBS basis with unequal weights, does not reproduce
- * the identity, so its map is not affine
+ * An affine map has the images of the Greville points as control points,
+ * so the map is fitted to the control points at the Greville points by
+ * least squares, then checked at every one of them within rounding
+ * relative to the size of the patch. A direction of degree zero, or a
+ * NURBS basis with unequal weights, does not reproduce the identity, so
+ * its map is not affine
  *
  * @param offset Output offset a, left zero if the map is not affine
  * @param linear Output linear part A, left zero if the map is not affine
@@ -99,67 +175,32 @@ bool affine_map(
 
     const Scalar rounding = 4096 * std::numeric_limits<Scalar>::epsilon();
 
-    if (!equal_weights(basis, rounding))
+    if (!equal_weights(basis, rounding) || min_degree(basis) < 1)
         return false;
 
-    // Greville abscissae of each direction
-    const TensorBSpline<Scalar, dim>& bspline = bspline_of(basis);
-    std::array<Eigen::VectorX<Scalar>, dim> greville;
-    std::array<int, dim> counts{};
+    // The fit c_i ≈ a + A g_i, a column of unknowns per coordinate
+    Eigen::MatrixX<Scalar> system(coefficients.rows(), dim + 1);
+    system.col(0).setOnes();
+    system.rightCols(dim) = greville_points(basis);
 
-    for (std::size_t direction = 0; direction < dim; ++direction) {
-        const KnotVector<Scalar>& knots = bspline.axis(direction).knots();
+    const Eigen::MatrixX<Scalar> fit =
+        system.colPivHouseholderQr().solve(coefficients);
+    const Eigen::Vector<Scalar, n> shift = fit.row(0).transpose();
+    const Eigen::Matrix<Scalar, n, dim> candidate =
+        fit.bottomRows(dim).transpose();
 
-        if (knots.degree() < 1)
-            return false;
+    // The size of the patch, or its distance from the origin for a map
+    // collapsed to a point, whose fit still rounds
+    const Scalar size = std::max((coefficients.colwise().maxCoeff()
+                                  - coefficients.colwise().minCoeff())
+                                     .maxCoeff(),
+                                 coefficients.cwiseAbs().maxCoeff());
+    const Eigen::MatrixX<Scalar> images =
+        (system.rightCols(dim) * candidate.transpose()).rowwise()
+        + shift.transpose();
 
-        greville[direction] = greville_abscissae(knots);
-        counts[direction] = static_cast<int>(greville[direction].size());
-    }
-
-    const auto greville_point = [&greville, &counts](int function) {
-        const std::array<int, dim> index = unflatten(function, counts);
-        Eigen::Vector<Scalar, dim> point;
-
-        for (std::size_t direction = 0; direction < dim; ++direction)
-            point(direction) = greville[direction](index[direction]);
-
-        return point;
-    };
-
-    // Candidate map, from the first control point and the last one along
-    // each direction
-    const Eigen::Vector<Scalar, n> first = coefficients.row(0).transpose();
-    Eigen::Matrix<Scalar, n, dim> candidate;
-
-    for (std::size_t direction = 0; direction < dim; ++direction) {
-        std::array<int, dim> index{};
-        index[direction] = counts[direction] - 1;
-
-        const Eigen::Vector<Scalar, n> last =
-            coefficients.row(flatten(index, counts)).transpose();
-        const Scalar span = greville[direction](counts[direction] - 1)
-                            - greville[direction](0);
-
-        candidate.col(direction) = (last - first) / span;
-    }
-
-    const Eigen::Vector<Scalar, n> shift =
-        first - candidate * greville_point(0);
-    const Scalar size = (coefficients.colwise().maxCoeff()
-                         - coefficients.colwise().minCoeff())
-                            .maxCoeff();
-
-    for (int function = 0; function < coefficients.rows(); ++function) {
-        const Eigen::Vector<Scalar, n> image =
-            shift + candidate * greville_point(function);
-
-        if ((coefficients.row(function).transpose() - image)
-                .cwiseAbs()
-                .maxCoeff()
-            > rounding * size)
-            return false;
-    }
+    if ((coefficients - images).cwiseAbs().maxCoeff() > rounding * size)
+        return false;
 
     offset = shift;
     linear = candidate;
@@ -385,8 +426,32 @@ void Patch<Basis, n>::invert_points(const PointMatrix<Scalar, n>& points,
                  * linear_.inverse().transpose();
 }
 
+template<std::floating_point T, std::size_t d, std::size_t n>
+Patch<THBSpline<T, d>, n> refine(const Patch<TensorBSpline<T, d>, n>& patch,
+                                 HierarchicalGrid<T, d> grid)
+{
+    std::array<int, d> degrees{};
+
+    for (std::size_t direction = 0; direction < d; ++direction)
+        degrees[direction] = patch.basis().axis(direction).degree();
+
+    THBSpline<T, d> basis(std::move(grid), degrees);
+
+    if (basis.level(0) != patch.basis())
+        throw std::invalid_argument("Patch: "
+                                    "the coarse level of the grid must have "
+                                    "the knots of the patch");
+
+    // The truncated functions preserve the coefficients of the map
+    const PointMatrix<T, n> coefficients =
+        basis.coefficients(patch.coefficients());
+
+    return Patch<THBSpline<T, d>, n>(std::move(basis), coefficients);
+}
+
 // Curves in the plane and in space, planar regions, surfaces in space and
-// volumes, on B-splines and on NURBS
+// volumes, on B-splines and on NURBS, and the regions, surfaces and
+// volumes refined on hierarchical B-splines
 template class Patch<TensorBSpline<double, 1>, 2>;
 template class Patch<TensorBSpline<double, 1>, 3>;
 template class Patch<TensorBSpline<double, 2>, 2>;
@@ -397,5 +462,15 @@ template class Patch<TensorNURBS<double, 1>, 3>;
 template class Patch<TensorNURBS<double, 2>, 2>;
 template class Patch<TensorNURBS<double, 2>, 3>;
 template class Patch<TensorNURBS<double, 3>, 3>;
+template class Patch<THBSpline<double, 2>, 2>;
+template class Patch<THBSpline<double, 2>, 3>;
+template class Patch<THBSpline<double, 3>, 3>;
+
+template Patch<THBSpline<double, 2>, 2> refine(
+    const Patch<TensorBSpline<double, 2>, 2>&, HierarchicalGrid<double, 2>);
+template Patch<THBSpline<double, 2>, 3> refine(
+    const Patch<TensorBSpline<double, 2>, 3>&, HierarchicalGrid<double, 2>);
+template Patch<THBSpline<double, 3>, 3> refine(
+    const Patch<TensorBSpline<double, 3>, 3>&, HierarchicalGrid<double, 3>);
 
 } // namespace iguana
