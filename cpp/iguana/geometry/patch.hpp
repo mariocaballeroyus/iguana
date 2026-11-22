@@ -14,6 +14,8 @@
 
 #include "iguana/basis/tensor_bspline.hpp"
 #include "iguana/basis/tensor_nurbs.hpp"
+#include "iguana/basis/thb_spline.hpp"
+#include "iguana/grid/hierarchical_grid.hpp"
 
 namespace iguana
 {
@@ -29,16 +31,15 @@ template<std::floating_point T, std::size_t n>
 using PointMatrix = Eigen::Matrix<T, Eigen::Dynamic, n, Eigen::RowMajor>;
 
 /**
- * @brief Tensor-product B-spline or NURBS patch, a map from the parameter
- *        box into physical space
+ * @brief Spline patch, a map from the parameter box into physical space
  *
  * The patch pairs a basis with one control point per basis function, so that
  * a parameter maps to physical space. A physical space of more dimensions
  * than parametric directions makes the patch a curve or surface in it, such
  * as a shell, and one of as many a domain, such as a planar region
  *
- * @tparam Basis Tensor-product basis of the map, TensorBSpline or
- *         TensorNURBS
+ * @tparam Basis Basis of the map, TensorBSpline, TensorNURBS or the
+ *         hierarchical THBSpline
  * @tparam n Dimension of the physical space, at least the number of
  *         parametric directions
  */
@@ -339,6 +340,26 @@ private:
     ///        direction, zero otherwise
     Eigen::Matrix<Scalar, n, dim> linear_;
 };
+
+/**
+ * @brief Patch of a tensor-product B-spline refined on a hierarchical grid,
+ *        the same map on the truncated hierarchical basis of its degrees
+ *
+ * The truncated hierarchical functions preserve the coefficients of a
+ * spline of the coarse space: the control point of a function of the
+ * refined basis is the control point of the map refined to its level
+ *
+ * @param patch Patch to refine
+ * @param grid Hierarchical grid whose coarse level has the elements of the
+ *        patch
+ * @return Patch on the hierarchical basis of the degrees of @p patch
+ *
+ * @throws std::invalid_argument If the coarse knot vectors of the grid are
+ *         not those of the patch
+ */
+template<std::floating_point T, std::size_t d, std::size_t n>
+Patch<THBSpline<T, d>, n> refine(const Patch<TensorBSpline<T, d>, n>& patch,
+                                 HierarchicalGrid<T, d> grid);
 
 } // namespace iguana
 

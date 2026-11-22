@@ -12,6 +12,7 @@
 #include <functional>
 #include <initializer_list>
 #include <iterator>
+#include <limits>
 #include <numeric>
 #include <span>
 #include <stdexcept>
@@ -1148,10 +1149,13 @@ const Basis& mixed_ghost_basis(bool couple_faces,
                                     "a ghost penalty needs the faces coupled");
 
     // On a diagonal map the derivatives along the directions add up into
-    // the physical divergence
-    const Eigen::Matrix<typename Basis::Scalar, n, Basis::dimension>&
-        linear = patch.linear_part();
-    const bool diagonal = linear.isDiagonal(0);
+    // the physical divergence, the map fitted to the control points within
+    // rounding
+    using Scalar = typename Basis::Scalar;
+    const Eigen::Matrix<Scalar, n, Basis::dimension>& linear =
+        patch.linear_part();
+    const bool diagonal =
+        linear.isDiagonal(4096 * std::numeric_limits<Scalar>::epsilon());
 
     if (!patch.is_affine() || !diagonal)
         throw std::invalid_argument("Assembler: "

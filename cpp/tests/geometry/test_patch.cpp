@@ -285,6 +285,104 @@ TEST_CASE("Patch reproduces affine maps exactly", "[patch]")
                        surface.topRows<2>(), shift.head<2>());
 }
 
+TEST_CASE("A refined patch is the same map on hierarchical functions",
+          "[patch]")
+{
+    using Region = Patch<TensorBSpline<double, 2>, 2>;
+    using iguana::HierarchicalGrid;
+    using iguana::KnotVector;
+    using iguana::TensorGrid;
+    using iguana::THBSpline;
+
+    // Three by three quadratic elements, refined around a corner element
+    // and then a corner of the refinement
+    const TensorBSpline<double, 2> basis(
+        {BSpline<double>(2, {0., 0., 0., 1., 2., 3., 3., 3.}),
+         BSpline<double>(2, {0., 0., 0., 1., 2., 3., 3., 3.})});
+    const HierarchicalGrid<double, 2> once =
+        refine_admissible(HierarchicalGrid<double, 2>(basis.grid()),
+                          std::vector<int>{8}, true);
+    const HierarchicalGrid<double, 2> grid = refine_admissible(
+        once, std::vector<int>{once.num_elements() - 1}, true);
+    REQUIRE(grid.num_levels() == 3);
+
+    Eigen::Matrix2d map;
+    map << 2., .5,
+          -1., 3.;
+    const Region affine(basis, affine_coefficients<2, 2>(
+                                   basis, map, Eigen::Vector2d(1.5, -.25)));
+    iguana::PointMatrix<double, 2> moved = affine.coefficients();
+    moved(12, 0) += .3;
+    const Region bent(basis, moved);
+
+    for (const Region& patch : {affine, bent}) {
+        const Patch<THBSpline<double, 2>, 2> refined = refine(patch, grid);
+
+        REQUIRE(refined.basis().grid() == grid);
+        REQUIRE(refined.is_affine() == patch.is_affine());
+
+        if (patch.is_affine()) {
+            REQUIRE((refined.offset() - patch.offset()).norm() < 1e-13);
+            REQUIRE((refined.linear_part() - patch.linear_part()).norm()
+                    < 1e-13);
+        }
+
+        // Positions and tangents at points of every active element are
+        // those of the patch, evaluated on the coarse element
+        Eigen::VectorXi actives;
+        Eigen::VectorXi coarse_actives;
+        Eigen::MatrixXd values;
+        Eigen::MatrixXd coarse_values;
+        std::array<Eigen::MatrixXd, 2> gradients;
+        std::array<Eigen::MatrixXd, 2> coarse_gradients;
+        iguana::PointMatrix<double, 2> positions;
+        iguana::PointMatrix<double, 2> coarse_positions;
+        std::array<iguana::PointMatrix<double, 2>, 2> tangents;
+        std::array<iguana::PointMatrix<double, 2>, 2> coarse_tangents;
+
+        for (int element = 0; element < grid.num_elements(); ++element) {
+            const std::array<double, 2> start = grid.element_start(element);
+            const std::array<double, 2> end = grid.element_end(element);
+            Eigen::MatrixXd points(2, 2);
+            points << start[0] + .3 * (end[0] - start[0]),
+                      start[1] + .6 * (end[1] - start[1]),
+                      start[0] + .9 * (end[0] - start[0]),
+                      start[1] + .1 * (end[1] - start[1]);
+
+            refined.basis().active_on_element(element, actives);
+            refined.basis().grad_on_element(element, points, values,
+                                            gradients);
+            refined.position_on_element(actives, values, positions);
+            refined.tangent_on_element(actives, gradients, tangents);
+
+            const int coarse = element_holding(
+                basis.grid(), {points(0, 0), points(0, 1)});
+            basis.active_on_element(coarse, coarse_actives);
+            basis.grad_on_element(coarse, points, coarse_values,
+                                  coarse_gradients);
+            patch.position_on_element(coarse_actives, coarse_values,
+                                      coarse_positions);
+            patch.tangent_on_element(coarse_actives, coarse_gradients,
+                                     coarse_tangents);
+
+            REQUIRE((positions - coarse_positions).cwiseAbs().maxCoeff()
+                    < 1e-13);
+
+            for (std::size_t direction = 0; direction < 2; ++direction)
+                REQUIRE((tangents[direction] - coarse_tangents[direction])
+                            .cwiseAbs()
+                            .maxCoeff()
+                        < 1e-12);
+        }
+    }
+
+    // A grid on other knots does not refine the patch
+    const HierarchicalGrid<double, 2> other(TensorGrid<double, 2>(
+        {KnotVector<double>(2, {0., 0., 0., 1., 2., 3., 3., 3.}),
+         KnotVector<double>(3, {0., 0., 0., 0., 1.5, 3., 3., 3., 3.})}));
+    REQUIRE_THROWS_AS(refine(affine, other), std::invalid_argument);
+}
+
 TEST_CASE("Patch tells maps that are not affine and does not invert them",
           "[patch]")
 {
