@@ -108,6 +108,83 @@ TEST_CASE("Refined elements tile the parametric domain", "[grid]")
     REQUIRE_THAT(area, WithinAbs(4. * 2., 1e-12));
 }
 
+TEST_CASE("Active elements are found by index and by point", "[grid]")
+{
+    const HierarchicalGrid<double, 2> coarse(TensorGrid<double, 2>(
+        {KnotVector<double>(2, {0., 0., 0., 1., 1., 3., 4., 4., 4.}),
+         KnotVector<double>(1, {0., 0., .5, 2., 2.})}));
+    const HierarchicalGrid<double, 2> once =
+        refine(coarse, std::vector<int>{0, 4});
+    const HierarchicalGrid<double, 2> grid =
+        refine(once, std::vector<int>{6, 7});
+
+    // Each level starts where the one before ends
+    REQUIRE(grid.offset(0) == 0);
+    REQUIRE(grid.offset(1) == 4);
+    REQUIRE(grid.offset(2) == 4 + 6);
+    REQUIRE(grid.offset(3) == grid.num_elements());
+
+    // The index queries agree with the walk, and the bounds with the level
+    // grids
+    for (const auto& element : grid) {
+        REQUIRE(grid.level_of(element.index()) == element.level());
+        REQUIRE(grid.level_index(element.index())
+                == grid.active_elements(element.level())
+                       [element.index() - grid.offset(element.level())]);
+        REQUIRE(grid.element_start(element.index()) == element.start());
+        REQUIRE(grid.element_end(element.index()) == element.end());
+
+        // The midpoint is held by the element, as is its start, on the
+        // knot lines
+        std::array<double, 2> middle{};
+
+        for (std::size_t direction = 0; direction < 2; ++direction)
+            middle[direction] =
+                (element.start()[direction] + element.end()[direction]) / 2;
+
+        REQUIRE(element_holding(grid, middle) == element.index());
+        REQUIRE(element_holding(grid, element.start()) == element.index());
+    }
+
+    // The domain of a level holds its active elements and the parents of
+    // the domain of the next, the refined elements 0 and 4 on level 0
+    REQUIRE(grid.domain(0) == std::vector<int>{0, 1, 2, 3, 4, 5});
+    REQUIRE(grid.domain(2) == grid.active_elements(2));
+
+    for (int level = 0; level + 1 < grid.num_levels(); ++level) {
+        std::vector<int> expected = grid.active_elements(level);
+        const int columns =
+            grid.level(level).knots(0).num_elements();
+        const int fine_columns = 2 * columns;
+
+        for (const int child : grid.domain(level + 1)) {
+            const int row = child / fine_columns / 2;
+            const int column = child % fine_columns / 2;
+            expected.push_back(column + columns * row);
+        }
+
+        std::ranges::sort(expected);
+        const auto repeats = std::ranges::unique(expected);
+        expected.erase(repeats.begin(), repeats.end());
+
+        REQUIRE(grid.domain(level) == expected);
+    }
+
+    // Grids with the same elements, on knots of other degrees, and a grid
+    // refined elsewhere
+    const HierarchicalGrid<double, 2> linear(TensorGrid<double, 2>(
+        {KnotVector<double>(1, {0., 0., 1., 1., 3., 4., 4.}),
+         KnotVector<double>(2, {0., 0., 0., .5, 2., 2., 2.})}));
+    const HierarchicalGrid<double, 2> other =
+        refine(refine(linear, std::vector<int>{0, 4}),
+               std::vector<int>{6, 7});
+
+    REQUIRE(grid == refine(once, std::vector<int>{7, 6}));
+    REQUIRE(grid != once);
+    REQUIRE(same_elements(grid, other));
+    REQUIRE(!same_elements(grid, refine(once, std::vector<int>{6})));
+}
+
 TEST_CASE("Refinement rejects what it cannot refine", "[grid]")
 {
     const KnotVector<double> knots(1, {0., 0., 1., 1.});
