@@ -56,21 +56,54 @@ TensorBSpline<T, d>::TensorBSpline(std::array<BSpline<T>, d> axes)
 }
 
 template<std::floating_point T, std::size_t d>
-void TensorBSpline<T, d>::active_on_element(
-    int element, Eigen::VectorXi& actives) const
+std::array<int, d> TensorBSpline<T, d>::first_active(int element) const
+    noexcept
 {
     // Decode the flat element index, with the first direction fastest
-    std::array<int, d> first_active{};
+    std::array<int, d> first{};
 
     for (std::size_t direction = 0; direction < d; ++direction) {
         const BSpline<T>& axis = axes_[direction];
         const int axis_element = element % axis.knots().num_elements();
 
-        first_active[direction] = axis.first_active(axis_element);
+        first[direction] = axis.first_active(axis_element);
         element /= axis.knots().num_elements();
     }
 
-    active_on_element(first_active, actives);
+    return first;
+}
+
+template<std::floating_point T, std::size_t d>
+void TensorBSpline<T, d>::active_on_element(
+    int element, Eigen::VectorXi& actives) const
+{
+    active_on_element(first_active(element), actives);
+}
+
+template<std::floating_point T, std::size_t d>
+void TensorBSpline<T, d>::eval_on_element(int element,
+                                          const Eigen::MatrixX<T>& points,
+                                          Eigen::MatrixX<T>& values) const
+{
+    eval_on_element(first_active(element), points, values);
+}
+
+template<std::floating_point T, std::size_t d>
+void TensorBSpline<T, d>::grad_on_element(
+    int element, const Eigen::MatrixX<T>& points, Eigen::MatrixX<T>& values,
+    std::array<Eigen::MatrixX<T>, d>& gradients) const
+{
+    grad_on_element(first_active(element), points, values, gradients);
+}
+
+template<std::floating_point T, std::size_t d>
+void TensorBSpline<T, d>::hess_on_element(
+    int element, const Eigen::MatrixX<T>& points, Eigen::MatrixX<T>& values,
+    std::array<Eigen::MatrixX<T>, d>& gradients,
+    std::array<Eigen::MatrixX<T>, d * (d + 1) / 2>& hessians) const
+{
+    hess_on_element(first_active(element), points, values, gradients,
+                    hessians);
 }
 
 template<std::floating_point T, std::size_t d>

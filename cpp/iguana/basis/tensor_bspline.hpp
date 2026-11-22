@@ -81,6 +81,17 @@ public:
     { return num_active_; }
 
     /**
+     * @brief First active function of each direction on an element, which
+     *        the element of each direction tells, the first one running
+     *        fastest
+     *
+     * @param element Element index
+     *
+     * @pre @p element lies in [0, grid().num_elements())
+     */
+    std::array<int, d> first_active(int element) const noexcept;
+
+    /**
      * @brief Functions that are non-zero on an element.
      *
      * The returned indices follow the tensor-product numbering, with the
@@ -93,6 +104,61 @@ public:
      * @pre @p element lies in [0, grid().num_elements())
      */
     void active_on_element(int element, Eigen::VectorXi& actives) const;
+
+    /**
+     * @brief Evaluates the non-zero functions on an element given by index,
+     *        as the overload taking its first active functions does
+     *
+     * @param element Element index
+     * @param points Evaluation points, with size (num_points, dimension)
+     * @param values Output of size (num_active(), num_points), with the rows
+     *        of active_on_element(). It is resized when necessary
+     *
+     * @pre @p element lies in [0, grid().num_elements()), @p points has
+     *      dimension columns, and every point lies inside that element
+     */
+    void eval_on_element(int element, const Eigen::MatrixX<T>& points,
+                         Eigen::MatrixX<T>& values) const;
+
+    /**
+     * @brief Evaluates the non-zero functions on an element given by index
+     *        and their gradients, as the overload taking its first active
+     *        functions does
+     *
+     * @param element Element index
+     * @param points Evaluation points, with size (num_points, dimension)
+     * @param values Output of size (num_active(), num_points), with the rows
+     *        of active_on_element(). It is resized when necessary
+     * @param gradients Output with one matrix per direction, of the size of
+     *        @p values. They are resized when necessary
+     *
+     * @pre @p element lies in [0, grid().num_elements()), @p points has
+     *      dimension columns, and every point lies inside that element
+     */
+    void grad_on_element(int element, const Eigen::MatrixX<T>& points,
+                         Eigen::MatrixX<T>& values,
+                         std::array<Eigen::MatrixX<T>, d>& gradients) const;
+
+    /**
+     * @brief Evaluates the non-zero functions on an element given by index,
+     *        their gradients and their Hessians, as the overload taking its
+     *        first active functions does
+     *
+     * @param element Element index
+     * @param points Evaluation points, with size (num_points, dimension)
+     * @param values Output of size (num_active(), num_points), with the rows
+     *        of active_on_element(). It is resized when necessary
+     * @param gradients Output filled as grad_on_element() fills it
+     * @param hessians Output with one matrix per pair of directions, of the
+     *        size of @p values. They are resized when necessary
+     *
+     * @pre @p element lies in [0, grid().num_elements()), @p points has
+     *      dimension columns, and every point lies inside that element
+     */
+    void hess_on_element(
+        int element, const Eigen::MatrixX<T>& points,
+        Eigen::MatrixX<T>& values, std::array<Eigen::MatrixX<T>, d>& gradients,
+        std::array<Eigen::MatrixX<T>, d * (d + 1) / 2>& hessians) const;
 
     /**
      * @brief Functions that are non-zero on the element with the given first
