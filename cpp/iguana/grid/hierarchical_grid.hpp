@@ -219,6 +219,47 @@ template<std::floating_point T, std::size_t d>
 HierarchicalGrid<T, d> refine(const HierarchicalGrid<T, d>& grid,
                                 std::span<const int> elements);
 
+/**
+ * @brief Hierarchical grid refined by boxes of elements and graded, so that
+ *        the hierarchical spline spaces on it keep their structure
+ *
+ * Each marked element is replaced by its children, along with the other
+ * elements of the box of its level that holds it when refining by boxes.
+ * The boxes of a level tile its grid from its first element, with q = p + 2
+ * elements along a direction of degree p, the last box cut short at the
+ * boundary, and the children of a box are the boxes of the next level.
+ * Refining by boxes keeps the domain of each level a union of the supports
+ * of the functions of degree p + 1 on the level before it, so that the
+ * hierarchical spaces of degrees p + 1 and p form an exact sequence under
+ * the divergence, with a box cut short at the boundary still the support
+ * of a function of a clamped knot vector. Without boxes, the divergence of
+ * the space of degree p + 1 still lies in that of degree p, which keeps a
+ * divergence-conforming velocity divergence-free, but may not reach every
+ * pressure
+ *
+ * The grid is then graded: whenever an element of a level lies within
+ * p + 1 elements of a refined element of the level before, in each
+ * direction of degree p, it is refined to that level as well, by its box
+ * when refining by boxes. So the functions of the level before an active
+ * element that are non-zero on its parent have their supports in the
+ * domain of that level, and the truncated hierarchical functions non-zero
+ * on the element come from at most two consecutive levels
+ *
+ * @param grid Grid to refine
+ * @param elements Active elements to refine, in any order and possibly
+ *        repeated
+ * @param boxes Whether to refine the boxes holding the elements rather
+ *        than the elements alone
+ * @return Grid with the children of the elements, or of their boxes,
+ *         active instead, graded
+ *
+ * @throws std::invalid_argument As refine() does
+ */
+template<std::floating_point T, std::size_t d>
+HierarchicalGrid<T, d> refine_admissible(const HierarchicalGrid<T, d>& grid,
+                                         std::span<const int> elements,
+                                         bool boxes);
+
 } // namespace iguana
 
 #endif // IGUANA_GRID_HIERARCHICAL_GRID_HPP

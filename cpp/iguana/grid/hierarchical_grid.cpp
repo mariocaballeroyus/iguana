@@ -237,6 +237,197 @@ HierarchicalGrid<T, d> refine(const HierarchicalGrid<T, d>& grid,
     return refined;
 }
 
+namespace
+{
+
+/// @brief Whether a sorted vector holds a value
+bool holds(const std::vector<int>& sorted, int value) noexcept
+{
+    return std::ranges::binary_search(sorted, value);
+}
+
+/**
+ * @brief Active element covering an element of a level grid, the element
+ *        itself if active, or else its nearest active ancestor
+ *
+ * @return Hierarchical index of the active element
+ *
+ * @pre The element lies in the domain of its level, or in that of a level
+ *      before it
+ */
+template<std::floating_point T, std::size_t d>
+int covering(const HierarchicalGrid<T, d>& grid, int level, int element)
+{
+    for (;; --level) {
+        const std::vector<int>& active = grid.active_elements(level);
+        const auto found = std::ranges::lower_bound(active, element);
+
+        if (found != active.end() && *found == element)
+            return grid.offset(level)
+                   + static_cast<int>(std::distance(active.begin(), found));
+
+        // The parent, i / 2 in each direction
+        std::array<int, d> index =
+            unflatten(element, element_counts(grid.level(level)));
+
+        for (int& axis : index)
+            axis /= 2;
+
+        element = flatten(index, element_counts(grid.level(level - 1)));
+    }
+}
+
+/**
+ * @brief Active elements to refine so that the boxes holding the marked
+ *        elements are refined, the box of a level holding an element being
+ *        the aligned q elements along each direction, q its degree plus two
+ *        when expanded and the element alone otherwise
+ *
+ * An element of a box that a coarser active element covers marks that
+ * element in turn, whose own box is taken, so that the result is a union
+ * of boxes of every level marked
+ *
+ * @return Hierarchical indices, sorted and unique
+ */
+template<std::floating_point T, std::size_t d>
+std::vector<int> boxes(const HierarchicalGrid<T, d>& grid,
+                       std::vector<int> marked, bool expanded)
+{
+    std::vector<int> result;
+
+    while (!marked.empty()) {
+        const int element = marked.back();
+        marked.pop_back();
+
+        const int level = grid.level_of(element);
+        const std::array<int, d> counts = element_counts(grid.level(level));
+        const std::array<int, d> index =
+            unflatten(grid.level_index(element), counts);
+
+        // The box, cut short at the boundary
+        std::array<int, d> start{};
+        std::array<int, d> extent{};
+
+        for (std::size_t direction = 0; direction < d; ++direction) {
+            const int q =
+                expanded ? grid.level(0).knots(direction).degree() + 2 : 1;
+            start[direction] = index[direction] / q * q;
+            extent[direction] =
+                std::min(q, counts[direction] - start[direction]);
+        }
+
+        std::array<int, d> offset{};
+
+        do {
+            std::array<int, d> other = start;
+
+            for (std::size_t direction = 0; direction < d; ++direction)
+                other[direction] += offset[direction];
+
+            const int flat = flatten(other, counts);
+
+            // An element of the box refined already needs nothing, one
+            // active joins the result, and one covered by a coarser active
+            // element marks that one in turn
+            if (holds(grid.domain(level), flat)) {
+                if (holds(grid.active_elements(level), flat))
+                    result.push_back(covering(grid, level, flat));
+            } else {
+                marked.push_back(covering(grid, level, flat));
+            }
+        } while (next_lexicographic(offset, extent));
+    }
+
+    std::ranges::sort(result);
+    const auto repeats = std::ranges::unique(result);
+    result.erase(repeats.begin(), repeats.end());
+
+    return result;
+}
+
+/**
+ * @brief Active elements whose refinement grades the grid, those covering
+ *        the elements within p + 1 elements of the parent of an active
+ *        element, in each direction of degree p, that its level does not
+ *        refine
+ *
+ * @return Hierarchical indices, in any order and possibly repeated
+ */
+template<std::floating_point T, std::size_t d>
+std::vector<int> violations(const HierarchicalGrid<T, d>& grid)
+{
+    std::vector<int> marked;
+
+    for (int level = 2; level < grid.num_levels(); ++level) {
+        const int before = level - 1;
+        const std::array<int, d> counts = element_counts(grid.level(level));
+        const std::array<int, d> coarse_counts =
+            element_counts(grid.level(before));
+
+        for (const int element : grid.active_elements(level)) {
+            std::array<int, d> parent = unflatten(element, counts);
+            std::array<int, d> start{};
+            std::array<int, d> extent{};
+
+            for (std::size_t direction = 0; direction < d; ++direction) {
+                const int reach =
+                    grid.level(0).knots(direction).degree() + 1;
+                parent[direction] /= 2;
+                start[direction] = std::max(0, parent[direction] - reach);
+                extent[direction] =
+                    std::min(coarse_counts[direction],
+                             parent[direction] + reach + 1)
+                    - start[direction];
+            }
+
+            std::array<int, d> offset{};
+
+            do {
+                std::array<int, d> other = start;
+
+                for (std::size_t direction = 0; direction < d; ++direction)
+                    other[direction] += offset[direction];
+
+                const int flat = flatten(other, coarse_counts);
+
+                if (!holds(grid.domain(before), flat))
+                    marked.push_back(covering(grid, before, flat));
+            } while (next_lexicographic(offset, extent));
+        }
+    }
+
+    return marked;
+}
+
+} // namespace
+
+template<std::floating_point T, std::size_t d>
+HierarchicalGrid<T, d> refine_admissible(const HierarchicalGrid<T, d>& grid,
+                                         std::span<const int> elements,
+                                         bool boxes)
+{
+    // Before the boxes read the elements
+    const int num_elements = grid.num_elements();
+
+    if (!std::ranges::all_of(elements, [num_elements](int element) {
+            return 0 <= element && element < num_elements;
+        }))
+        throw std::invalid_argument("refine_admissible: "
+                                    "the elements must lie in the grid");
+
+    HierarchicalGrid<T, d> refined = grid;
+    std::vector<int> marked =
+        iguana::boxes(grid, {elements.begin(), elements.end()}, boxes);
+
+    // Grading refines levels before the finest one only, so it ends
+    while (!marked.empty()) {
+        refined = refine(refined, marked);
+        marked = iguana::boxes(refined, violations(refined), boxes);
+    }
+
+    return refined;
+}
+
 template<std::floating_point T, std::size_t d>
 bool same_elements(const HierarchicalGrid<T, d>& a,
                    const HierarchicalGrid<T, d>& b)
@@ -294,5 +485,12 @@ template HierarchicalGrid<double, 2> refine(
     const HierarchicalGrid<double, 2>&, std::span<const int>);
 template HierarchicalGrid<double, 3> refine(
     const HierarchicalGrid<double, 3>&, std::span<const int>);
+
+template HierarchicalGrid<double, 1> refine_admissible(
+    const HierarchicalGrid<double, 1>&, std::span<const int>, bool);
+template HierarchicalGrid<double, 2> refine_admissible(
+    const HierarchicalGrid<double, 2>&, std::span<const int>, bool);
+template HierarchicalGrid<double, 3> refine_admissible(
+    const HierarchicalGrid<double, 3>&, std::span<const int>, bool);
 
 } // namespace iguana
