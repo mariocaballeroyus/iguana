@@ -80,8 +80,9 @@ Eigen::Vector2d point_at(const Curve& curve, int element, double t)
     PointMatrix<double, 2> positions;
 
     basis.active_on_element(element, actives);
-    basis.eval_on_element({basis.bspline().axis(0).first_active(element)},
-                          parameters, values);
+    basis.eval_on_element(
+        std::array<int, 1>{basis.bspline().axis(0).first_active(element)},
+        parameters, values);
     curve.position_on_element(actives, values, positions);
 
     return positions.row(0).transpose();

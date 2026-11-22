@@ -195,6 +195,8 @@ TEST_CASE("Refinement rejects what it cannot refine", "[grid]")
                       std::invalid_argument);
     REQUIRE_THROWS_AS(refine(grid, std::vector<int>{1}),
                       std::invalid_argument);
+    REQUIRE_THROWS_AS(refine_admissible(grid, std::vector<int>{1}, true),
+                      std::invalid_argument);
 
     // Refining the last element ten times leaves 8^10 = 2^30 elements on
     // the finest level, so the next one would have 2^33, beyond int

@@ -140,6 +140,14 @@ TEST_CASE("Tensor basis is non-negative and partitions unity on every element",
                 for (Eigen::Index point = 0; point < points.rows(); ++point)
                     REQUIRE_THAT(values.col(point).sum(),
                                  WithinAbs(1., 1e-13));
+
+                // The element index stands for its first active functions
+                Eigen::MatrixXd by_index;
+                basis.eval_on_element(element, points, by_index);
+
+                REQUIRE(basis.first_active(element)
+                        == first_active_of(basis, element));
+                REQUIRE(by_index == values);
             }
         }, entry);
     }
