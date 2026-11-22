@@ -3045,7 +3045,8 @@ TEST_CASE("Lagrange multipliers need a basis over each face, n components "
 }
 
 TEST_CASE("Skeleton multipliers impose a quadratic flow across the faces "
-          "where the weights jump", "[assembler][multipliers]")
+          "where the weights jump, and tie their level to the pressure on a "
+          "loop", "[assembler][multipliers]")
 {
     using Element = iguana::StokesStabilizedElement<Basis, 2>;
 
@@ -3089,13 +3090,6 @@ TEST_CASE("Skeleton multipliers impose a quadratic flow across the faces "
         Element::T(viscosity, 0, false), Element::T(viscosity, 1, false)};
     const Element::P pressure;
 
-    // Linear multipliers of two elements on each side, which hold the
-    // pressure p = x + y there
-    const iguana::SkeletonMultiplierCondition<Basis, 2> condition(
-        {std::cref(traces[0]), std::cref(traces[1])},
-        {std::cref(viscous[0]), std::cref(viscous[1])}, pressure,
-        side_bases(), faces, projection, 2, 40. * viscosity);
-
     // f = −div(2μ ε(u)) + ∇p = (1 − 2μ, 1) for the quadratic flow
     Eigen::MatrixXd source(cells.num_points(), 2);
     source.col(0).setConstant(1. - 2. * viscosity);
@@ -3113,27 +3107,6 @@ TEST_CASE("Skeleton multipliers impose a quadratic flow across the faces "
         iguana::SkeletonGhostPenalty<Basis, 2>(traces[0], .1 * viscosity),
         iguana::SkeletonGhostPenalty<Basis, 2>(traces[1], .1 * viscosity)};
 
-    iguana::Assembler<Basis, 2> assembler(space, patch, true, {},
-                                          {std::cref(condition)});
-
-    const auto assemble = [&](Vec coefficients) {
-        assembler.assemble_tangent(element, cells, source, fractions,
-                                   coefficients);
-        assembler.assemble_residual(element, cells, source, fractions,
-                                    coefficients);
-        assembler.assemble_tangent(condition, fractions);
-        assembler.assemble_residual(condition, data, fractions,
-                                    coefficients);
-
-        for (const auto& ghost : ghosts) {
-            assembler.assemble_tangent(ghost, ghost_faces, coefficients);
-            assembler.assemble_residual(ghost, ghost_faces, coefficients);
-        }
-
-        assembler.assemble_tangent(pressure_ghost, ghost_faces, coefficients);
-        assembler.assemble_residual(pressure_ghost, ghost_faces, coefficients);
-    };
-
     const Eigen::VectorXd flow = quadratic_flow(patch);
     const Eigen::VectorXd multipliers = side_coefficients(
         inner_corners(), [](const Eigen::RowVector2d& point,
@@ -3143,20 +3116,101 @@ TEST_CASE("Skeleton multipliers impose a quadratic flow across the faces "
 
     Eigen::VectorXd exact(flow.size() + multipliers.size());
     exact << flow, multipliers;
-    assemble(Coefficients(exact));
 
-    // The weighted volume terms leave the jumps of the weights times the
-    // traction on the faces, whose viscous part the condition cancels and
-    // whose pressure the multipliers do, carried from the sides to the
-    // faces, and the expansions of order two reach the data exactly
-    REQUIRE(residual_of(assembler).cwiseAbs().maxCoeff()
-            < 1e-11 * (stiffness_of(assembler) * exact).cwiseAbs().maxCoeff());
+    // The four sides alone, then as one loop
+    const std::vector<std::vector<int>> loop{{0, 1, 2, 3}};
 
-    // The two cells of each face gathered in the rows of its terms, and the
-    // coupling and its constraint where the residual places them
-    REQUIRE(tangent_defect(assembler, static_cast<int>(exact.size()),
-                           assemble)
-            < 1e-12);
+    for (const std::vector<std::vector<int>>& loops : {
+                 std::vector<std::vector<int>>{}, loop}) {
+        // Linear multipliers of two elements on each side, which hold the
+        // pressure p = x + y there
+        const iguana::SkeletonMultiplierCondition<Basis, 2> condition(
+            {std::cref(traces[0]), std::cref(traces[1])},
+            {std::cref(viscous[0]), std::cref(viscous[1])}, pressure,
+            side_bases(), faces, projection, 2, 40. * viscosity, true, {},
+            loops);
+
+        iguana::Assembler<Basis, 2> assembler(space, patch, true, {},
+                                              {std::cref(condition)});
+
+        const auto assemble = [&](Vec coefficients) {
+            assembler.assemble_tangent(element, cells, source, fractions,
+                                       coefficients);
+            assembler.assemble_residual(element, cells, source, fractions,
+                                        coefficients);
+            assembler.assemble_tangent(condition, fractions);
+            assembler.assemble_residual(condition, data, fractions,
+                                        coefficients);
+
+            for (const auto& ghost : ghosts) {
+                assembler.assemble_tangent(ghost, ghost_faces, coefficients);
+                assembler.assemble_residual(ghost, ghost_faces, coefficients);
+            }
+
+            assembler.assemble_tangent(pressure_ghost, ghost_faces,
+                                       coefficients);
+            assembler.assemble_residual(pressure_ghost, ghost_faces,
+                                        coefficients);
+        };
+
+        assemble(Coefficients(exact));
+
+        // The weighted volume terms leave the jumps of the weights times the
+        // traction on the faces, whose viscous part the condition cancels and
+        // whose pressure the multipliers do, carried from the sides to the
+        // faces, and the expansions of order two reach the data exactly
+        const double scale =
+            (stiffness_of(assembler) * exact).cwiseAbs().maxCoeff();
+
+        REQUIRE(residual_of(assembler).cwiseAbs().maxCoeff() < 1e-11 * scale);
+
+        // The two cells of each face gathered in the rows of its terms, and the
+        // coupling and its constraint where the residual places them
+        REQUIRE(tangent_defect(assembler, static_cast<int>(exact.size()),
+                               assemble)
+                < 1e-12);
+
+        if (loops.empty())
+            continue;
+
+        // On the loop, the last multiplier ties the level of λ to the pressure:
+        // a constant added to both leaves every multiplier row zero, and one
+        // added to λ alone moves the last row by it times Σ_F |j| |F|
+        const Eigen::Index num_dofs = flow.size();
+        const double constant = .7;
+        Eigen::VectorXd both = exact;
+        Eigen::VectorXd alone = exact;
+        alone.tail(multipliers.size()).array() += constant;
+        both.tail(multipliers.size()).array() += constant;
+
+        for (Eigen::Index function = 0; function < num_dofs / 3; ++function)
+            both(3 * function + 2) += constant;
+
+        double measure = 0.;
+
+        for (int face = 0; face < faces.num_faces(); ++face) {
+            const int first = faces.offsets()(face);
+            const int count = faces.offsets()(face + 1) - first;
+            const double jump = fractions(faces.cells()(face, 0))
+                                - fractions(faces.cells()(face, 1));
+            const double side =
+                faces.directions()(face) == 0 ? height : width;
+            measure += std::abs(jump) * side
+                       * faces.weights().segment(first, count).sum();
+    }
+
+    assembler.clear();
+    assemble(Coefficients(both));
+    const Eigen::VectorXd tied = residual_of(assembler).tail(12);
+
+    assembler.clear();
+    assemble(Coefficients(alone));
+    const Eigen::VectorXd moved = residual_of(assembler).tail(12);
+
+    REQUIRE(tied.cwiseAbs().maxCoeff() < 1e-12);
+    REQUIRE(moved.head(11).cwiseAbs().maxCoeff() < 1e-12);
+    REQUIRE_THAT(moved(11), WithinRel(constant * measure, 1e-12));
+    }
 }
 
 TEST_CASE("Skeleton multipliers need a trace and a flux per component, a "

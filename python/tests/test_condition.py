@@ -9,11 +9,13 @@ import pytest
 import iguana
 from iguana import (Boundary, CellType, ElasticityElement, FunctionSpace,
                     GhostPenalty, HierarchicalGrid,
-                    LagrangeMultiplierCondition, NeumannCondition,
-                    NitscheCondition, PenaltyCondition, PoissonElement,
-                    QuadratureBoundary, QuadratureDomain,
-                    SkeletonMultiplierCondition, SkeletonNitscheCondition,
-                    StokesElement, SurrogateBoundary, classify_cells, cpp)
+                    LagrangeMultiplierCondition, MixedFunctionSpace,
+                    MixedGhostPenalty, NeumannCondition, NitscheCondition,
+                    PenaltyCondition, PoissonElement, QuadratureBoundary,
+                    QuadratureDomain, SkeletonMultiplierCondition,
+                    SkeletonNitscheCondition, StokesElement,
+                    SurrogateBoundary, classify_cells, cpp, flux_at_points,
+                    trace_at_points)
 
 try:
     from iguana.petsc import LinearProblem, NonlinearProblem
@@ -601,6 +603,20 @@ def test_invalid_skeleton_multiplier_conditions():
             SkeletonMultiplierCondition(fluid.u, patch, cell_types, sides,
                                         zero, 1., elements=elements)
 
+    # Pinned, every face must lie on a loop, so a single side cannot be,
+    # and a closed face needs more elements than the degree
+    with pytest.raises(ValueError):
+        SkeletonMultiplierCondition(fluid.u, patch, cell_types,
+                                    square_sides([0]), zero, 1.)
+
+    assert not SkeletonMultiplierCondition(fluid.u, patch, cell_types,
+                                           square_sides([0]), zero, 1.,
+                                           pin=False).pin
+
+    with pytest.raises(ValueError):
+        SkeletonMultiplierCondition(fluid.u, patch, cell_types, circle(),
+                                    zero, 1., degree=2, elements=2)
+
     # The map of the patch must be affine
     bent = patch.control_points.copy()
     bent[20, 1] += .1
@@ -635,3 +651,105 @@ def test_invalid_skeleton_multiplier_conditions():
     # Values set later are checked as at initialization
     with pytest.raises(ValueError):
         condition.values = [0.]
+
+
+CENTRE = np.array([1.2, 1.])
+RADIUS = .45
+
+
+def circle():
+    """Circle inside the rectangle as four quadratic arcs joined at double
+    knots, clockwise, an obstacle whose domain is the region around it."""
+    corner = np.sqrt(.5)
+    points = np.array([[1., 0.], [1., -1.], [0., -1.], [-1., -1.],
+                       [-1., 0.], [-1., 1.], [0., 1.], [1., 1.], [1., 0.]])
+
+    return Boundary([iguana.create_curve(
+        degree=2, knots=[0., 0., 0., .25, .25, .5, .5, .75, .75, 1., 1., 1.],
+        control_points=CENTRE + RADIUS * points,
+        weights=[1., corner, 1., corner, 1., corner, 1., corner, 1.])])
+
+
+@pytest.mark.petsc
+def test_pinned_skeleton_multipliers_follow_the_pressure_on_a_loop():
+    """Around the circle, an obstacle in a channel, the multipliers of its
+    one closed face wrap around, one per element rather than one per
+    function of a clamped basis, and pinned their level follows the
+    pressure at the closest points, which the velocity keeps
+    divergence-free. Unpinned, the loop tests the net flux a second time
+    and leaves both levels loose."""
+    patch = iguana.create_rectangle(lengths=(3., 2.), elements=(12, 8))
+    obstacle = circle()
+    cell_types, fractions = classify_cells(patch, obstacle)
+    space = MixedFunctionSpace.divergence_conforming(patch)
+    element = StokesElement(1.)
+
+    quadrature = QuadratureDomain(patch, cell_types)
+
+    for cell_type in (CellType.inside, CellType.cut, CellType.outside):
+        quadrature.fill_gauss_legendre(cell_type, 4)
+
+    # Poiseuille's flow in through the left side, which vanishes on the
+    # walls below and above, the right side left free
+    walls = Boundary([iguana.create_curve(
+        degree=1, knots=[0., 0., 1., 1.], control_points=ends)
+        for ends in ([(0., 0.), (3., 0.)], [(3., 2.), (0., 2.)],
+                     [(0., 2.), (0., 0.)])])
+
+    def inflow(points):
+        y = points[:, 1]
+        return np.column_stack([y * (2. - y), np.zeros(len(y))])
+
+    def zero(points):
+        return np.zeros((len(points), 2))
+
+    # Three points across each cell along each direction, off the knot
+    # lines
+    offsets = [(np.arange(cells)[:, None] + [.2, .5, .8]).ravel() / cells
+               for cells in (12, 8)]
+    points = np.column_stack([coordinates.ravel() for coordinates in
+                              np.meshgrid(3. * offsets[0], 2. * offsets[1])])
+
+    def solve(pin):
+        condition = SkeletonMultiplierCondition(element.u, patch, cell_types,
+                                                obstacle, zero, 40., pin=pin)
+        conditions = [
+            NitscheCondition(element.u, QuadratureBoundary(patch, walls, 4),
+                             inflow, 40., test_pressure=False),
+            condition]
+        ghosts = [GhostPenalty(element.u, patch, cell_types, .1),
+                  MixedGhostPenalty(element, patch, cell_types, .1)]
+        problem = LinearProblem(element, space, quadrature,
+                                np.zeros((quadrature.num_points, 2)),
+                                cell_weights=fractions,
+                                conditions=conditions, stabilizations=ghosts,
+                                petsc_options_prefix='pinned_')
+        solution = problem.solve()
+
+        # The stress 2μ ε(u) − p I has the trace 2μ div u − 2p in the plane
+        trace = sum(flux_at_points(element.u, space, solution, points,
+                                   np.tile(normal, (len(points), 1)))[:, axis]
+                    for axis, normal in enumerate(np.eye(2)))
+        pressure = trace_at_points(element.p, space, solution, points)
+        divergence = (trace + 2. * pressure) / (2. * element.viscosity)
+
+        level = trace_at_points(element.p, space, solution,
+                                condition.closest_points).mean()
+        num_multipliers = problem.A.getSize()[0] - space.num_dofs
+
+        return (condition, num_multipliers, np.abs(divergence).max(),
+                condition.multipliers.mean() - level, level)
+
+    condition, num_multipliers, divergence, gap, level = solve(True)
+
+    assert condition.pin
+    assert num_multipliers == condition.elements[0] == 6
+    assert divergence < 1e-9
+    assert abs(gap) < 1e-2 * abs(level)
+
+    _, loose_multipliers, loose_divergence, loose_gap, loose_level = solve(
+        False)
+
+    assert loose_multipliers == 6
+    assert loose_divergence < 1e-9
+    assert abs(loose_gap) > abs(loose_level)

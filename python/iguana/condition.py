@@ -989,6 +989,7 @@ class SkeletonMultiplierCondition:
         elements: int | Sequence[int] | None = None,
         symmetric: bool = True,
         num_points: int | None = None,
+        pin: bool = True,
     ) -> None:
         """Initialize the condition imposing the velocity of a fluid.
 
@@ -1011,6 +1012,19 @@ class SkeletonMultiplierCondition:
         The multipliers must be coarser than the cells for the problem to
         be stable, and every one must be read at a closest point. A moving
         boundary keeps them by giving the same `elements` at every step.
+        On a face that is a closed curve, its ends meeting, the multipliers
+        wrap around, smooth where it closes.
+
+        On a divergence-conforming velocity, which the continuity equations
+        keep free of divergence in every cell, the constant multiplier of a
+        closed loop of faces would test the net flux through it a second
+        time, and leave the level of the multipliers loose. Pinned, as by
+        default, each loop of the boundary, its faces joined end to end,
+        tests the velocity with its multipliers less their shares of the
+        constant, and its last multiplier ties their level to the pressure
+        at the closest points instead. Every face must then lie on a loop.
+        Leave the pin off for an open boundary, or with a ghost penalty on
+        the pressure, which leaves the velocity some divergence.
 
         Args:
             trace: The velocity u of a `StokesElement`, Galerkin or
@@ -1040,6 +1054,8 @@ class SkeletonMultiplierCondition:
                 skew-symmetric one.
             num_points: The Gauss points on each face, positive. Without
                 them, one more than the highest degree of the patch.
+            pin: Whether each loop of the boundary ties the level of its
+                multipliers to the pressure.
 
         Raises:
             TypeError: If the trace is not the velocity of a fluid, if the
@@ -1050,8 +1066,10 @@ class SkeletonMultiplierCondition:
                 not positive, if the values are not the velocity at each
                 point, if the penalty is negative, or zero for the symmetric
                 method, if the order or the degree is negative, if the
-                elements are not positive or not one per face, or if a
-                multiplier is read at no closest point.
+                elements are not positive or not one per face, if a closed
+                face has no more elements than the degree, if a multiplier
+                is read at no closest point, or if, pinned, a face does not
+                lie on a loop.
         """
         if not isinstance(trace, StokesElement.U):
             raise TypeError('the trace must be the velocity of a fluid')
@@ -1076,10 +1094,16 @@ class SkeletonMultiplierCondition:
             degree = max(patch.degrees)
 
         # The cells each face crosses, which the points of a quadrature of
-        # the boundary tell
+        # the boundary tell, and the faces that wrap around
+        closed, loops = _loops(boundary)
         self._degree = int(degree)
         self._elements, bases = _multiplier_bases(
-            QuadratureBoundary(patch, boundary, 1), self._degree, elements)
+            QuadratureBoundary(patch, boundary, 1), self._degree, elements,
+            periodic=closed)
+
+        if pin and loops is None:
+            raise ValueError('every face must lie on a loop to pin the '
+                             'multipliers')
 
         self._trace = trace
         self._patch = patch
@@ -1087,13 +1111,15 @@ class SkeletonMultiplierCondition:
         self._projection = projection
         self._penalty = float(penalty)
         self._symmetric = bool(symmetric)
+        self._pin = bool(pin)
         self._values = _values(np.array(projection.positions), values,
                                trace._shape)
 
         self._cpp_conditions = [_cpp.SkeletonMultiplierCondition2d(
             trace._cpp_traces(), trace._cpp_fluxes(pressure=False),
             trace._element.p._cpp_traces()[0], bases, quadrature,
-            projection, int(order), self._penalty, self._symmetric)]
+            projection, int(order), self._penalty, self._symmetric,
+            periodic=closed, loops=loops if self._pin else [])]
 
         # Coefficients of the multipliers, which a solve sets
         self._coefficients: list[npt.NDArray[np.float64]] | None = None
@@ -1150,6 +1176,12 @@ class SkeletonMultiplierCondition:
         return self._elements
 
     @property
+    def pin(self) -> bool:
+        """Whether each loop of the boundary ties the level of its
+        multipliers to the pressure."""
+        return self._pin
+
+    @property
     def closest_points(self) -> npt.NDArray[np.float64]:
         """Closest point on the boundary of each face point, where the
         values and the multipliers apply, of shape `(num_points, 2)`."""
@@ -1177,8 +1209,10 @@ class SkeletonMultiplierCondition:
 
     def __repr__(self) -> str:
         skew = '' if self._symmetric else ', symmetric=False'
+        loose = '' if self._pin else ', pin=False'
         return (f'SkeletonMultiplierCondition({self._trace!r}, '
-                f'penalty={self._penalty}, degree={self._degree}{skew})')
+                f'penalty={self._penalty}, degree={self._degree}{skew}'
+                f'{loose})')
 
 
 def _check_test_pressure(
@@ -1266,11 +1300,13 @@ def _multiplier_bases(
     quadrature: QuadratureBoundary,
     degree: int,
     elements: int | Sequence[int] | None,
+    periodic: Sequence[bool] | None = None,
 ) -> tuple[tuple[int, ...], list[_cpp.BSpline]]:
     """Number of elements and basis of the multipliers of a degree on each
     face of the boundary of a quadrature, checked as the multiplier
     conditions document. Without elements, one per two cells the face
-    crosses, and at least one."""
+    crosses, and at least one. The basis of a periodic face extends its
+    uniform spans p past each end, to wrap around."""
     faces = quadrature.boundary.faces
 
     if degree < 0:
@@ -1289,14 +1325,82 @@ def _multiplier_bases(
 
     elements = tuple(int(count) for count in elements)
 
+    if periodic is None:
+        periodic = [False] * len(faces)
+
+    if any(wraps and count <= degree
+           for wraps, count in zip(periodic, elements)):
+        raise ValueError('a closed face needs more elements than the '
+                         'degree')
+
     # A basis on the interval of the parameter of each face, which the knot
-    # vector of the face clamps
-    bases = [_cpp.BSpline(degree, face.knots[0]
-                          + (face.knots[-1] - face.knots[0])
-                          * _uniform_knots(degree, count))
-             for face, count in zip(faces, elements)]
+    # vector of the face clamps, or which repeats its spans past each end
+    bases = []
+
+    for face, count, wraps in zip(faces, elements, periodic):
+        knots = (np.arange(-degree, count + degree + 1) / count if wraps
+                 else _uniform_knots(degree, count))
+        bases.append(_cpp.BSpline(degree, face.knots[0]
+                                  + (face.knots[-1] - face.knots[0])
+                                  * knots))
 
     return elements, bases
+
+
+def _loops(boundary: Boundary) -> tuple[list[bool], list[list[int]] | None]:
+    """Whether each face of a boundary is a closed curve, and the faces of
+    each closed loop of the boundary, joined end to end in either
+    direction, or `None` if a face lies on none. The faces are clamped, so
+    their ends are their first and last control points."""
+    faces = boundary.faces
+    ends = np.array([[face.control_points[0], face.control_points[-1]]
+                     for face in faces])
+    extent = np.ptp(np.concatenate([face.control_points for face in faces]),
+                    axis=0).max()
+    tolerance = 1e-10 * extent
+
+    # The distinct points where the ends of the faces lie
+    points: list[npt.NDArray[np.float64]] = []
+    nodes = np.empty((len(faces), 2), dtype=int)
+
+    for face, pair in enumerate(ends):
+        for end, point in enumerate(pair):
+            near = [index for index, other in enumerate(points)
+                    if np.linalg.norm(point - other) <= tolerance]
+
+            if not near:
+                points.append(point)
+                near = [len(points) - 1]
+
+            nodes[face, end] = near[0]
+
+    closed = [bool(first == last) for first, last in nodes]
+
+    # Each point of a loop joins two ends
+    if np.any(np.bincount(nodes.ravel(), minlength=len(points)) != 2):
+        return closed, None
+
+    # The faces reached from each face through their shared points
+    loop_of = [-1] * len(faces)
+    loops: list[list[int]] = []
+
+    for start in range(len(faces)):
+        if loop_of[start] >= 0:
+            continue
+
+        loop = [start]
+        loop_of[start] = len(loops)
+
+        for face in loop:
+            for other in range(len(faces)):
+                if loop_of[other] < 0 and np.isin(nodes[other],
+                                                  nodes[face]).any():
+                    loop_of[other] = len(loops)
+                    loop.append(other)
+
+        loops.append(sorted(loop))
+
+    return closed, loops
 
 
 def _cells_crossed(
