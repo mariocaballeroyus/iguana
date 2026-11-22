@@ -59,6 +59,24 @@ public:
     constexpr int num_elements() const noexcept
     { return num_elements_; }
 
+    /**
+     * @brief Parameters at which an element starts
+     *
+     * @param element Element index
+     *
+     * @pre @p element lies in [0, num_elements())
+     */
+    std::array<T, d> element_start(int element) const noexcept;
+
+    /**
+     * @brief Parameters at which an element ends
+     *
+     * @param element Element index
+     *
+     * @pre @p element lies in [0, num_elements())
+     */
+    std::array<T, d> element_end(int element) const noexcept;
+
     /// @brief Number of interior faces, each between two neighboring
     ///        elements
     constexpr int num_faces() const noexcept
@@ -139,6 +157,31 @@ private:
     ///        faces
     std::array<int, d + 1> face_offsets_{};
 };
+
+/**
+ * @brief Whether two grids have the same elements, whatever the degrees and
+ *        the multiplicities of their knots
+ *
+ * @param a First grid
+ * @param b Second grid
+ * @return Whether the knot lines of the grids coincide in every direction
+ */
+template<std::floating_point T, std::size_t d>
+bool same_elements(const TensorGrid<T, d>& a, const TensorGrid<T, d>& b);
+
+/**
+ * @brief Element of a grid holding a point, in each direction the last one
+ *        that starts at or before it
+ *
+ * @param grid Grid
+ * @param parameters Parameters of the point, one per direction
+ * @return Element index in [0, grid.num_elements())
+ *
+ * @pre @p parameters lie in the parametric domain of @p grid
+ */
+template<std::floating_point T, std::size_t d>
+int element_holding(const TensorGrid<T, d>& grid,
+                    const std::array<T, d>& parameters);
 
 } // namespace iguana
 

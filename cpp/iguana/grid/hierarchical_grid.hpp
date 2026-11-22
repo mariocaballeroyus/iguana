@@ -71,9 +71,73 @@ public:
     constexpr const std::vector<int>& active_elements(int level) const noexcept
     { return active_[static_cast<std::size_t>(level)]; }
 
+    /**
+     * @brief Elements of a level in its domain, the region refined at least
+     *        to that level: its active elements and the parents of those of
+     *        the domain of the next level, in increasing index of the level
+     *        grid
+     *
+     * @details The domains are nested, each a union of elements of the
+     *          level before, and the functions of a hierarchical basis are
+     *          selected by the domains their supports lie in
+     *
+     * @param level Level index
+     *
+     * @pre @p level lies in [0, num_levels())
+     */
+    constexpr const std::vector<int>& domain(int level) const noexcept
+    { return domains_[static_cast<std::size_t>(level)]; }
+
     /// @brief Number of active elements over all levels
     constexpr int num_elements() const noexcept
     { return offsets_.back(); }
+
+    /**
+     * @brief Index of the first active element of a level, that of the
+     *        level after the last one being num_elements()
+     *
+     * @param level Level index
+     *
+     * @pre @p level lies in [0, num_levels()]
+     */
+    constexpr int offset(int level) const noexcept
+    { return offsets_[static_cast<std::size_t>(level)]; }
+
+    /**
+     * @brief Level of an active element
+     *
+     * @param element Element index
+     *
+     * @pre @p element lies in [0, num_elements())
+     */
+    int level_of(int element) const noexcept;
+
+    /**
+     * @brief Index of an active element in the grid of its level
+     *
+     * @param element Element index
+     *
+     * @pre @p element lies in [0, num_elements())
+     */
+    int level_index(int element) const noexcept;
+
+    /**
+     * @brief Parameters at which an active element starts
+     *
+     * @param element Element index
+     *
+     * @pre @p element lies in [0, num_elements())
+     */
+    std::array<T, d> element_start(int element) const noexcept;
+
+    /**
+     * @brief Parameters at which an active element ends
+     *
+     * @param element Element index
+     *
+     * @pre @p element lies in [0, num_elements())
+     */
+    std::array<T, d> element_end(int element) const noexcept;
 
     /// @brief Iterator at the first active element
     HierarchicalGridIterator<T, d> begin() const noexcept;
@@ -82,10 +146,17 @@ public:
     constexpr std::default_sentinel_t end() const noexcept
     { return std::default_sentinel; }
 
+    /// @brief Whether two grids have the same levels and active elements
+    bool operator==(const HierarchicalGrid& other) const = default;
+
 private:
     template<std::floating_point U, std::size_t e>
     friend HierarchicalGrid<U, e> refine(const HierarchicalGrid<U, e>&,
                                            std::span<const int>);
+
+    /// @brief Numbers the active elements and finds the domain of each
+    ///        level from the active elements of the levels
+    void update();
 
     /// @brief Tensor grid of each level
     std::vector<TensorGrid<T, d>> levels_;
@@ -93,10 +164,40 @@ private:
     /// @brief Active elements of each level, in increasing index
     std::vector<std::vector<int>> active_;
 
+    /// @brief Elements of each level in its domain, in increasing index
+    std::vector<std::vector<int>> domains_;
+
     /// @brief Index of the first active element of each level, followed by
     ///        the number of active elements
     std::vector<int> offsets_;
 };
+
+/**
+ * @brief Whether two hierarchical grids have the same elements, whatever
+ *        the degrees and the multiplicities of their knots
+ *
+ * @param a First grid
+ * @param b Second grid
+ * @return Whether the knot lines of the coarse grids coincide and the same
+ *         elements are active on every level
+ */
+template<std::floating_point T, std::size_t d>
+bool same_elements(const HierarchicalGrid<T, d>& a,
+                   const HierarchicalGrid<T, d>& b);
+
+/**
+ * @brief Active element holding a point, found level by level in the
+ *        element of each level grid holding it
+ *
+ * @param grid Grid
+ * @param parameters Parameters of the point, one per direction
+ * @return Element index in [0, grid.num_elements())
+ *
+ * @pre @p parameters lie in the parametric domain of @p grid
+ */
+template<std::floating_point T, std::size_t d>
+int element_holding(const HierarchicalGrid<T, d>& grid,
+                    const std::array<T, d>& parameters);
 
 /**
  * @brief Hierarchical grid with elements replaced by their children
