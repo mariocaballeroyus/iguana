@@ -5,11 +5,14 @@
 
 #include <iguana/iguana.hpp>
 
+#include <cmath>
 #include <cstddef>
 #include <span>
 #include <stdexcept>
 #include <vector>
 
+#include <Eigen/Cholesky>
+#include <Eigen/QR>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
@@ -251,4 +254,141 @@ TEST_CASE("A mixed space needs fields on the elements of the first",
 
     REQUIRE_THROWS_AS(MixedSpace({}), std::invalid_argument);
     REQUIRE_THROWS_AS(MixedSpace({space, moved}), std::invalid_argument);
+}
+
+TEST_CASE("The divergence of hierarchical velocities lies in the "
+          "hierarchical pressures and spans them", "[fspace]")
+{
+    using iguana::ElementValues;
+    using iguana::HierarchicalGrid;
+    using iguana::THBSpline;
+    using Basis = THBSpline<double, 2>;
+    using Region = iguana::Patch<Basis, 2>;
+
+    // Six by five quadratic elements, so that the boxes of four leave a
+    // partial one, refined twice: the velocities take one degree more
+    // along their own direction and the pressure the degrees of the patch
+    const TensorBSpline<double, 2> coarse(TensorGrid<double, 2>(
+        {KnotVector<double>(2, {0., 0., 0., 1., 2., 3., 4., 5., 6., 6., 6.}),
+         KnotVector<double>(2, {0., 0., 0., 1., 2., 3., 4., 5., 5., 5.})}));
+    const HierarchicalGrid<double, 2> once =
+        refine_admissible(HierarchicalGrid<double, 2>(coarse.grid()),
+                          std::vector<int>{7}, true);
+    const HierarchicalGrid<double, 2> grid = refine_admissible(
+        once, std::vector<int>{once.num_elements() - 1}, true);
+    REQUIRE(grid.num_levels() == 3);
+
+    // The identity map, whose control points are the Greville points
+    iguana::PointMatrix<double, 2> points(coarse.num_functions(), 2);
+
+    for (int function = 0; function < coarse.num_functions(); ++function) {
+        int rest = function;
+
+        for (std::size_t direction = 0; direction < 2; ++direction) {
+            const KnotVector<double>& knots =
+                coarse.axis(direction).knots();
+            const int count = coarse.axis(direction).num_functions();
+            points(function, static_cast<Eigen::Index>(direction)) =
+                greville_abscissae(knots)(rest % count);
+            rest /= count;
+        }
+    }
+
+    const Region patch =
+        refine(iguana::Patch<TensorBSpline<double, 2>, 2>(coarse, points),
+               grid);
+    const CellClassification<double, 2> inside(
+        std::vector<CellType>(grid.num_elements(), CellType::inside));
+
+    const iguana::FunctionSpace<Basis> u_x(Basis(grid, {3, 2}), inside);
+    const iguana::FunctionSpace<Basis> u_y(Basis(grid, {2, 3}), inside);
+    const iguana::FunctionSpace<Basis> pressure(Basis(grid, {2, 2}), inside);
+    const iguana::MixedFunctionSpace<Basis> mixed({u_x, u_y, pressure});
+
+    iguana::QuadratureDomain<double, 2> quadrature;
+    quadrature.fill(grid, inside, CellType::inside,
+                    iguana::GaussLegendre<double, 2>(4));
+    ElementValues<Basis, 2> values(patch, mixed.bases(),
+                                   {.physical_gradients = true});
+
+    // B_kj = (q_k, div v_j) over both velocities, M_kl = (q_k, q_l) and
+    // G_ij = (div v_i, div v_j), assembled dense
+    const int num_velocities = u_x.num_dofs() + u_y.num_dofs();
+    const int num_pressures = pressure.num_dofs();
+    Eigen::MatrixXd divergence =
+        Eigen::MatrixXd::Zero(num_pressures, num_velocities);
+    Eigen::MatrixXd mass = Eigen::MatrixXd::Zero(num_pressures, num_pressures);
+    Eigen::MatrixXd gram =
+        Eigen::MatrixXd::Zero(num_velocities, num_velocities);
+    std::vector<int> dofs;
+
+    for (int held = 0; held < quadrature.num_elements(); ++held) {
+        const int element = quadrature.elements()(held);
+        const int first = quadrature.offsets()(held);
+        const int count = quadrature.offsets()(held + 1) - first;
+
+        values.reinit(element, quadrature.points().middleRows(first, count));
+        const Eigen::VectorXd weights =
+            quadrature.weights().segment(first, count).cwiseProduct(
+                values.measures());
+
+        // The divergence of each velocity function, d/dx of the first
+        // component's functions and d/dy of the second's
+        Eigen::MatrixXd divergences(0, count);
+
+        for (std::size_t field = 0; field < 2; ++field) {
+            const Eigen::MatrixXd& slope =
+                values.physical_gradients(field)[field];
+            divergences.conservativeResize(divergences.rows() + slope.rows(),
+                                           Eigen::NoChange);
+            divergences.bottomRows(slope.rows()) = slope;
+        }
+
+        mixed.dofs_on_element(element, dofs);
+        const Eigen::Index num_velocity_dofs =
+            divergences.rows();
+        const Eigen::MatrixXd& pressures = values.values(2);
+
+        for (Eigen::Index k = 0; k < pressures.rows(); ++k) {
+            const int row =
+                dofs[static_cast<std::size_t>(num_velocity_dofs + k)]
+                - mixed.offset(2);
+
+            for (Eigen::Index j = 0; j < num_velocity_dofs; ++j)
+                divergence(row, dofs[static_cast<std::size_t>(j)]) +=
+                    pressures.row(k).cwiseProduct(divergences.row(j))
+                        .dot(weights);
+
+            for (Eigen::Index l = 0; l < pressures.rows(); ++l)
+                mass(row, dofs[static_cast<std::size_t>(num_velocity_dofs + l)]
+                              - mixed.offset(2)) +=
+                    pressures.row(k).cwiseProduct(pressures.row(l))
+                        .dot(weights);
+        }
+
+        for (Eigen::Index i = 0; i < num_velocity_dofs; ++i) {
+            for (Eigen::Index j = 0; j < num_velocity_dofs; ++j)
+                gram(dofs[static_cast<std::size_t>(i)],
+                     dofs[static_cast<std::size_t>(j)]) +=
+                    divergences.row(i).cwiseProduct(divergences.row(j))
+                        .dot(weights);
+        }
+    }
+
+    // The projection of each divergence onto the pressures leaves nothing:
+    // |div v_j|^2 = B_j^T M^-1 B_j
+    const Eigen::LLT<Eigen::MatrixXd> factored(mass);
+    const Eigen::MatrixXd projected =
+        divergence.transpose() * factored.solve(divergence);
+
+    for (int j = 0; j < num_velocities; ++j) {
+        INFO("velocity function " << j);
+        REQUIRE(gram(j, j) > 0.);
+        REQUIRE(std::abs(gram(j, j) - projected(j, j)) < 1e-12 * gram(j, j));
+    }
+
+    // And, by the refinement in boxes, the divergences span every pressure
+    Eigen::ColPivHouseholderQR<Eigen::MatrixXd> decomposition(divergence);
+    decomposition.setThreshold(1e-10);
+    REQUIRE(decomposition.rank() == num_pressures);
 }

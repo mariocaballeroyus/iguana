@@ -17,6 +17,7 @@
 
 #include <Eigen/Core>
 #include <Eigen/SparseCore>
+#include <Eigen/SparseLU>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <petscmat.h>
@@ -1737,6 +1738,150 @@ TEST_CASE("A Stokes system on divergence-conforming spaces holds a "
     // The fields of each cell gathered one after another, as the rows of
     // its terms
     REQUIRE(tangent_defect(assembler, space.num_dofs(), assemble) < 1e-12);
+}
+
+TEST_CASE("A Stokes system on refined divergence-conforming spaces holds "
+          "a linear flow exactly, its normal velocity held on the boundary",
+          "[assembler]")
+{
+    using THB = iguana::THBSpline<double, 2>;
+    using Element = iguana::StokesElement<THB, 2>;
+
+    // Six by four quadratic elements, refined by the box of the first
+    // element and then by that of the first fine one, three levels graded
+    const Basis coarse(TensorGrid<double, 2>(
+        {KnotVector<double>(2, {0., 0., 0., 1. / 6., 1. / 3., .5, 2. / 3.,
+                                5. / 6., 1., 1., 1.}),
+         KnotVector<double>(2, {0., 0., 0., .25, .5, .75, 1., 1., 1.})}));
+    const iguana::HierarchicalGrid<double, 2> once = refine_admissible(
+        iguana::HierarchicalGrid<double, 2>(coarse.grid()),
+        std::vector<int>{0}, true);
+    const iguana::HierarchicalGrid<double, 2> grid =
+        refine_admissible(once, std::vector<int>{once.offset(1)}, true);
+    REQUIRE(grid.num_levels() == 3);
+
+    const iguana::Patch<THB, 2> patch = refine(rectangle(coarse), grid);
+    const CellClassification<double, 2> classification(
+        std::vector<CellType>(grid.num_elements(), CellType::inside));
+    const iguana::FunctionSpace<THB> x_velocity(THB(grid, {3, 2}),
+                                                classification);
+    const iguana::FunctionSpace<THB> y_velocity(THB(grid, {2, 3}),
+                                                classification);
+    const iguana::FunctionSpace<THB> pressure(patch.basis(), classification);
+    const iguana::MixedFunctionSpace<THB> space(
+        {x_velocity, y_velocity, pressure});
+
+    iguana::QuadratureDomain<double, 2> cells;
+    cells.fill(grid, classification, CellType::inside,
+               iguana::GaussLegendre<double, 2>(4));
+
+    // u = (x, −y) has no divergence and no shear, so that its tangential
+    // traction vanishes on the sides, the natural condition when only its
+    // normal velocity is held, and with p = x + y the body force is (1, 1)
+    const double viscosity = 1.5;
+    const Element element(viscosity);
+    const Eigen::MatrixXd source =
+        Eigen::MatrixXd::Ones(cells.num_points(), 2);
+
+    iguana::Assembler<THB, 2> assembler(space, patch);
+
+    const auto assemble = [&](Vec coefficients) {
+        assembler.assemble_tangent(element, cells, source, coefficients);
+        assembler.assemble_residual(element, cells, source, coefficients);
+    };
+
+    // The coefficients of the flow in the coarse tensor bases, at the
+    // Greville points, which the hierarchical functions preserve
+    const Basis& x_coarse = x_velocity.basis().level(0);
+    const Basis& y_coarse = y_velocity.basis().level(0);
+    Eigen::VectorXd exact(space.num_dofs());
+    exact << x_velocity.basis().coefficients(product(
+                 width * grevilles(x_coarse.grid().knots(0)),
+                 Eigen::VectorXd::Ones(x_coarse.axis(1).num_functions()))),
+        y_velocity.basis().coefficients(product(
+            Eigen::VectorXd::Ones(y_coarse.axis(0).num_functions()),
+            -height * grevilles(y_coarse.grid().knots(1)))),
+        patch.coefficients() * Eigen::Vector2d(1., 1.);
+
+    // Each velocity component is held at the functions on the sides normal
+    // to its direction, and the pressure at its last function
+    std::vector<bool> held(static_cast<std::size_t>(space.num_dofs()));
+
+    for (std::size_t field = 0; field < 2; ++field) {
+        const Eigen::VectorXi boundary =
+            space.field(field).basis().boundary_functions(field);
+
+        for (const int function : boundary)
+            held[static_cast<std::size_t>(space.offset(field) + function)] =
+                true;
+    }
+
+    held.back() = true;
+
+    std::vector<int> free;
+
+    for (int dof = 0; dof < space.num_dofs(); ++dof) {
+        if (!held[static_cast<std::size_t>(dof)])
+            free.push_back(dof);
+    }
+
+    // The method is consistent: the residual at the flow vanishes but at
+    // the held functions, which carry the normal traction of the sides
+    assemble(Coefficients(exact));
+    const Eigen::VectorXd residual = residual_of(assembler);
+    const Eigen::SparseMatrix<double> stiffness = stiffness_of(assembler);
+
+    for (const int dof : free)
+        REQUIRE(std::abs(residual(dof)) < 1e-10);
+
+    // The system with the held values solves for the flow
+    assembler.clear();
+    assemble(Coefficients(Eigen::VectorXd::Zero(space.num_dofs())));
+    const Eigen::VectorXd load = load_of(assembler);
+
+    const Eigen::Index num_free = std::ssize(free);
+    std::vector<int> position(static_cast<std::size_t>(space.num_dofs()), -1);
+
+    for (Eigen::Index k = 0; k < num_free; ++k)
+        position[static_cast<std::size_t>(free[static_cast<std::size_t>(k)])] =
+            static_cast<int>(k);
+
+    std::vector<Eigen::Triplet<double>> triplets;
+
+    for (int column = 0; column < stiffness.outerSize(); ++column) {
+        for (Eigen::SparseMatrix<double>::InnerIterator it(stiffness, column);
+             it; ++it) {
+            const int row = position[static_cast<std::size_t>(it.row())];
+            const int col = position[static_cast<std::size_t>(it.col())];
+
+            if (row >= 0 && col >= 0)
+                triplets.emplace_back(row, col, it.value());
+        }
+    }
+
+    Eigen::SparseMatrix<double> reduced(num_free, num_free);
+    reduced.setFromTriplets(triplets.begin(), triplets.end());
+
+    Eigen::VectorXd known = exact;
+
+    for (const int dof : free)
+        known(dof) = 0.;
+
+    const Eigen::VectorXd right = (load - stiffness * known)(free);
+    Eigen::SparseLU<Eigen::SparseMatrix<double>> solver(reduced);
+    REQUIRE(solver.info() == Eigen::Success);
+    const Eigen::VectorXd solution = solver.solve(right);
+
+    REQUIRE((solution - exact(free)).cwiseAbs().maxCoeff()
+            < 1e-10 * exact.cwiseAbs().maxCoeff());
+
+    // The fields of each cell gathered one after another, as the rows of
+    // its terms
+    REQUIRE(tangent_defect(assembler, space.num_dofs(), assemble) < 1e-12);
+
+    // Faces are not coupled on a hierarchical grid yet
+    REQUIRE_THROWS_AS((iguana::Assembler<THB, 2>(space, patch, true)),
+                      std::invalid_argument);
 }
 
 TEST_CASE("A test side without the pressure leaves the continuity equations "
