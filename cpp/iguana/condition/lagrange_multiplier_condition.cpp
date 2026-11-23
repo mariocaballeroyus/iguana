@@ -13,6 +13,7 @@
 
 #include "iguana/basis/tensor_bspline.hpp"
 #include "iguana/basis/tensor_nurbs.hpp"
+#include "iguana/basis/thb_spline.hpp"
 
 namespace iguana
 {
@@ -165,5 +166,6 @@ LagrangeMultiplierCondition<Basis, n>::values(
 
 template class LagrangeMultiplierCondition<TensorBSpline<double, 2>, 2>;
 template class LagrangeMultiplierCondition<TensorNURBS<double, 2>, 2>;
+template class LagrangeMultiplierCondition<THBSpline<double, 2>, 2>;
 
 } // namespace iguana

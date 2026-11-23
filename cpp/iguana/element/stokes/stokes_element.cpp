@@ -139,5 +139,6 @@ template class StokesElement<TensorBSpline<double, 2>, 2>;
 template class StokesElement<TensorBSpline<double, 3>, 3>;
 template class StokesElement<TensorNURBS<double, 2>, 2>;
 template class StokesElement<TensorNURBS<double, 3>, 3>;
+template class StokesElement<THBSpline<double, 2>, 2>;
 
 } // namespace iguana

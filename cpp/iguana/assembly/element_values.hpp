@@ -54,8 +54,8 @@ struct ValueFlags
  * k-th row pairs with the k-th degree of freedom a space of that basis
  * lists on the element
  *
- * @tparam Basis Basis of the patch and of the functions, TensorBSpline or
- *         TensorNURBS
+ * @tparam Basis Basis of the patch and of the functions, TensorBSpline,
+ *         TensorNURBS or THBSpline
  * @tparam n Dimension of the physical space of the patch
  */
 template<typename Basis, std::size_t n>

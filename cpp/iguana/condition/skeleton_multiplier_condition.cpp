@@ -14,6 +14,7 @@
 
 #include "iguana/basis/tensor_bspline.hpp"
 #include "iguana/basis/tensor_nurbs.hpp"
+#include "iguana/basis/thb_spline.hpp"
 
 namespace iguana
 {
@@ -577,5 +578,6 @@ SkeletonMultiplierCondition<Basis, n>::values(
 
 template class SkeletonMultiplierCondition<TensorBSpline<double, 2>, 2>;
 template class SkeletonMultiplierCondition<TensorNURBS<double, 2>, 2>;
+template class SkeletonMultiplierCondition<THBSpline<double, 2>, 2>;
 
 } // namespace iguana

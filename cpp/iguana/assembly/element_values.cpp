@@ -250,5 +250,8 @@ template class ElementValues<TensorNURBS<double, 1>, 3>;
 template class ElementValues<TensorNURBS<double, 2>, 2>;
 template class ElementValues<TensorNURBS<double, 2>, 3>;
 template class ElementValues<TensorNURBS<double, 3>, 3>;
+template class ElementValues<THBSpline<double, 2>, 2>;
+template class ElementValues<THBSpline<double, 2>, 3>;
+template class ElementValues<THBSpline<double, 3>, 3>;
 
 } // namespace iguana

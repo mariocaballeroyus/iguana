@@ -23,6 +23,7 @@
 #include "iguana/assembly/element_values.hpp"
 #include "iguana/basis/tensor_bspline.hpp"
 #include "iguana/basis/tensor_nurbs.hpp"
+#include "iguana/basis/thb_spline.hpp"
 #include "iguana/condition/neumann_condition.hpp"
 #include "iguana/condition/nitsche_condition.hpp"
 #include "iguana/condition/penalty_condition.hpp"
@@ -101,7 +102,8 @@ void shift_values(ElementValues<Basis, n>& values,
                          coupled, order, projection.shift_center);
         }
     }
-    else if constexpr (std::same_as<Basis, TensorNURBS<Scalar, dim>>) {
+    else if constexpr (std::same_as<Basis, TensorNURBS<Scalar, dim>>
+                       || std::same_as<Basis, THBSpline<Scalar, dim>>) {
         throw std::invalid_argument("Assembler: "
                                     "a projection needs a B-spline patch");
     }
@@ -241,7 +243,8 @@ void differentiate_values(ElementValues<Basis, n>& values,
     if constexpr (std::same_as<Basis, TensorBSpline<Scalar, dim>>) {
         values.differentiate(direction);
     }
-    else if constexpr (std::same_as<Basis, TensorNURBS<Scalar, dim>>) {
+    else if constexpr (std::same_as<Basis, TensorNURBS<Scalar, dim>>
+                       || std::same_as<Basis, THBSpline<Scalar, dim>>) {
         throw std::invalid_argument("Assembler: "
                                     "a ghost penalty needs a B-spline patch");
     }
@@ -265,10 +268,35 @@ void differentiate_values(
     if constexpr (std::same_as<Basis, TensorBSpline<Scalar, dim>>) {
         values.differentiate(orders);
     }
-    else if constexpr (std::same_as<Basis, TensorNURBS<Scalar, dim>>) {
+    else if constexpr (std::same_as<Basis, TensorNURBS<Scalar, dim>>
+                       || std::same_as<Basis, THBSpline<Scalar, dim>>) {
         throw std::invalid_argument("Assembler: "
                                     "a ghost penalty needs a B-spline patch");
     }
+}
+
+/**
+ * @brief Knot vector of a direction of a tensor grid, whose faces the terms
+ *        on faces are integrated over
+ */
+template<std::floating_point T, std::size_t d>
+const KnotVector<T>& knots_of(const TensorGrid<T, d>& grid,
+                              std::size_t direction)
+{
+    return grid.knots(direction);
+}
+
+/**
+ * @brief Knot vector of a direction of a hierarchical grid, which has no
+ *        faces yet
+ *
+ * @throws std::invalid_argument Always
+ */
+template<std::floating_point T, std::size_t d>
+const KnotVector<T>& knots_of(const HierarchicalGrid<T, d>&, std::size_t)
+{
+    throw std::invalid_argument("Assembler: "
+                                "terms on faces need a tensor-product grid");
 }
 
 /**
@@ -412,6 +440,34 @@ void cells_around(int element, const std::array<int, d>& counts,
 }
 
 /**
+ * @brief Number of elements of each direction of a tensor grid, across
+ *        whose faces the neighbours couple
+ */
+template<std::floating_point T, std::size_t d>
+std::array<int, d> face_counts(const TensorGrid<T, d>& grid)
+{
+    std::array<int, d> counts{};
+
+    for (std::size_t direction = 0; direction < d; ++direction)
+        counts[direction] = grid.knots(direction).num_elements();
+
+    return counts;
+}
+
+/**
+ * @brief Neighbours across the faces of a hierarchical grid, which has no
+ *        faces yet
+ *
+ * @throws std::invalid_argument Always
+ */
+template<std::floating_point T, std::size_t d>
+std::array<int, d> face_counts(const HierarchicalGrid<T, d>&)
+{
+    throw std::invalid_argument("Assembler: "
+                                "coupling faces needs a tensor-product grid");
+}
+
+/**
  * @brief Compressed rows of the sparsity pattern of a space on the grid of
  *        a patch: an entry for every pair of degrees of freedom sharing an
  *        element and, with the faces coupled, for every pair on the two
@@ -440,16 +496,17 @@ void sparsity_pattern(const MixedFunctionSpace<Basis>& space,
     // The values locate the points of each element in every basis, checked
     // before the system exists, as nothing would destroy it. The fields
     // share the elements of the first
-    if (space.field(0).basis().grid().lines() != patch.basis().grid().lines())
+    if (!same_elements(space.field(0).basis().grid(),
+                       patch.basis().grid()))
         throw std::invalid_argument("Assembler: "
                                     "the space must have the elements of the "
                                     "patch");
 
+    // The neighbours across faces take the tensor numbering of the grid
     std::array<int, Basis::dimension> counts{};
 
-    for (std::size_t direction = 0; direction < Basis::dimension; ++direction)
-        counts[direction] =
-            patch.basis().grid().knots(direction).num_elements();
+    if (couple_faces)
+        counts = face_counts(patch.basis().grid());
 
     const int num_elements = space.num_elements();
     const int num_dofs = space.num_dofs();
@@ -870,7 +927,7 @@ void visit_ghost_faces(
         const int cell_after = quadrature.cells()(face, 1);
         const std::size_t direction =
             static_cast<std::size_t>(quadrature.directions()(face));
-        const int degree = basis.grid().knots(direction).degree();
+        const int degree = knots_of(basis.grid(), direction).degree();
 
         // The values of each cell, with its own polynomial, differentiated
         // across the face at the same points
@@ -928,7 +985,7 @@ void visit_mixed_ghost_faces(
         const int cell_after = quadrature.cells()(face, 1);
         const std::size_t direction =
             static_cast<std::size_t>(quadrature.directions()(face));
-        const int degree = pressure.grid().knots(direction).degree();
+        const int degree = knots_of(pressure.grid(), direction).degree();
 
         // ∂ₙᵏ ∂_c u_c of each component c, its term of ∂ₙᵏ div u, then ∂ₙᵏ p
         for (std::size_t field = 0; field <= n; ++field) {
@@ -1124,7 +1181,7 @@ const Basis& ghost_basis(bool couple_faces, const Patch<Basis, n>& patch,
     // functions jump unpenalized
     for (std::size_t direction = 0; direction < Basis::dimension;
          ++direction) {
-        if (!simple_interior_knots(basis.grid().knots(direction)))
+        if (!simple_interior_knots(knots_of(basis.grid(), direction)))
             throw std::invalid_argument("Assembler: "
                                         "a ghost penalty needs simple "
                                         "interior knots");
@@ -1198,7 +1255,7 @@ const Basis& mixed_ghost_basis(bool couple_faces,
 
         for (std::size_t direction = 0; direction < Basis::dimension;
              ++direction) {
-            if (!simple_interior_knots(basis.grid().knots(direction)))
+            if (!simple_interior_knots(knots_of(basis.grid(), direction)))
                 throw std::invalid_argument("Assembler: "
                                             "a ghost penalty needs simple "
                                             "interior knots");
@@ -2291,6 +2348,7 @@ template class Assembler<TensorBSpline<double, 2>, 2>;
 template class Assembler<TensorBSpline<double, 3>, 3>;
 template class Assembler<TensorNURBS<double, 2>, 2>;
 template class Assembler<TensorNURBS<double, 3>, 3>;
+template class Assembler<THBSpline<double, 2>, 2>;
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
     const PoissonElement<TensorBSpline<double, 2>, 2>&,
@@ -2390,6 +2448,9 @@ template void Assembler<TensorNURBS<double, 2>, 2>::assemble_tangent(
 template void Assembler<TensorNURBS<double, 3>, 3>::assemble_tangent(
     const StokesElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&, Vec);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_tangent(
+    const StokesElement<THBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&, Vec);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
     const StokesElement<TensorBSpline<double, 2>, 2>&,
@@ -2407,6 +2468,10 @@ template void Assembler<TensorNURBS<double, 3>, 3>::assemble_tangent(
     const StokesElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&,
     const Eigen::VectorX<double>&, Vec);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_tangent(
+    const StokesElement<THBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&,
+    const Eigen::VectorX<double>&, Vec);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_residual(
     const StokesElement<TensorBSpline<double, 2>, 2>&,
@@ -2420,6 +2485,9 @@ template void Assembler<TensorNURBS<double, 2>, 2>::assemble_residual(
 template void Assembler<TensorNURBS<double, 3>, 3>::assemble_residual(
     const StokesElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&, Vec);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_residual(
+    const StokesElement<THBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&, Vec);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_residual(
     const StokesElement<TensorBSpline<double, 2>, 2>&,
@@ -2437,6 +2505,10 @@ template void Assembler<TensorNURBS<double, 3>, 3>::assemble_residual(
     const StokesElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&,
     const Eigen::VectorX<double>&, Vec);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_residual(
+    const StokesElement<THBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&,
+    const Eigen::VectorX<double>&, Vec);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_mass(
     const StokesElement<TensorBSpline<double, 2>, 2>&,
@@ -2450,6 +2522,9 @@ template void Assembler<TensorNURBS<double, 2>, 2>::assemble_mass(
 template void Assembler<TensorNURBS<double, 3>, 3>::assemble_mass(
     const StokesElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_mass(
+    const StokesElement<THBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_mass(
     const StokesElement<TensorBSpline<double, 2>, 2>&,
@@ -2463,6 +2538,9 @@ template void Assembler<TensorNURBS<double, 2>, 2>::assemble_mass(
 template void Assembler<TensorNURBS<double, 3>, 3>::assemble_mass(
     const StokesElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::VectorX<double>&);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_mass(
+    const StokesElement<THBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::VectorX<double>&);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
     const ElasticityElement<TensorBSpline<double, 2>, 2>&,
