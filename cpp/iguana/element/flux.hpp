@@ -25,7 +25,8 @@ namespace iguana
  *          Poisson problem with its normal derivative du/dn. Each element
  *          declares its fluxes next to its traces
  *
- * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
+ * @tparam Basis Basis of the patch, TensorBSpline, TensorNURBS or
+ *         THBSpline
  * @tparam n Dimension of the physical space of the patch
  */
 template<typename Basis, std::size_t n>

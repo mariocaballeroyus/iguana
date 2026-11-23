@@ -58,5 +58,6 @@ template class PoissonElement<TensorBSpline<double, 2>, 2>;
 template class PoissonElement<TensorBSpline<double, 3>, 3>;
 template class PoissonElement<TensorNURBS<double, 2>, 2>;
 template class PoissonElement<TensorNURBS<double, 3>, 3>;
+template class PoissonElement<THBSpline<double, 2>, 2>;
 
 } // namespace iguana

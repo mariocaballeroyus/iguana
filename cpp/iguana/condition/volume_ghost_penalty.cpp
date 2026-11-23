@@ -10,6 +10,7 @@
 
 #include "iguana/basis/tensor_bspline.hpp"
 #include "iguana/basis/tensor_nurbs.hpp"
+#include "iguana/basis/thb_spline.hpp"
 
 namespace iguana
 {
@@ -100,5 +101,6 @@ template class VolumeGhostPenalty<TensorBSpline<double, 3>, 3>;
 template class VolumeGhostPenalty<TensorNURBS<double, 2>, 2>;
 template class VolumeGhostPenalty<TensorNURBS<double, 2>, 3>;
 template class VolumeGhostPenalty<TensorNURBS<double, 3>, 3>;
+template class VolumeGhostPenalty<THBSpline<double, 2>, 2>;
 
 } // namespace iguana

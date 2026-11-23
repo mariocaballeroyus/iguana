@@ -43,8 +43,8 @@ namespace iguana
  *          as a nonlinear solver evaluates the residual more often than the
  *          tangent
  *
- * @tparam Basis Basis of the space and the patch, TensorBSpline or
- *         TensorNURBS
+ * @tparam Basis Basis of the space and the patch, TensorBSpline,
+ *         TensorNURBS or THBSpline
  * @tparam n Dimension of the physical space of the patch
  */
 template<typename Basis, std::size_t n>

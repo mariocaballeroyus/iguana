@@ -188,5 +188,6 @@ template class StokesStabilizedElement<TensorBSpline<double, 2>, 2>;
 template class StokesStabilizedElement<TensorBSpline<double, 3>, 3>;
 template class StokesStabilizedElement<TensorNURBS<double, 2>, 2>;
 template class StokesStabilizedElement<TensorNURBS<double, 3>, 3>;
+template class StokesStabilizedElement<THBSpline<double, 2>, 2>;
 
 } // namespace iguana

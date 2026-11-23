@@ -25,7 +25,8 @@ namespace iguana
  *          is the field, U, and its flux the normal derivative of the
  *          field, Q
  *
- * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
+ * @tparam Basis Basis of the patch, TensorBSpline, TensorNURBS or
+ *         THBSpline
  * @tparam n Dimension of the physical space, the number of parametric
  *         directions
  */

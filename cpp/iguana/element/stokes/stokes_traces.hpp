@@ -32,7 +32,8 @@ namespace iguana
  *          pressure gradient of each component, the rows of the pressure
  *          hold that of its component
  *
- * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
+ * @tparam Basis Basis of the patch, TensorBSpline, TensorNURBS or
+ *         THBSpline
  * @tparam n Dimension of the physical space, the number of parametric
  *         directions
  */
@@ -107,7 +108,8 @@ private:
  *          points in the rows of the pressure, and zeros in those of the
  *          velocity
  *
- * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
+ * @tparam Basis Basis of the patch, TensorBSpline, TensorNURBS or
+ *         THBSpline
  * @tparam n Dimension of the physical space, the number of parametric
  *         directions
  */
@@ -141,7 +143,8 @@ public:
  *          the stress being twice the viscosity times the symmetric
  *          gradient of the velocity, less the pressure
  *
- * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
+ * @tparam Basis Basis of the patch, TensorBSpline, TensorNURBS or
+ *         THBSpline
  * @tparam n Dimension of the physical space, the number of parametric
  *         directions
  */

@@ -29,7 +29,8 @@ namespace iguana
  *          boundary points in the rows of its component, and zeros in those
  *          of the other components
  *
- * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
+ * @tparam Basis Basis of the patch, TensorBSpline, TensorNURBS or
+ *         THBSpline
  * @tparam n Dimension of the physical space, the number of parametric
  *         directions
  */
@@ -92,7 +93,8 @@ private:
  *          element linearized at rest, which a linear problem solves, and not
  *          that under large displacements
  *
- * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
+ * @tparam Basis Basis of the patch, TensorBSpline, TensorNURBS or
+ *         THBSpline
  * @tparam n Dimension of the physical space, the number of parametric
  *         directions
  */

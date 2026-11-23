@@ -26,7 +26,8 @@ namespace iguana
  * @details Its matrix B holds the values of the active functions at the
  *          boundary points
  *
- * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
+ * @tparam Basis Basis of the patch, TensorBSpline, TensorNURBS or
+ *         THBSpline
  * @tparam n Dimension of the physical space, the number of parametric
  *         directions
  */
@@ -52,7 +53,8 @@ public:
  * @details The derivative itself, without the sign or the conductivity of a
  *          heat flux
  *
- * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
+ * @tparam Basis Basis of the patch, TensorBSpline, TensorNURBS or
+ *         THBSpline
  * @tparam n Dimension of the physical space, the number of parametric
  *         directions
  */

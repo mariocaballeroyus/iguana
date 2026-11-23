@@ -22,14 +22,13 @@ MixedFunctionSpace<Basis>::MixedFunctionSpace(
                                     "the space needs at least one field");
 
     // One element index locates the points in every basis
-    const std::array<std::vector<Scalar>, dimension> lines =
-        fields_.front().get().basis().grid().lines();
+    const Basis& first = fields_.front().get().basis();
 
     offsets_.reserve(fields_.size() + 1);
     offsets_.push_back(0);
 
     for (const FunctionSpace<Basis>& field : fields_) {
-        if (field.basis().grid().lines() != lines)
+        if (!same_elements(field.basis().grid(), first.grid()))
             throw std::invalid_argument("MixedFunctionSpace: "
                                         "every field must have the elements "
                                         "of the first");
@@ -72,5 +71,7 @@ template class MixedFunctionSpace<TensorBSpline<double, 3>>;
 template class MixedFunctionSpace<TensorNURBS<double, 1>>;
 template class MixedFunctionSpace<TensorNURBS<double, 2>>;
 template class MixedFunctionSpace<TensorNURBS<double, 3>>;
+template class MixedFunctionSpace<THBSpline<double, 2>>;
+template class MixedFunctionSpace<THBSpline<double, 3>>;
 
 } // namespace iguana

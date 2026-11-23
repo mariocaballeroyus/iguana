@@ -34,7 +34,8 @@ namespace iguana
  *          block size, and a space of one field orders them as
  *          FunctionSpace::dofs_on_element()
  *
- * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
+ * @tparam Basis Basis of the patch, TensorBSpline, TensorNURBS or
+ *         THBSpline
  * @tparam n Dimension of the physical space of the patch
  */
 template<typename Basis, std::size_t n>

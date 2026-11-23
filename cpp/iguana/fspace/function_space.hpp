@@ -11,6 +11,7 @@
 
 #include "iguana/basis/tensor_bspline.hpp"
 #include "iguana/basis/tensor_nurbs.hpp"
+#include "iguana/basis/thb_spline.hpp"
 #include "iguana/embedding/cell_classification.hpp"
 #include "iguana/fspace/dof_map.hpp"
 
@@ -38,8 +39,8 @@ namespace iguana
  * function are adjacent, while on an element they run component after
  * component, the layout of the local matrices
  *
- * @tparam Basis Basis whose functions span the space, TensorBSpline or
- *         TensorNURBS
+ * @tparam Basis Basis whose functions span the space, TensorBSpline,
+ *         TensorNURBS or THBSpline
  */
 template<typename Basis>
 class FunctionSpace

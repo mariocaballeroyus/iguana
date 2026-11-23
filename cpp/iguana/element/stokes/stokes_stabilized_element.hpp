@@ -28,7 +28,8 @@ namespace iguana
  *          of the continuity equation. Its unknowns, source, traces and
  *          fluxes are those of StokesElement
  *
- * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
+ * @tparam Basis Basis of the patch, TensorBSpline, TensorNURBS or
+ *         THBSpline
  * @tparam n Dimension of the physical space, the number of parametric
  *         directions
  */
