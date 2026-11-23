@@ -313,6 +313,35 @@ void check_one_field_bases()
     check_one_field<iguana::TensorNURBS<double, n>, n>(rational, images);
 }
 
+/// @brief Checks the flow on one field of THB splines, the B-splines of
+///        check_one_field_bases refined twice at the corner of the origin,
+///        so that the points meet the fine knot line y = 0.2, and the map
+///        stays affine
+void check_refined_field()
+{
+    using THB = iguana::THBSpline<double, 2>;
+    using Grid = iguana::HierarchicalGrid<double, 2>;
+
+    const Basis<2> basis = spline<2>(base_degrees<2>());
+    const Grid once = refine_admissible(Grid(basis.grid()),
+                                        std::vector<int>{0}, false);
+    const Grid grid =
+        refine_admissible(once, std::vector<int>{once.offset(1)}, false);
+    REQUIRE(grid.num_levels() == 3);
+
+    const Patch<THB, 2> patch =
+        refine(Patch<Basis<2>, 2>(basis, greville_images<2>(basis)), grid);
+    const FunctionSpace<THB> field(patch.basis(),
+                                   all_inside<2>(grid.num_elements()), 3);
+    const MixedFunctionSpace<THB> space(std::vector{std::cref(field)});
+
+    // The functions sum to one, so that the control points of the map give
+    // the coefficients of the linear flow
+    check_flow<THB, 2>(space, patch,
+                       block_coefficients<2>(patch.coefficients()),
+                       sample_points<2>());
+}
+
 } // namespace
 
 TEST_CASE("Field evaluation gives the velocity, pressure and traction of a "
@@ -329,6 +358,11 @@ TEST_CASE("Field evaluation gives the velocity, pressure and traction of a "
     {
         check_several_fields<2>();
         check_several_fields<3>();
+    }
+
+    SECTION("On a refined field")
+    {
+        check_refined_field();
     }
 }
 
