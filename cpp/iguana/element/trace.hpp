@@ -25,7 +25,8 @@ namespace iguana
  *          as nested classes, such as PoissonElement::U. Projections onto
  *          the normal of a boundary belong to the conditions
  *
- * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
+ * @tparam Basis Basis of the patch, TensorBSpline, TensorNURBS or
+ *         THBSpline
  * @tparam n Dimension of the physical space of the patch
  */
 template<typename Basis, std::size_t n>

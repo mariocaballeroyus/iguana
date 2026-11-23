@@ -32,7 +32,8 @@ namespace iguana
  *          components of the velocity, U, and the pressure, P, and its
  *          fluxes the components of the traction, T
  *
- * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
+ * @tparam Basis Basis of the patch, TensorBSpline, TensorNURBS or
+ *         THBSpline
  * @tparam n Dimension of the physical space, the number of parametric
  *         directions
  */

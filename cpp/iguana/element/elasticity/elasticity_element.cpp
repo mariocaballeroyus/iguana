@@ -206,5 +206,6 @@ template class ElasticityElement<TensorBSpline<double, 2>, 2>;
 template class ElasticityElement<TensorBSpline<double, 3>, 3>;
 template class ElasticityElement<TensorNURBS<double, 2>, 2>;
 template class ElasticityElement<TensorNURBS<double, 3>, 3>;
+template class ElasticityElement<THBSpline<double, 2>, 2>;
 
 } // namespace iguana

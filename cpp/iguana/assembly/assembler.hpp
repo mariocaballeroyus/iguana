@@ -88,8 +88,8 @@ namespace iguana
  * read. The rows of the multipliers do not divide into blocks, so with
  * multipliers the block size is one
  *
- * @tparam Basis Basis of the space and the patch, TensorBSpline or
- *         TensorNURBS
+ * @tparam Basis Basis of the space and the patch, TensorBSpline,
+ *         TensorNURBS or THBSpline
  * @tparam n Dimension of the physical space of the patch
  */
 template<typename Basis, std::size_t n>

@@ -2362,6 +2362,9 @@ template void Assembler<TensorNURBS<double, 2>, 2>::assemble_tangent(
 template void Assembler<TensorNURBS<double, 3>, 3>::assemble_tangent(
     const PoissonElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&, Vec);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_tangent(
+    const PoissonElement<THBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&, Vec);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
     const PoissonElement<TensorBSpline<double, 2>, 2>&,
@@ -2379,6 +2382,10 @@ template void Assembler<TensorNURBS<double, 3>, 3>::assemble_tangent(
     const PoissonElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&,
     const Eigen::VectorX<double>&, Vec);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_tangent(
+    const PoissonElement<THBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&,
+    const Eigen::VectorX<double>&, Vec);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_residual(
     const PoissonElement<TensorBSpline<double, 2>, 2>&,
@@ -2392,6 +2399,9 @@ template void Assembler<TensorNURBS<double, 2>, 2>::assemble_residual(
 template void Assembler<TensorNURBS<double, 3>, 3>::assemble_residual(
     const PoissonElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&, Vec);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_residual(
+    const PoissonElement<THBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&, Vec);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_residual(
     const PoissonElement<TensorBSpline<double, 2>, 2>&,
@@ -2409,6 +2419,10 @@ template void Assembler<TensorNURBS<double, 3>, 3>::assemble_residual(
     const PoissonElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&,
     const Eigen::VectorX<double>&, Vec);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_residual(
+    const PoissonElement<THBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&,
+    const Eigen::VectorX<double>&, Vec);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_mass(
     const PoissonElement<TensorBSpline<double, 2>, 2>&,
@@ -2422,6 +2436,9 @@ template void Assembler<TensorNURBS<double, 2>, 2>::assemble_mass(
 template void Assembler<TensorNURBS<double, 3>, 3>::assemble_mass(
     const PoissonElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_mass(
+    const PoissonElement<THBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_mass(
     const PoissonElement<TensorBSpline<double, 2>, 2>&,
@@ -2435,6 +2452,9 @@ template void Assembler<TensorNURBS<double, 2>, 2>::assemble_mass(
 template void Assembler<TensorNURBS<double, 3>, 3>::assemble_mass(
     const PoissonElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::VectorX<double>&);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_mass(
+    const PoissonElement<THBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::VectorX<double>&);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
     const StokesElement<TensorBSpline<double, 2>, 2>&,
@@ -2554,6 +2574,9 @@ template void Assembler<TensorNURBS<double, 2>, 2>::assemble_tangent(
 template void Assembler<TensorNURBS<double, 3>, 3>::assemble_tangent(
     const ElasticityElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&, Vec);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_tangent(
+    const ElasticityElement<THBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&, Vec);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
     const ElasticityElement<TensorBSpline<double, 2>, 2>&,
@@ -2571,6 +2594,10 @@ template void Assembler<TensorNURBS<double, 3>, 3>::assemble_tangent(
     const ElasticityElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&,
     const Eigen::VectorX<double>&, Vec);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_tangent(
+    const ElasticityElement<THBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&,
+    const Eigen::VectorX<double>&, Vec);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_residual(
     const ElasticityElement<TensorBSpline<double, 2>, 2>&,
@@ -2584,6 +2611,9 @@ template void Assembler<TensorNURBS<double, 2>, 2>::assemble_residual(
 template void Assembler<TensorNURBS<double, 3>, 3>::assemble_residual(
     const ElasticityElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&, Vec);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_residual(
+    const ElasticityElement<THBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&, Vec);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_residual(
     const ElasticityElement<TensorBSpline<double, 2>, 2>&,
@@ -2601,6 +2631,10 @@ template void Assembler<TensorNURBS<double, 3>, 3>::assemble_residual(
     const ElasticityElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&,
     const Eigen::VectorX<double>&, Vec);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_residual(
+    const ElasticityElement<THBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&,
+    const Eigen::VectorX<double>&, Vec);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_mass(
     const ElasticityElement<TensorBSpline<double, 2>, 2>&,
@@ -2614,6 +2648,9 @@ template void Assembler<TensorNURBS<double, 2>, 2>::assemble_mass(
 template void Assembler<TensorNURBS<double, 3>, 3>::assemble_mass(
     const ElasticityElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_mass(
+    const ElasticityElement<THBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_mass(
     const ElasticityElement<TensorBSpline<double, 2>, 2>&,
@@ -2627,6 +2664,9 @@ template void Assembler<TensorNURBS<double, 2>, 2>::assemble_mass(
 template void Assembler<TensorNURBS<double, 3>, 3>::assemble_mass(
     const ElasticityElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::VectorX<double>&);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_mass(
+    const ElasticityElement<THBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::VectorX<double>&);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
     const StokesStabilizedElement<TensorBSpline<double, 2>, 2>&,
@@ -2640,6 +2680,9 @@ template void Assembler<TensorNURBS<double, 2>, 2>::assemble_tangent(
 template void Assembler<TensorNURBS<double, 3>, 3>::assemble_tangent(
     const StokesStabilizedElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&, Vec);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_tangent(
+    const StokesStabilizedElement<THBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&, Vec);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
     const StokesStabilizedElement<TensorBSpline<double, 2>, 2>&,
@@ -2657,6 +2700,10 @@ template void Assembler<TensorNURBS<double, 3>, 3>::assemble_tangent(
     const StokesStabilizedElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&,
     const Eigen::VectorX<double>&, Vec);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_tangent(
+    const StokesStabilizedElement<THBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&,
+    const Eigen::VectorX<double>&, Vec);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_residual(
     const StokesStabilizedElement<TensorBSpline<double, 2>, 2>&,
@@ -2670,6 +2717,9 @@ template void Assembler<TensorNURBS<double, 2>, 2>::assemble_residual(
 template void Assembler<TensorNURBS<double, 3>, 3>::assemble_residual(
     const StokesStabilizedElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&, Vec);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_residual(
+    const StokesStabilizedElement<THBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&, Vec);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_residual(
     const StokesStabilizedElement<TensorBSpline<double, 2>, 2>&,
@@ -2687,6 +2737,10 @@ template void Assembler<TensorNURBS<double, 3>, 3>::assemble_residual(
     const StokesStabilizedElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&,
     const Eigen::VectorX<double>&, Vec);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_residual(
+    const StokesStabilizedElement<THBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&,
+    const Eigen::VectorX<double>&, Vec);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_mass(
     const StokesStabilizedElement<TensorBSpline<double, 2>, 2>&,
@@ -2700,6 +2754,9 @@ template void Assembler<TensorNURBS<double, 2>, 2>::assemble_mass(
 template void Assembler<TensorNURBS<double, 3>, 3>::assemble_mass(
     const StokesStabilizedElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_mass(
+    const StokesStabilizedElement<THBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_mass(
     const StokesStabilizedElement<TensorBSpline<double, 2>, 2>&,
@@ -2713,6 +2770,9 @@ template void Assembler<TensorNURBS<double, 2>, 2>::assemble_mass(
 template void Assembler<TensorNURBS<double, 3>, 3>::assemble_mass(
     const StokesStabilizedElement<TensorNURBS<double, 3>, 3>&,
     const QuadratureDomain<double, 3>&, const Eigen::VectorX<double>&);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_mass(
+    const StokesStabilizedElement<THBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::VectorX<double>&);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
     const PenaltyCondition<TensorBSpline<double, 2>, 2>&,

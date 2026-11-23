@@ -40,7 +40,8 @@ namespace iguana
  *          matrix of a first derivative in time, as the second one of
  *          elastodynamics has no time scheme yet
  *
- * @tparam Basis Basis of the patch, TensorBSpline or TensorNURBS
+ * @tparam Basis Basis of the patch, TensorBSpline, TensorNURBS or
+ *         THBSpline
  * @tparam n Dimension of the physical space, the number of parametric
  *         directions
  */
