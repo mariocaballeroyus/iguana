@@ -98,5 +98,7 @@ template class FunctionSpace<TensorBSpline<double, 3>>;
 template class FunctionSpace<TensorNURBS<double, 1>>;
 template class FunctionSpace<TensorNURBS<double, 2>>;
 template class FunctionSpace<TensorNURBS<double, 3>>;
+template class FunctionSpace<THBSpline<double, 2>>;
+template class FunctionSpace<THBSpline<double, 3>>;
 
 } // namespace iguana

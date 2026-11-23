@@ -30,7 +30,8 @@ namespace iguana
  * The space views its fields: it keeps references to them, and its copies
  * view the same fields
  *
- * @tparam Basis Basis of every field, TensorBSpline or TensorNURBS
+ * @tparam Basis Basis of every field, TensorBSpline, TensorNURBS or
+ *         THBSpline
  */
 template<typename Basis>
 class MixedFunctionSpace
