@@ -364,9 +364,6 @@ private:
         /// @brief Basis whose functions are evaluated
         const Basis& basis;
 
-        /// @brief First active function of the basis along each direction
-        std::array<int, dim> first_active{};
-
         /// @brief Functions of the basis active on the element
         Eigen::VectorXi actives;
 
@@ -411,6 +408,9 @@ private:
 
     /// @brief Optional values to compute
     ValueFlags flags_;
+
+    /// @brief Element of the last reinit(), in the numbering of the grid
+    int element_ = 0;
 
     /// @brief Points of the element in parameter space
     Eigen::MatrixX<Scalar> points_;

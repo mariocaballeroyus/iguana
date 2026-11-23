@@ -14,35 +14,6 @@
 namespace iguana
 {
 
-namespace
-{
-
-/// @brief First active function of each direction of a basis on an element,
-///        from the element of each direction with the first one running
-///        fastest
-template<typename Basis>
-std::array<int, Basis::dimension> first_active_on(const Basis& basis,
-                                                  int element)
-{
-    std::array<int, Basis::dimension> first_active{};
-    int remaining = element;
-
-    for (std::size_t direction = 0; direction < Basis::dimension;
-         ++direction) {
-        const KnotVector<typename Basis::Scalar>& knots =
-            basis.grid().knots(direction);
-        const int axis_element = remaining % knots.num_elements();
-
-        first_active[direction] =
-            knots.element_span(axis_element) - knots.degree();
-        remaining /= knots.num_elements();
-    }
-
-    return first_active;
-}
-
-} // namespace
-
 template<typename Basis, std::size_t n>
 ElementValues<Basis, n>::ElementValues(const Patch<Basis, n>& patch,
                                        ValueFlags flags)
@@ -69,14 +40,11 @@ ElementValues<Basis, n>::ElementValues(
                                     "the values need at least one basis");
 
     // One element index locates the points in every basis, which share
-    // their knot lines with the patch
-    const std::array<std::vector<Scalar>, dim> lines =
-        patch.basis().grid().lines();
-
+    // their elements with the patch
     fields_.reserve(bases.size());
 
     for (const Basis& basis : bases) {
-        if (basis.grid().lines() != lines)
+        if (!same_elements(basis.grid(), patch.basis().grid()))
             throw std::invalid_argument("ElementValues: "
                                         "every basis must have the elements "
                                         "of the patch");
@@ -104,20 +72,17 @@ void ElementValues<Basis, n>::reinit(int element,
     using Map = Patch<Basis, n>;
 
     // Volume of the element in parameter space, the same in every basis
-    int remaining = element;
+    const std::array<Scalar, dim> start =
+        patch_.basis().grid().element_start(element);
+    const std::array<Scalar, dim> end =
+        patch_.basis().grid().element_end(element);
     Scalar volume = 1;
 
-    for (std::size_t direction = 0; direction < dim; ++direction) {
-        const KnotVector<Scalar>& knots =
-            patch_.basis().grid().knots(direction);
-        const int axis_element = remaining % knots.num_elements();
+    for (std::size_t direction = 0; direction < dim; ++direction)
+        volume *= end[direction] - start[direction];
 
-        volume *= knots.element_end(axis_element)
-                  - knots.element_start(axis_element);
-        remaining /= knots.num_elements();
-    }
-
-    // The points stay for a later shift
+    // The element and the points stay for a later shift
+    element_ = element;
     points_ = points;
 
     for (Field& field : fields_) {
@@ -165,8 +130,8 @@ void ElementValues<Basis, n>::shift(const Eigen::MatrixX<Scalar>& shifts,
     requires std::same_as<Basis, TensorBSpline<Scalar, dim>>
 {
     for (Field& field : fields_) {
-        field.basis.taylor_on_element(field.first_active, points_, shifts,
-                                      order, field.values);
+        field.basis.taylor_on_element(field.basis.first_active(element_),
+                                      points_, shifts, order, field.values);
     }
 }
 
@@ -190,7 +155,9 @@ void ElementValues<Basis, n>::shift(
     Eigen::MatrixX<Scalar> combination;
 
     for (Field& field : fields_) {
-        field.basis.combine_on_element(field.first_active, at, weights, order,
+        const std::array<int, dim> first_active =
+            field.basis.first_active(element_);
+        field.basis.combine_on_element(first_active, at, weights, order,
                                        combination);
         field.values += combination;
 
@@ -198,9 +165,8 @@ void ElementValues<Basis, n>::shift(
         field.combinations.resize(coupled.size());
 
         for (std::size_t set = 0; set < coupled.size(); ++set) {
-            field.basis.combine_on_element(field.first_active, at,
-                                           coupled[set], order,
-                                           field.combinations[set]);
+            field.basis.combine_on_element(first_active, at, coupled[set],
+                                           order, field.combinations[set]);
         }
     }
 }
@@ -224,8 +190,8 @@ void ElementValues<Basis, n>::differentiate(std::size_t direction)
         std::array<int, dim> orders{};
         orders[direction] = degree;
 
-        field.basis.deriv_on_element(field.first_active, points_, orders,
-                                     field.values);
+        field.basis.deriv_on_element(field.basis.first_active(element_),
+                                     points_, orders, field.values);
 
         const Eigen::VectorX<Scalar> scales =
             (line_measures.array() / measures_.array())
@@ -241,8 +207,8 @@ void ElementValues<Basis, n>::differentiate(
 {
     for (std::size_t index = 0; index < fields_.size(); ++index) {
         Field& field = fields_[index];
-        field.basis.deriv_on_element(field.first_active, points_,
-                                     orders[index], field.values);
+        field.basis.deriv_on_element(field.basis.first_active(element_),
+                                     points_, orders[index], field.values);
 
         // J_kk^(−a_k) per direction, with the sign of J_kk
         Eigen::ArrayX<Scalar> scales =
@@ -262,15 +228,14 @@ template<typename Basis, std::size_t n>
 void ElementValues<Basis, n>::evaluate(Field& field, int element,
                                        const Eigen::MatrixX<Scalar>& points)
 {
-    field.first_active = first_active_on(field.basis, element);
     field.basis.active_on_element(element, field.actives);
 
     // One evaluation gives the second derivatives with the first
     if (flags_.physical_hessians) {
-        field.basis.hess_on_element(field.first_active, points, field.values,
+        field.basis.hess_on_element(element, points, field.values,
                                     field.gradients, field.hessians);
     } else {
-        field.basis.grad_on_element(field.first_active, points, field.values,
+        field.basis.grad_on_element(element, points, field.values,
                                     field.gradients);
     }
 }
