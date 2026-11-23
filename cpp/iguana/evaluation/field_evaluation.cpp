@@ -15,15 +15,33 @@
 #include "iguana/assembly/element_values.hpp"
 #include "iguana/basis/tensor_bspline.hpp"
 #include "iguana/basis/tensor_nurbs.hpp"
+#include "iguana/basis/thb_spline.hpp"
+#include "iguana/grid/hierarchical_grid.hpp"
 #include "iguana/grid/knot_vector.hpp"
 #include "iguana/grid/tensor_grid.hpp"
-#include "iguana/utils/multi_index.hpp"
 
 namespace iguana
 {
 
 namespace
 {
+
+/// @brief Knot vector of a direction of a tensor grid
+template<std::floating_point T, std::size_t d>
+const KnotVector<T>& domain_knots(const TensorGrid<T, d>& grid,
+                                  std::size_t direction)
+{
+    return grid.knots(direction);
+}
+
+/// @brief Knot vector of a direction of the coarse level of a hierarchical
+///        grid, which spans its parametric domain
+template<std::floating_point T, std::size_t d>
+const KnotVector<T>& domain_knots(const HierarchicalGrid<T, d>& grid,
+                                  std::size_t direction)
+{
+    return grid.level(0).knots(direction);
+}
 
 /**
  * @brief Element of a grid holding a point, checked to lie in the grid up to
@@ -35,15 +53,15 @@ namespace
  *
  * @throws std::invalid_argument If the point lies outside the grid
  */
-template<typename T, std::size_t d, typename Parameters>
-int element_holding_point(const TensorGrid<T, d>& grid,
-                          const Parameters& parameters)
+template<typename Grid, typename Parameters>
+int element_holding_point(const Grid& grid, const Parameters& parameters)
 {
-    std::array<int, d> index{};
-    std::array<int, d> counts{};
+    using T = typename Parameters::Scalar;
+    constexpr std::size_t d = Grid::dimension;
+    std::array<T, d> inside{};
 
     for (std::size_t direction = 0; direction < d; ++direction) {
-        const KnotVector<T>& knots = grid.knots(direction);
+        const KnotVector<T>& knots = domain_knots(grid, direction);
         const T parameter = parameters(static_cast<Eigen::Index>(direction));
         const T rounding = 4096 * std::numeric_limits<T>::epsilon()
                            * (knots.domain_end() - knots.domain_start());
@@ -54,11 +72,10 @@ int element_holding_point(const TensorGrid<T, d>& grid,
                                         "the points must lie in the patch");
 
         // On a knot line, the element after it, however the map rounded it
-        index[direction] = element_holding(knots, parameter + rounding);
-        counts[direction] = knots.num_elements();
+        inside[direction] = parameter + rounding;
     }
 
-    return flatten(index, counts);
+    return element_holding(grid, inside);
 }
 
 /**
@@ -195,6 +212,11 @@ template Eigen::VectorXd trace_at_points(
     const Patch<TensorNURBS<double, 3>, 3>&,
     const Trace<TensorNURBS<double, 3>, 3>&, const Eigen::VectorXd&,
     const PointMatrix<double, 3>&);
+template Eigen::VectorXd trace_at_points(
+    const MixedFunctionSpace<THBSpline<double, 2>>&,
+    const Patch<THBSpline<double, 2>, 2>&,
+    const Trace<THBSpline<double, 2>, 2>&, const Eigen::VectorXd&,
+    const PointMatrix<double, 2>&);
 
 template Eigen::VectorXd flux_at_points(
     const MixedFunctionSpace<TensorBSpline<double, 2>>&,
@@ -216,5 +238,10 @@ template Eigen::VectorXd flux_at_points(
     const Patch<TensorNURBS<double, 3>, 3>&,
     const Flux<TensorNURBS<double, 3>, 3>&, const Eigen::VectorXd&,
     const PointMatrix<double, 3>&, const PointMatrix<double, 3>&);
+template Eigen::VectorXd flux_at_points(
+    const MixedFunctionSpace<THBSpline<double, 2>>&,
+    const Patch<THBSpline<double, 2>, 2>&,
+    const Flux<THBSpline<double, 2>, 2>&, const Eigen::VectorXd&,
+    const PointMatrix<double, 2>&, const PointMatrix<double, 2>&);
 
 } // namespace iguana
