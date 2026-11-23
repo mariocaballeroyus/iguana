@@ -715,6 +715,81 @@ void check_elastic_system()
     REQUIRE(residual_of(assembler).cwiseAbs().maxCoeff() < 1e-12);
 }
 
+/**
+ * @brief Rectangle of six by four quadratic elements on THB splines,
+ *        refined by the box of its first element and then by that of the
+ *        first fine one, three levels graded
+ */
+iguana::Patch<iguana::THBSpline<double, 2>, 2> refined_rectangle()
+{
+    const Basis coarse(TensorGrid<double, 2>(
+        {KnotVector<double>(2, {0., 0., 0., 1. / 6., 1. / 3., .5, 2. / 3.,
+                                5. / 6., 1., 1., 1.}),
+         KnotVector<double>(2, {0., 0., 0., .25, .5, .75, 1., 1., 1.})}));
+    const iguana::HierarchicalGrid<double, 2> once = refine_admissible(
+        iguana::HierarchicalGrid<double, 2>(coarse.grid()),
+        std::vector<int>{0}, true);
+    const iguana::HierarchicalGrid<double, 2> grid =
+        refine_admissible(once, std::vector<int>{once.offset(1)}, true);
+
+    return refine(rectangle(coarse), grid);
+}
+
+/**
+ * @brief Solution of the linear system of an assembler with the held
+ *        degrees of freedom at their values and the others solved for
+ */
+template<typename A>
+Eigen::VectorXd solve_holding(const A& assembler, const Eigen::VectorXd& values,
+                              const std::vector<bool>& held)
+{
+    const Eigen::SparseMatrix<double, Eigen::RowMajor> stiffness =
+        stiffness_of(assembler);
+    std::vector<int> free;
+    std::vector<int> position(held.size(), -1);
+
+    for (std::size_t dof = 0; dof < held.size(); ++dof) {
+        if (!held[dof]) {
+            position[dof] = static_cast<int>(free.size());
+            free.push_back(static_cast<int>(dof));
+        }
+    }
+
+    // The rows and columns of the free degrees of freedom
+    std::vector<Eigen::Triplet<double>> entries;
+
+    for (int row = 0; row < stiffness.outerSize(); ++row) {
+        for (Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator it(
+                 stiffness, row);
+             it; ++it) {
+            const int i = position[static_cast<std::size_t>(it.row())];
+            const int j = position[static_cast<std::size_t>(it.col())];
+
+            if (i >= 0 && j >= 0)
+                entries.emplace_back(i, j, it.value());
+        }
+    }
+
+    const Eigen::Index num_free = std::ssize(free);
+    Eigen::SparseMatrix<double> reduced(num_free, num_free);
+    reduced.setFromTriplets(entries.begin(), entries.end());
+
+    // The held values move to the right-hand side
+    Eigen::VectorXd known = values;
+    known(free).setZero();
+    const Eigen::VectorXd right =
+        (load_of(assembler) - stiffness * known)(free);
+
+    Eigen::SparseLU<Eigen::SparseMatrix<double>> solver(reduced);
+    REQUIRE(solver.info() == Eigen::Success);
+
+    const Eigen::VectorXd solved = solver.solve(right);
+    Eigen::VectorXd solution = values;
+    solution(free) = solved;
+
+    return solution;
+}
+
 } // namespace
 
 TEST_CASE("The Poisson system of a rectangle integrates exactly",
@@ -1882,6 +1957,145 @@ TEST_CASE("A Stokes system on refined divergence-conforming spaces holds "
     // Faces are not coupled on a hierarchical grid yet
     REQUIRE_THROWS_AS((iguana::Assembler<THB, 2>(space, patch, true)),
                       std::invalid_argument);
+}
+
+TEST_CASE("Every element on a refined space holds a linear field exactly",
+          "[assembler]")
+{
+    using THB = iguana::THBSpline<double, 2>;
+
+    const iguana::Patch<THB, 2> patch = refined_rectangle();
+    const THB& basis = patch.basis();
+    REQUIRE(basis.grid().num_levels() == 3);
+
+    const CellClassification<double, 2> classification(std::vector<CellType>(
+        static_cast<std::size_t>(basis.grid().num_elements()),
+        CellType::inside));
+    iguana::QuadratureDomain<double, 2> cells;
+    cells.fill(basis.grid(), classification, CellType::inside,
+               iguana::GaussLegendre<double, 2>(4));
+
+    // The functions sum to one, so that the control points of the map give
+    // the coefficients of every linear field: a · x + c at a · p_i + c
+    const iguana::PointMatrix<double, 2>& points = patch.coefficients();
+    const int num_functions = basis.num_functions();
+    const Eigen::VectorXd ones = Eigen::VectorXd::Ones(num_functions);
+
+    // The residual vanishes at the free degrees of freedom, and the system
+    // with the held ones at their values solves for the field
+    const auto check = [&](auto& assembler, const auto& assemble,
+                           const Eigen::VectorXd& exact,
+                           const std::vector<bool>& held) {
+        assemble(Coefficients(exact));
+        const Eigen::VectorXd residual = residual_of(assembler);
+
+        for (std::size_t dof = 0; dof < held.size(); ++dof) {
+            if (!held[dof])
+                REQUIRE(std::abs(residual(static_cast<Eigen::Index>(dof)))
+                        < 1e-10);
+        }
+
+        assembler.clear();
+        assemble(Coefficients(Eigen::VectorXd::Zero(exact.size())));
+
+        REQUIRE((solve_holding(assembler, exact, held) - exact)
+                    .cwiseAbs().maxCoeff()
+                < 1e-10 * exact.cwiseAbs().maxCoeff());
+    };
+
+    SECTION("Poisson, u = 2x − y + 1 held on every side")
+    {
+        const iguana::FunctionSpace<THB> space(basis, classification);
+        const iguana::PoissonElement<THB, 2> element;
+        const Eigen::MatrixXd source =
+            Eigen::MatrixXd::Zero(cells.num_points(), 1);
+        iguana::Assembler<THB, 2> assembler(space, patch);
+
+        const auto assemble = [&](Vec coefficients) {
+            assembler.assemble_tangent(element, cells, source, coefficients);
+            assembler.assemble_residual(element, cells, source,
+                                        coefficients);
+        };
+
+        std::vector<bool> held(static_cast<std::size_t>(num_functions));
+
+        for (std::size_t direction = 0; direction < 2; ++direction) {
+            for (const int function : basis.boundary_functions(direction))
+                held[static_cast<std::size_t>(function)] = true;
+        }
+
+        check(assembler, assemble, points * Eigen::Vector2d(2., -1.) + ones,
+              held);
+    }
+
+    SECTION("Elasticity, u = A x + t held on every side")
+    {
+        // The components of each function together
+        const iguana::FunctionSpace<THB> space(basis, classification, 2);
+        const iguana::ElasticityElement<THB, 2> element(1.2, .7);
+        const Eigen::MatrixXd source =
+            Eigen::MatrixXd::Zero(cells.num_points(), 2);
+        iguana::Assembler<THB, 2> assembler(space, patch);
+
+        const auto assemble = [&](Vec coefficients) {
+            assembler.assemble_tangent(element, cells, source, coefficients);
+            assembler.assemble_residual(element, cells, source,
+                                        coefficients);
+        };
+
+        const Eigen::Matrix2d a{{1., -2.}, {3., .5}};
+        Eigen::MatrixXd values =
+            (points * a.transpose()).rowwise() + Eigen::RowVector2d(.4, -1.);
+        values.transposeInPlace();
+        const Eigen::VectorXd exact =
+            Eigen::Map<const Eigen::VectorXd>(values.data(), values.size());
+
+        std::vector<bool> held(static_cast<std::size_t>(2 * num_functions));
+
+        for (std::size_t direction = 0; direction < 2; ++direction) {
+            for (const int function : basis.boundary_functions(direction)) {
+                held[static_cast<std::size_t>(2 * function)] = true;
+                held[static_cast<std::size_t>(2 * function + 1)] = true;
+            }
+        }
+
+        check(assembler, assemble, exact, held);
+    }
+
+    SECTION("Stabilized Stokes, u = (x, −y) and p = x + y, the normal "
+            "velocity held")
+    {
+        // Equal orders, the body force (1, 1) of the pressure gradient,
+        // and no shear, so that the tangential traction vanishes on the
+        // sides, the natural condition
+        const iguana::FunctionSpace<THB> field(basis, classification);
+        const iguana::MixedFunctionSpace<THB> space({field, field, field});
+        const iguana::StokesStabilizedElement<THB, 2> element(1.5, 3.);
+        const Eigen::MatrixXd source =
+            Eigen::MatrixXd::Ones(cells.num_points(), 2);
+        iguana::Assembler<THB, 2> assembler(space, patch);
+
+        const auto assemble = [&](Vec coefficients) {
+            assembler.assemble_tangent(element, cells, source, coefficients);
+            assembler.assemble_residual(element, cells, source,
+                                        coefficients);
+        };
+
+        Eigen::VectorXd exact(space.num_dofs());
+        exact << points.col(0), -points.col(1),
+            points * Eigen::Vector2d(1., 1.);
+
+        std::vector<bool> held(static_cast<std::size_t>(space.num_dofs()));
+
+        for (std::size_t component = 0; component < 2; ++component) {
+            for (const int function : basis.boundary_functions(component))
+                held[static_cast<std::size_t>(space.offset(component)
+                                              + function)] = true;
+        }
+
+        held.back() = true;
+        check(assembler, assemble, exact, held);
+    }
 }
 
 TEST_CASE("A test side without the pressure leaves the continuity equations "
