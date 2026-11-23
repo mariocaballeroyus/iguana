@@ -25,8 +25,9 @@ namespace iguana
  * @details Each point takes the element holding it, which on a knot line is
  *          the one after the line. Only affine maps are inverted so far
  *
- * @tparam Basis Basis of the patch and of the fields, TensorBSpline or
- *         TensorNURBS, with as many directions as the physical space
+ * @tparam Basis Basis of the patch and of the fields, TensorBSpline,
+ *         TensorNURBS or THBSpline, with as many directions as the
+ *         physical space
  *
  * @param space Space of the field, a plain space being a mixed one of one
  *        field
@@ -64,8 +65,9 @@ Eigen::VectorX<typename Basis::Scalar> trace_at_points(
  *          boundary of the field: the traction of a fluid along the normal
  *          of a solid, pointing into the fluid, is the load on the solid
  *
- * @tparam Basis Basis of the patch and of the fields, TensorBSpline or
- *         TensorNURBS, with as many directions as the physical space
+ * @tparam Basis Basis of the patch and of the fields, TensorBSpline,
+ *         TensorNURBS or THBSpline, with as many directions as the
+ *         physical space
  *
  * @param space Space of the field, a plain space being a mixed one of one
  *        field
