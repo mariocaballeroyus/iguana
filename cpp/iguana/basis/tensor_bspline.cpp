@@ -56,6 +56,17 @@ TensorBSpline<T, d>::TensorBSpline(std::array<BSpline<T>, d> axes)
 }
 
 template<std::floating_point T, std::size_t d>
+std::array<int, d> TensorBSpline<T, d>::degrees() const noexcept
+{
+    std::array<int, d> result{};
+
+    for (std::size_t direction = 0; direction < d; ++direction)
+        result[direction] = axes_[direction].degree();
+
+    return result;
+}
+
+template<std::floating_point T, std::size_t d>
 std::array<int, d> TensorBSpline<T, d>::first_active(int element) const
     noexcept
 {
@@ -104,6 +115,33 @@ void TensorBSpline<T, d>::hess_on_element(
 {
     hess_on_element(first_active(element), points, values, gradients,
                     hessians);
+}
+
+template<std::floating_point T, std::size_t d>
+void TensorBSpline<T, d>::deriv_on_element(
+    int element, const Eigen::MatrixX<T>& points,
+    const std::array<int, d>& orders, Eigen::MatrixX<T>& derivatives) const
+{
+    deriv_on_element(first_active(element), points, orders, derivatives);
+}
+
+template<std::floating_point T, std::size_t d>
+void TensorBSpline<T, d>::taylor_on_element(int element,
+                                            const Eigen::MatrixX<T>& points,
+                                            const Eigen::MatrixX<T>& shifts,
+                                            int order,
+                                            Eigen::MatrixX<T>& values) const
+{
+    taylor_on_element(first_active(element), points, shifts, order, values);
+}
+
+template<std::floating_point T, std::size_t d>
+void TensorBSpline<T, d>::combine_on_element(
+    int element, const Eigen::MatrixX<T>& points,
+    const Eigen::MatrixX<T>& weights, int order,
+    Eigen::MatrixX<T>& values) const
+{
+    combine_on_element(first_active(element), points, weights, order, values);
 }
 
 template<std::floating_point T, std::size_t d>

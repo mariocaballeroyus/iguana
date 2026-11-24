@@ -423,6 +423,50 @@ void THBSpline<T, d>::hess_on_element(
 }
 
 template<std::floating_point T, std::size_t d>
+void THBSpline<T, d>::deriv_on_element(int element,
+                                       const Eigen::MatrixX<T>& points,
+                                       const std::array<int, d>& orders,
+                                       Eigen::MatrixX<T>& derivatives) const
+{
+    const Local local = localize(element);
+    Eigen::MatrixX<T> tensor;
+
+    levels_[grid_.level_of(element)].deriv_on_element(
+        local.first_active, points, orders, tensor);
+    derivatives = local.extraction * tensor;
+}
+
+template<std::floating_point T, std::size_t d>
+void THBSpline<T, d>::taylor_on_element(int element,
+                                        const Eigen::MatrixX<T>& points,
+                                        const Eigen::MatrixX<T>& shifts,
+                                        int order,
+                                        Eigen::MatrixX<T>& values) const
+{
+    const Local local = localize(element);
+    Eigen::MatrixX<T> tensor;
+
+    levels_[grid_.level_of(element)].taylor_on_element(
+        local.first_active, points, shifts, order, tensor);
+    values = local.extraction * tensor;
+}
+
+template<std::floating_point T, std::size_t d>
+void THBSpline<T, d>::combine_on_element(int element,
+                                         const Eigen::MatrixX<T>& points,
+                                         const Eigen::MatrixX<T>& weights,
+                                         int order,
+                                         Eigen::MatrixX<T>& values) const
+{
+    const Local local = localize(element);
+    Eigen::MatrixX<T> tensor;
+
+    levels_[grid_.level_of(element)].combine_on_element(
+        local.first_active, points, weights, order, tensor);
+    values = local.extraction * tensor;
+}
+
+template<std::floating_point T, std::size_t d>
 Eigen::MatrixX<T> THBSpline<T, d>::coefficients(
     const Eigen::MatrixX<T>& coarse) const
 {

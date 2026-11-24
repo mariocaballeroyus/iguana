@@ -72,6 +72,9 @@ public:
     constexpr const BSpline<T>& axis(std::size_t direction) const noexcept
     { return axes_[direction]; }
 
+    /// @brief Degree of the basis along each direction
+    std::array<int, d> degrees() const noexcept;
+
     /// @brief Number of tensor-product basis functions.
     constexpr int num_functions() const noexcept
     { return num_functions_; }
@@ -159,6 +162,70 @@ public:
         int element, const Eigen::MatrixX<T>& points,
         Eigen::MatrixX<T>& values, std::array<Eigen::MatrixX<T>, d>& gradients,
         std::array<Eigen::MatrixX<T>, d * (d + 1) / 2>& hessians) const;
+
+    /**
+     * @brief Evaluates a derivative of the non-zero functions on an element
+     *        given by index, as the overload taking its first active
+     *        functions does
+     *
+     * @param element Element index
+     * @param points Evaluation points, with size (num_points, dimension)
+     * @param orders Order of the derivative along each direction
+     * @param derivatives Output of size (num_active(), num_points), with the
+     *        rows of active_on_element(). It is resized when necessary
+     *
+     * @pre @p element lies in [0, grid().num_elements()), @p points has
+     *      dimension columns and every point lies inside that element, and
+     *      every order is non-negative
+     */
+    void deriv_on_element(int element, const Eigen::MatrixX<T>& points,
+                          const std::array<int, d>& orders,
+                          Eigen::MatrixX<T>& derivatives) const;
+
+    /**
+     * @brief Expands the non-zero functions on an element given by index in
+     *        Taylor series from points along shifts, as the overload taking
+     *        its first active functions does
+     *
+     * @param element Element index
+     * @param points Points the series start from, with size
+     *        (num_points, dimension)
+     * @param shifts Shift of each point in parameter space, of the size of
+     *        @p points
+     * @param order Highest total order of the derivatives kept
+     * @param values Output of size (num_active(), num_points), with the rows
+     *        of active_on_element(). It is resized when necessary
+     *
+     * @pre @p element lies in [0, grid().num_elements()), @p points has
+     *      dimension columns and every point lies inside that element,
+     *      @p shifts has the size of @p points, and @p order is non-negative
+     */
+    void taylor_on_element(int element, const Eigen::MatrixX<T>& points,
+                           const Eigen::MatrixX<T>& shifts, int order,
+                           Eigen::MatrixX<T>& values) const;
+
+    /**
+     * @brief Combines the derivatives of the non-zero functions on an
+     *        element given by index at points, with weights per point, as
+     *        the overload taking its first active functions does
+     *
+     * @param element Element index, whose polynomial is used at every point
+     * @param points Points where the derivatives are taken, with size
+     *        (num_points, dimension)
+     * @param weights Weight of each multi-index of total order at most
+     *        @p order at each point, with size (num_points, num_terms), the
+     *        multi-indices with the first direction running fastest
+     * @param order Highest total order of the derivatives
+     * @param values Output of size (num_active(), num_points), with the rows
+     *        of active_on_element(). It is resized when necessary
+     *
+     * @pre @p element lies in [0, grid().num_elements()), @p points has
+     *      dimension columns, @p weights one row per point and one column
+     *      per multi-index, and @p order is non-negative
+     */
+    void combine_on_element(int element, const Eigen::MatrixX<T>& points,
+                            const Eigen::MatrixX<T>& weights, int order,
+                            Eigen::MatrixX<T>& values) const;
 
     /**
      * @brief Functions that are non-zero on the element with the given first

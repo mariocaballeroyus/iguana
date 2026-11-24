@@ -611,6 +611,101 @@ TEST_CASE("Element values of several bases are those of each basis alone",
     check_several_bases<3>();
 }
 
+TEST_CASE("Element values on a refined patch shift and differentiate a "
+          "coarse spline as on the coarse patch", "[element_values]")
+{
+    using Tensor = TensorBSpline<double, 2>;
+    using THB = iguana::THBSpline<double, 2>;
+
+    // The box unbent, whose Jacobian is diagonal, refined twice around its
+    // first element
+    const iguana::Patch<Tensor, 2> coarse = bent_box<2>(0.);
+    const iguana::HierarchicalGrid<double, 2> once = refine_admissible(
+        iguana::HierarchicalGrid<double, 2>(coarse.basis().grid()),
+        std::vector<int>{0}, true);
+    const iguana::HierarchicalGrid<double, 2> grid =
+        refine_admissible(once, std::vector<int>{once.offset(1)}, true);
+    const iguana::Patch<THB, 2> refined = refine(coarse, grid);
+
+    // A spline of the coarse basis, written in the refined one
+    Eigen::VectorXd spline(coarse.basis().num_functions());
+
+    for (Eigen::Index k = 0; k < spline.size(); ++k)
+        spline(k) = std::sin(1.3 * static_cast<double>(k) + .2);
+
+    const Eigen::VectorXd coefficients = refined.basis().coefficients(spline);
+
+    iguana::ElementValues<THB, 2> fine(refined, iguana::ValueFlags{});
+    iguana::ElementValues<Tensor, 2> tensor(coarse, iguana::ValueFlags{});
+    const iguana::GaussLegendre<double, 2> rule(3);
+    Eigen::MatrixXd points;
+    Eigen::VectorXd weights;
+    Eigen::VectorXi actives;
+    Eigen::VectorXi tensor_actives;
+
+    // The spline on a refined element is the polynomial of the coarse
+    // element holding it
+    const auto agree_on = [&](const Eigen::MatrixXd& values,
+                              const Eigen::MatrixXd& tensor_values) {
+        return agree(values.transpose() * coefficients(actives),
+                     tensor_values.transpose() * spline(tensor_actives));
+    };
+
+    for (int element = 0; element < grid.num_elements(); ++element) {
+        INFO("element " << element);
+        rule.fill_to_reference_space(grid.element_start(element),
+                                     grid.element_end(element), points,
+                                     weights);
+        iguana::BoxRule<double, 2>::map_to_parameter_space(
+            grid.element_start(element), grid.element_end(element), points,
+            weights);
+
+        const int coarse_element = element_holding(
+            coarse.basis().grid(), {points(0, 0), points(0, 1)});
+        refined.basis().active_on_element(element, actives);
+        coarse.basis().active_on_element(coarse_element, tensor_actives);
+
+        const auto reinit = [&]() {
+            fine.reinit(element, points);
+            tensor.reinit(coarse_element, points);
+        };
+
+        // Shifts past the element, with their Taylor series and a
+        // combination of derivatives, kept and added to the values
+        const Eigen::MatrixXd shifts = .2 * points.array().cos().matrix();
+        Eigen::MatrixXd combination(points.rows(), iguana::simplex_size(2));
+
+        for (Eigen::Index k = 0; k < combination.size(); ++k)
+            combination(k) = std::cos(.7 * static_cast<double>(k));
+
+        reinit();
+        fine.shift(shifts, 2);
+        tensor.shift(shifts, 2);
+        REQUIRE(agree_on(fine.values(), tensor.values()));
+
+        reinit();
+        fine.shift(shifts, combination, {combination}, 2,
+                   iguana::ShiftCenter::surrogate);
+        tensor.shift(shifts, combination, {combination}, 2,
+                     iguana::ShiftCenter::surrogate);
+        REQUIRE(agree_on(fine.values(), tensor.values()));
+        REQUIRE(agree_on(fine.combination(0, 0), tensor.combination(0, 0)));
+
+        for (std::size_t direction = 0; direction < 2; ++direction) {
+            INFO("direction " << direction);
+            reinit();
+            fine.differentiate(direction);
+            tensor.differentiate(direction);
+            REQUIRE(agree_on(fine.values(), tensor.values()));
+        }
+
+        reinit();
+        fine.differentiate({{1, 2}});
+        tensor.differentiate({{1, 2}});
+        REQUIRE(agree_on(fine.values(), tensor.values()));
+    }
+}
+
 TEST_CASE("Element values need bases, all on the elements of the patch",
           "[element_values]")
 {
