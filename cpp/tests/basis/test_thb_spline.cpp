@@ -228,6 +228,87 @@ TEST_CASE("Truncated hierarchical functions preserve the coefficients of "
                       std::invalid_argument);
 }
 
+TEST_CASE("Hierarchical derivatives, Taylor series and combinations "
+          "preserve coarse splines", "[thb_spline]")
+{
+    const HierarchicalGrid<double, 2> grid = refined();
+    const THBSpline<double, 2> basis(grid, {3, 2});
+    const TensorBSpline<double, 2>& tensor = basis.level(0);
+
+    std::mt19937 generator(11);
+    std::uniform_real_distribution<double> uniform(-1., 1.);
+    Eigen::MatrixXd coarse(tensor.num_functions(), 2);
+
+    for (Eigen::Index k = 0; k < coarse.size(); ++k)
+        coarse(k) = uniform(generator);
+
+    const Eigen::MatrixXd coefficients = basis.coefficients(coarse);
+
+    // Combinations up to the total degree 5 of the cubic by quadratic
+    // functions, and derivatives past the degree of a direction too, which
+    // vanish
+    const int order = 5;
+    const int num_terms = iguana::simplex_size(order);
+    const std::array<std::array<int, 2>, 4> orders{
+        {{1, 0}, {2, 2}, {3, 1}, {4, 0}}};
+
+    Eigen::VectorXi actives;
+    Eigen::VectorXi tensor_actives;
+    Eigen::MatrixXd values;
+    Eigen::MatrixXd tensor_values;
+
+    // The spline on a refined element is the polynomial of the coarse
+    // element holding it, so the expansions of both agree
+    const auto agree = [&]() {
+        const Eigen::MatrixXd spline =
+            values.transpose() * coefficients(actives, all);
+        const Eigen::MatrixXd expected =
+            tensor_values.transpose() * coarse(tensor_actives, all);
+
+        return (spline - expected).cwiseAbs().maxCoeff()
+               < 1e-11 * (1. + expected.cwiseAbs().maxCoeff());
+    };
+
+    for (int element = 0; element < grid.num_elements(); ++element) {
+        INFO("element " << element);
+        const Eigen::MatrixXd points = points_in(grid, element);
+        basis.active_on_element(element, actives);
+
+        const int coarse_element =
+            element_holding(tensor.grid(), {points(0, 0), points(0, 1)});
+        tensor.active_on_element(coarse_element, tensor_actives);
+
+        for (const std::array<int, 2>& orders_of : orders) {
+            INFO("orders " << orders_of[0] << ", " << orders_of[1]);
+            basis.deriv_on_element(element, points, orders_of, values);
+            tensor.deriv_on_element(coarse_element, points, orders_of,
+                                    tensor_values);
+            REQUIRE(agree());
+        }
+
+        // Shifts across the element, beyond it for the larger ones
+        Eigen::MatrixXd shifts(points.rows(), 2);
+        Eigen::MatrixXd weights(points.rows(), num_terms);
+
+        for (Eigen::Index k = 0; k < shifts.size(); ++k)
+            shifts(k) = uniform(generator);
+
+        for (Eigen::Index k = 0; k < weights.size(); ++k)
+            weights(k) = uniform(generator);
+
+        basis.taylor_on_element(element, points, shifts, 3, values);
+        tensor.taylor_on_element(coarse_element, points, shifts, 3,
+                                 tensor_values);
+        REQUIRE(agree());
+
+        basis.combine_on_element(element, points + shifts, weights, order,
+                                 values);
+        tensor.combine_on_element(coarse_element, points + shifts, weights,
+                                  order, tensor_values);
+        REQUIRE(agree());
+    }
+}
+
 TEST_CASE("Hierarchical gradients and Hessians match finite differences",
           "[thb_spline]")
 {
