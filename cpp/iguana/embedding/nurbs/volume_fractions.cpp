@@ -8,14 +8,55 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <stdexcept>
+#include <utility>
 #include <vector>
 
 #include "iguana/embedding/embedded_boundary.hpp"
+#include "iguana/grid/knot_vector.hpp"
 #include "iguana/quadrature/gauss_legendre/gauss_legendre.hpp"
 #include "iguana/quadrature/quadrature_boundary.hpp"
 
 namespace iguana
 {
+
+namespace
+{
+
+/**
+ * @brief Patch of the finest level of a hierarchical one, the same affine
+ *        map on the tensor-product B-splines of that level, whose control
+ *        points are its Greville points mapped
+ *
+ * @pre The map of @p patch is affine
+ */
+template<std::floating_point T>
+Patch<TensorBSpline<T, 2>, 2> finest_patch(
+    const Patch<THBSpline<T, 2>, 2>& patch)
+{
+    const THBSpline<T, 2>& hierarchical = patch.basis();
+    const TensorBSpline<T, 2>& basis =
+        hierarchical.level(hierarchical.num_levels() - 1);
+    const Eigen::VectorX<T> along_x =
+        greville_abscissae(basis.axis(0).knots());
+    const Eigen::VectorX<T> along_y =
+        greville_abscissae(basis.axis(1).knots());
+
+    // Greville points, the first direction running fastest
+    PointMatrix<T, 2> points(along_x.size() * along_y.size(), 2);
+
+    for (Eigen::Index row = 0; row < along_y.size(); ++row)
+        for (Eigen::Index column = 0; column < along_x.size(); ++column)
+            points.row(column + along_x.size() * row) << along_x(column),
+                along_y(row);
+
+    PointMatrix<T, 2> coefficients = points * patch.linear_part().transpose();
+    coefficients.rowwise() += patch.offset().transpose();
+
+    return {basis, std::move(coefficients)};
+}
+
+} // namespace
 
 template<typename Basis>
     requires (Basis::dimension == 2)
@@ -93,9 +134,38 @@ Eigen::VectorX<typename Basis::Scalar> volume_fractions(
     return fractions;
 }
 
+template<std::floating_point T>
+Eigen::VectorX<T> volume_fractions(const Patch<THBSpline<T, 2>, 2>& patch,
+                                   const Boundary<T, 2>& boundary)
+{
+    if (!patch.is_affine())
+        throw std::invalid_argument("volume_fractions: "
+                                    "the map of the patch must be affine");
+
+    const HierarchicalGrid<T, 2>& grid = patch.basis().grid();
+    const int finest = grid.num_levels() - 1;
+    const Eigen::VectorX<T> cells =
+        volume_fractions(finest_patch(patch), boundary);
+
+    // Mean over the cells each active element covers, all of equal area
+    Eigen::VectorX<T> sums = Eigen::VectorX<T>::Zero(grid.num_elements());
+    Eigen::VectorXi counts = Eigen::VectorXi::Zero(grid.num_elements());
+
+    for (int cell = 0; cell < static_cast<int>(cells.size()); ++cell) {
+        const int element = element_covering(grid, finest, cell);
+
+        sums(element) += cells(cell);
+        ++counts(element);
+    }
+
+    return sums.array() / counts.template cast<T>().array();
+}
+
 template Eigen::VectorX<double> volume_fractions(
     const Patch<TensorBSpline<double, 2>, 2>&, const Boundary<double, 2>&);
 template Eigen::VectorX<double> volume_fractions(
     const Patch<TensorNURBS<double, 2>, 2>&, const Boundary<double, 2>&);
+template Eigen::VectorX<double> volume_fractions<double>(
+    const Patch<THBSpline<double, 2>, 2>&, const Boundary<double, 2>&);
 
 } // namespace iguana
