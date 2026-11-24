@@ -50,10 +50,12 @@ enum class GhostFaces
  *          cells and those between two outside cells, or either kind alone.
  *          A global ghost penalty acts on every interior face instead
  *
+ * @tparam Grid Tensor or hierarchical grid
  * @tparam T Floating-point type
  * @tparam d Number of parametric directions
  *
- * @param grid Grid whose elements are the cells
+ * @param grid Grid whose elements are the cells, the active ones of a
+ *        hierarchical grid
  * @param classification Cell type of each element of the grid
  * @param faces Kind of the faces selected
  * @return Indices of the faces in the numbering of the grid, increasing
@@ -61,8 +63,9 @@ enum class GhostFaces
  * @throws std::invalid_argument If the classification does not have one
  *         cell type per element of the grid
  */
-template<std::floating_point T, std::size_t d>
-std::vector<int> ghost_faces(const TensorGrid<T, d>& grid,
+template<typename Grid, std::floating_point T, std::size_t d>
+    requires (Grid::dimension == d)
+std::vector<int> ghost_faces(const Grid& grid,
                              const CellClassification<T, d>& classification,
                              GhostFaces faces = GhostFaces::all);
 
@@ -73,18 +76,21 @@ std::vector<int> ghost_faces(const TensorGrid<T, d>& grid,
  * @details Used in the Generalized Shifted Boundary Method to impose the
  *          skeleton conditions on faces with non-zero volume fraction jump
  *
+ * @tparam Grid Tensor or hierarchical grid
  * @tparam T Floating-point type
  * @tparam d Number of parametric directions
  *
- * @param grid Grid whose elements are the cells
+ * @param grid Grid whose elements are the cells, the active ones of a
+ *        hierarchical grid
  * @param classification Cell type of each element of the grid
  * @return Indices of the faces in the numbering of the grid, increasing
  *
  * @throws std::invalid_argument If the classification does not have one
  *         cell type per element of the grid
  */
-template<std::floating_point T, std::size_t d>
-std::vector<int> jump_faces(const TensorGrid<T, d>& grid,
+template<typename Grid, std::floating_point T, std::size_t d>
+    requires (Grid::dimension == d)
+std::vector<int> jump_faces(const Grid& grid,
                             const CellClassification<T, d>& classification);
 
 } // namespace iguana

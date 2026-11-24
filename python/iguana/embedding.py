@@ -22,7 +22,6 @@ import numpy.typing as npt
 
 from iguana import cpp as _cpp
 from iguana.boundary import Boundary
-from iguana.grid import HierarchicalGrid
 from iguana.patch import PlanarPatch
 
 CellType = _cpp.CellType
@@ -100,31 +99,29 @@ class SurrogateBoundary:
         The inside cells form the surrogate domain, and its boundary runs
         along knot lines, over the faces between an inside cell and a cell
         that is not inside or lies past the edge of the patch, holes
-        included. The space and the domain quadrature of the surrogate
+        included. On a refined patch the cells are the active elements of
+        its grid, and the side of an inside cell next to finer cells gives a
+        face for each stretch facing one that is not inside. The space and
+        the domain quadrature of the surrogate
         domain take the same cells, with every cut cell outside: a cut cell
         left in the space gives degrees of freedom that nothing integrates.
 
         Args:
             patch: The background patch, a planar patch whose elements are
                 the cells.
-            cell_types: The type of each element of the patch, with the
-                first direction running fastest.
+            cell_types: The type of each element of the grid of the patch,
+                in its numbering.
 
         Raises:
-            TypeError: If the patch is not a planar patch or is refined.
+            TypeError: If the patch is not a planar patch.
             ValueError: If there is not one cell type per element.
         """
         if not isinstance(patch, PlanarPatch):
             raise TypeError('the patch must be a planar patch')
 
-        if patch.refined:
-            raise TypeError('the patch must not be refined')
-
         cell_types = list(cell_types)
-        num_elements = HierarchicalGrid(patch.degrees,
-                                        patch.knots).num_elements
 
-        if len(cell_types) != num_elements:
+        if len(cell_types) != patch.grid.num_elements:
             raise ValueError('there must be one cell type per cell')
 
         self._patch = patch

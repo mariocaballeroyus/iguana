@@ -261,8 +261,9 @@ class QuadratureBoundary:
         Raises:
             TypeError: If the patch is not a planar patch, if the
                 boundary is neither made of curves in the plane nor a
-                surrogate boundary, or if the shift is not made of curves
-                in the plane.
+                surrogate boundary, if the shift is not made of curves in
+                the plane, or if a shifted quadrature lies on a refined
+                patch.
             ValueError: If a surrogate boundary lies on another patch, if
                 the map of the patch is not affine for a boundary of
                 curves or a shift, if the knot vector of a face is not
@@ -295,6 +296,9 @@ class QuadratureBoundary:
 
             if not isinstance(boundary, SurrogateBoundary):
                 raise ValueError('only a surrogate boundary is shifted')
+
+            if patch.refined:
+                raise TypeError('the patch must not be refined')
 
             if order is not None and order < 0:
                 raise ValueError('the order must be non-negative')

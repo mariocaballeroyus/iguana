@@ -28,7 +28,9 @@ namespace iguana
  * method integrates in place of the physical one. Its boundary runs along
  * knot lines, over the faces between an inside cell and a cell that is not
  * inside or lies past the edge of the grid, holes included. Each face is
- * held by its inside cell
+ * held by its inside cell. On a hierarchical grid, the side of an inside
+ * cell next to finer cells gives a face for each stretch facing one that
+ * is not inside
  *
  * @tparam T Floating-point type
  * @tparam d Number of parametric directions
@@ -63,13 +65,16 @@ public:
      * @brief Finds the faces between the inside cells of a domain and the
      *        rest
      *
-     * @param grid Grid whose elements are the cells
+     * @param grid Grid whose elements are the cells, a tensor grid or a
+     *        hierarchical one, whose active elements they are
      * @param classification Cell type of each element of the grid
      *
      * @throws std::invalid_argument If the classification does not have one
      *         cell type per element of the grid
      */
-    SurrogateBoundary(const TensorGrid<T, d>& grid,
+    template<typename Grid>
+        requires (Grid::dimension == d)
+    SurrogateBoundary(const Grid& grid,
                       const CellClassification<T, d>& classification);
 
     /// @brief Number of elements of the grid

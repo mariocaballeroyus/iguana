@@ -102,6 +102,96 @@ TEST_CASE("The surrogate boundary bounds the inside cells",
                       std::invalid_argument);
 }
 
+TEST_CASE("The surrogate boundary of a hierarchical grid bounds the same "
+          "region in stretches", "[surrogate_boundary]")
+{
+    // The grid and cells of the planar test: the last column cut and the
+    // cell at (1, 1) outside, enclosed by inside cells
+    const TensorGrid<double, 2> tensor(
+        {KnotVector<double>(1, {0., 0., .1, .4, .7, 1., 1.}),
+         KnotVector<double>(1, {0., 0., .3, .5, 1., 1.})});
+    std::vector<CellType> cell_types(12, CellType::inside);
+
+    for (const int element : {3, 7, 11})
+        cell_types[element] = CellType::cut;
+
+    cell_types[5] = CellType::outside;
+
+    const CellClassification<double, 2> classification(cell_types);
+    const iguana::HierarchicalGrid<double, 2> coarse(tensor);
+    const SurrogateBoundary<double, 2> expected(tensor, classification);
+    const SurrogateBoundary<double, 2> unrefined(coarse, classification);
+
+    // Without refinement, each cell holds the faces of the tensor grid
+    for (int element = 0; element < 12; ++element) {
+        const auto faces = unrefined.faces_on_element(element);
+        const auto wanted = expected.faces_on_element(element);
+
+        REQUIRE(faces.size() == wanted.size());
+
+        for (std::size_t entry = 0; entry < faces.size(); ++entry) {
+            REQUIRE(faces[entry].direction == wanted[entry].direction);
+            REQUIRE(faces[entry].side == wanted[entry].side);
+            REQUIRE(faces[entry].start == wanted[entry].start);
+            REQUIRE(faces[entry].end == wanted[entry].end);
+        }
+    }
+
+    // The hole refined, its children outside like it, and an inside and a
+    // cut neighbor too: the boundary runs in more stretches around the same
+    // region
+    const iguana::HierarchicalGrid<double, 2> around =
+        iguana::refine(coarse, std::vector<int>{5, 6, 7});
+    std::vector<CellType> inherited;
+
+    // Each element takes the type of the coarse cell it lies in
+    for (int element = 0; element < around.num_elements(); ++element) {
+        const int shift = around.level_of(element);
+        const int index = around.level_index(element);
+        const int columns = 4 << shift;
+        const int column = (index % columns) >> shift;
+        const int row = (index / columns) >> shift;
+
+        inherited.push_back(
+            cell_types[static_cast<std::size_t>(column + 4 * row)]);
+    }
+
+    const Moments<2> same = moments(SurrogateBoundary<double, 2>(
+        around, CellClassification<double, 2>(inherited)));
+    const Moments<2> region = moments(expected);
+
+    REQUIRE_THAT(same.measure, WithinAbs(region.measure, 1e-14));
+    REQUIRE_THAT(same.flux[0], WithinAbs(region.flux[0], 1e-14));
+    REQUIRE_THAT(same.flux[1], WithinAbs(region.flux[1], 1e-14));
+
+    // The hole refined with its lower children inside: it shrinks to
+    // [.1, .4] x [.4, .5], and the cell left of it holds only the stretch
+    // facing the outside child
+    const iguana::HierarchicalGrid<double, 2> half =
+        iguana::refine(coarse, std::vector<int>{5});
+    std::vector<CellType> halved(cell_types);
+    halved.erase(halved.begin() + 5);
+    halved.insert(halved.end(), {CellType::inside, CellType::inside,
+                                 CellType::outside, CellType::outside});
+
+    const SurrogateBoundary<double, 2> shrunk(
+        half, CellClassification<double, 2>(halved));
+    const Moments<2> smaller = moments(shrunk);
+
+    REQUIRE_THAT(smaller.measure,
+                 WithinAbs(2. * (.7 + 1.) + 2. * (.3 + .1), 1e-14));
+    REQUIRE_THAT(smaller.flux[0], WithinAbs(.7 - .03, 1e-14));
+    REQUIRE_THAT(smaller.flux[1], WithinAbs(.7 - .03, 1e-14));
+
+    const auto left = shrunk.faces_on_element(4);
+
+    REQUIRE(left.size() == 2);
+    REQUIRE(left[1].direction == 0);
+    REQUIRE(left[1].side == 1);
+    REQUIRE_THAT(left[1].start[1], WithinAbs(.4, 1e-15));
+    REQUIRE_THAT(left[1].end[1], WithinAbs(.5, 1e-15));
+}
+
 TEST_CASE("The surrogate boundary of one inside cell in a volume",
           "[surrogate_boundary]")
 {

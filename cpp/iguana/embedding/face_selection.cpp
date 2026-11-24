@@ -8,11 +8,15 @@
 #include <array>
 #include <stdexcept>
 
+#include "iguana/grid/hierarchical_grid.hpp"
+#include "iguana/grid/tensor_grid.hpp"
+
 namespace iguana
 {
 
-template<std::floating_point T, std::size_t d>
-std::vector<int> ghost_faces(const TensorGrid<T, d>& grid,
+template<typename Grid, std::floating_point T, std::size_t d>
+    requires (Grid::dimension == d)
+std::vector<int> ghost_faces(const Grid& grid,
                              const CellClassification<T, d>& classification,
                              GhostFaces faces)
 {
@@ -43,8 +47,9 @@ std::vector<int> ghost_faces(const TensorGrid<T, d>& grid,
     return selected;
 }
 
-template<std::floating_point T, std::size_t d>
-std::vector<int> jump_faces(const TensorGrid<T, d>& grid,
+template<typename Grid, std::floating_point T, std::size_t d>
+    requires (Grid::dimension == d)
+std::vector<int> jump_faces(const Grid& grid,
                             const CellClassification<T, d>& classification)
 {
     if (classification.num_elements() != grid.num_elements())
@@ -73,10 +78,20 @@ template std::vector<int> ghost_faces(const TensorGrid<double, 2>&,
 template std::vector<int> ghost_faces(const TensorGrid<double, 3>&,
                                       const CellClassification<double, 3>&,
                                       GhostFaces);
+template std::vector<int> ghost_faces(const HierarchicalGrid<double, 2>&,
+                                      const CellClassification<double, 2>&,
+                                      GhostFaces);
+template std::vector<int> ghost_faces(const HierarchicalGrid<double, 3>&,
+                                      const CellClassification<double, 3>&,
+                                      GhostFaces);
 
 template std::vector<int> jump_faces(const TensorGrid<double, 2>&,
                                      const CellClassification<double, 2>&);
 template std::vector<int> jump_faces(const TensorGrid<double, 3>&,
+                                     const CellClassification<double, 3>&);
+template std::vector<int> jump_faces(const HierarchicalGrid<double, 2>&,
+                                     const CellClassification<double, 2>&);
+template std::vector<int> jump_faces(const HierarchicalGrid<double, 3>&,
                                      const CellClassification<double, 3>&);
 
 } // namespace iguana
