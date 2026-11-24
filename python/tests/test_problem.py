@@ -1491,11 +1491,11 @@ def test_elements_on_a_refined_patch_hold_linear_fields(kind):
 
 
 def test_refined_patch_takes_no_boundary_or_face_terms():
-    """Hierarchical grids have no boundaries or faces to integrate along
-    yet: classifying the cells of a refined patch, its surrogate boundary, a
-    quadrature along a curve, a condition across its faces and a ghost
-    penalty refuse it, and so does a problem given a condition of another
-    patch or a quadrature on another grid."""
+    """Hierarchical grids have no faces to integrate across, nor boundary
+    terms to assemble, yet: the surrogate boundary of a refined patch,
+    multipliers along a curve on it, a condition across its faces and a
+    ghost penalty refuse it, and so does a problem given a condition of
+    another patch or a quadrature on another grid."""
     patch = refined_rectangle()
     cell_types = [CellType.inside] * patch.grid.num_elements
     space = MixedFunctionSpace.divergence_conforming(patch)
@@ -1507,9 +1507,10 @@ def test_refined_patch_takes_no_boundary_or_face_terms():
     def body_force(points):
         return np.ones((len(points), 2))
 
-    for build in (lambda: classify_cells(patch, square()),
-                  lambda: SurrogateBoundary(patch, cell_types),
-                  lambda: QuadratureBoundary(patch, square(), 3),
+    for build in (lambda: SurrogateBoundary(patch, cell_types),
+                  lambda: LagrangeMultiplierCondition(
+                      element.u, QuadratureBoundary(patch, square(), 3),
+                      [0., 0.]),
                   lambda: SkeletonNitscheCondition(element.u, patch,
                                                    cell_types, square(),
                                                    [0., 0.], 40.),

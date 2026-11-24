@@ -303,6 +303,30 @@ def test_boundary_circle():
     np.testing.assert_allclose(quadrature.weights.sum(), 4. * np.pi)
 
 
+def test_boundary_circle_on_a_refined_patch():
+    """On a patch refined around a circle, its points still lie on it, with
+    normals pointing away from its centre, and the quadrature integrates
+    along it as on the patch before refinement, over more pieces."""
+    rectangle = iguana.create_rectangle(lengths=(6., 4.), elements=(3, 4),
+                                        degrees=(1, 1), origin=(2., .5))
+    cell_types, _ = iguana.classify_cells(rectangle, circle(2.))
+    refined = rectangle.refine([cell for cell, kind in enumerate(cell_types)
+                                if kind == CellType.cut])
+    coarse = QuadratureBoundary(rectangle, circle(2.), 8)
+    quadrature = QuadratureBoundary(refined, circle(2.), 8)
+
+    def squared(along):
+        return along.weights @ along.positions[:, 0] ** 2
+
+    radial = (quadrature.positions - MIDDLE) / 2.
+
+    assert quadrature.num_points > coarse.num_points
+    np.testing.assert_allclose(quadrature.normals, radial, atol=1e-15)
+    np.testing.assert_allclose(quadrature.weights.sum(), 4. * np.pi)
+    np.testing.assert_allclose(squared(quadrature), squared(coarse),
+                               rtol=1e-13)
+
+
 def test_shifted_surrogate_boundary():
     """The points of a surrogate boundary shifted towards a circle reach
     their closest points on it, along its radius, with the order of the

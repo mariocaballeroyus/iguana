@@ -232,7 +232,9 @@ class QuadratureBoundary:
         The faces of a boundary of curves are divided exactly where they
         cross the knot lines of the patch, and each piece carries a
         Gauss-Legendre rule of its own along its face, so that the points
-        follow the curves as they are. The faces of a surrogate boundary
+        follow the curves as they are. On a refined patch, the knot lines
+        are those of the finest level of its grid, and each piece goes to
+        the active element covering it. The faces of a surrogate boundary
         are whole sides of cells, each carrying the rule.
 
         A quadrature of a surrogate boundary can be shifted towards the
@@ -257,9 +259,9 @@ class QuadratureBoundary:
                 the patch.
 
         Raises:
-            TypeError: If the patch is not a planar patch or is refined,
-                if the boundary is neither made of curves in the plane nor
-                a surrogate boundary, or if the shift is not made of curves
+            TypeError: If the patch is not a planar patch, if the
+                boundary is neither made of curves in the plane nor a
+                surrogate boundary, or if the shift is not made of curves
                 in the plane.
             ValueError: If a surrogate boundary lies on another patch, if
                 the map of the patch is not affine for a boundary of
@@ -270,9 +272,6 @@ class QuadratureBoundary:
         """
         if not isinstance(patch, PlanarPatch):
             raise TypeError('the patch must be a planar patch')
-
-        if patch.refined:
-            raise TypeError('the patch must not be refined')
 
         if isinstance(boundary, SurrogateBoundary):
             if boundary.patch is not patch:

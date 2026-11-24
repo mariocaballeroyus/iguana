@@ -44,6 +44,29 @@ Face curve(std::vector<double> knots, const PointMatrix<double, 2>& points,
     return {TensorNURBS<double, 1>(bspline, weights), points};
 }
 
+/// @brief Circle of radius 2 around the origin, counterclockwise from
+///        (2, 0), as four quadratic arcs joined at double knots
+Boundary<double, 2> circle(std::vector<double> knots)
+{
+    const double corner = std::sqrt(.5);
+
+    Eigen::VectorXd weights(9);
+    weights << 1., corner, 1., corner, 1., corner, 1., corner, 1.;
+
+    PointMatrix<double, 2> points(9, 2);
+    points << 2., 0.,
+              2., 2.,
+              0., 2.,
+             -2., 2.,
+             -2., 0.,
+             -2., -2.,
+              0., -2.,
+              2., -2.,
+              2., 0.;
+
+    return {{curve(std::move(knots), points, weights)}, {1}};
+}
+
 /// @brief Patch of linear elements between breaks in each direction,
 ///        mapped onto itself so that its parameters are its coordinates
 Region patch_of(const std::vector<double>& first,
@@ -94,24 +117,6 @@ Face upward(double coordinate)
 TEST_CASE("Pieces of a circle cover it, ending exactly at its knots",
           "[embedded_boundary]")
 {
-    const double corner = std::sqrt(.5);
-
-    Eigen::VectorXd weights(9);
-    weights << 1., corner, 1., corner, 1., corner, 1., corner, 1.;
-
-    // Radius 2 around the origin, counterclockwise from (2, 0), as four
-    // quadratic arcs joined at double knots
-    PointMatrix<double, 2> points(9, 2);
-    points << 2., 0.,
-              2., 2.,
-              0., 2.,
-             -2., 2.,
-             -2., 0.,
-             -2., -2.,
-              0., -2.,
-              2., -2.,
-              2., 0.;
-
     // Uneven breaks, where the start of the second arc plus its length
     // rounds away from its end
     const std::array<double, 5> breaks{0., .3, .9, .95, 1.};
@@ -119,8 +124,7 @@ TEST_CASE("Pieces of a circle cover it, ending exactly at its knots",
                                     1., 1., 1.};
     const Region square = patch_of({-3., -1., 1., 3.}, {-3., -1., 1., 3.});
     const TensorGrid<double, 2>& grid = square.basis().grid();
-    const Embedded embedded(
-        square, Boundary<double, 2>({curve(knots, points, weights)}, {1}));
+    const Embedded embedded(square, circle(knots));
 
     // One piece in each corner element and two in each edge element, none
     // in the middle one
@@ -156,6 +160,80 @@ TEST_CASE("Pieces of a circle cover it, ending exactly at its knots",
         REQUIRE(starts[arc] == breaks[arc]);
         REQUIRE(ends[arc] == breaks[arc + 1]);
     }
+}
+
+TEST_CASE("Pieces over a hierarchical grid lie in the active elements "
+          "covering them", "[embedded_boundary]")
+{
+    const std::vector<double> knots{0., 0., 0., .25, .25, .5, .5, .75, .75,
+                                    1., 1., 1.};
+    const Region square = patch_of({-3., -1., 1., 3.}, {-3., -1., 1., 3.});
+    const iguana::HierarchicalGrid<double, 2> coarse(square.basis().grid());
+
+    // Without refinement, the pieces are those of the tensor-product grid
+    const Embedded tensor(square, circle(knots));
+    const Embedded unrefined(iguana::refine(square, coarse), circle(knots));
+
+    REQUIRE(unrefined.num_elements() == tensor.num_elements());
+
+    for (int element = 0; element < tensor.num_elements(); ++element) {
+        const std::span<const Piece> expected =
+            tensor.pieces_on_element(element);
+        const std::span<const Piece> pieces =
+            unrefined.pieces_on_element(element);
+
+        REQUIRE(pieces.size() == expected.size());
+
+        for (std::size_t entry = 0; entry < pieces.size(); ++entry) {
+            REQUIRE(pieces[entry].face_element
+                    == expected[entry].face_element);
+            REQUIRE(pieces[entry].start == expected[entry].start);
+            REQUIRE(pieces[entry].end == expected[entry].end);
+        }
+    }
+
+    // The corner and the middle elements refined, then the child of the
+    // corner the circle crosses, so that the grid has three levels
+    const std::vector<int> marked{0, 4};
+    const iguana::HierarchicalGrid<double, 2> once =
+        iguana::refine(coarse, marked);
+    const std::vector<int> child{iguana::element_holding(
+        once, std::array<double, 2>{-1.5, -1.5})};
+    const iguana::HierarchicalGrid<double, 2> grid =
+        iguana::refine(once, child);
+    const Embedded embedded(iguana::refine(square, grid), circle(knots));
+
+    REQUIRE(grid.num_levels() == 3);
+    REQUIRE(embedded.num_elements() == grid.num_elements());
+
+    // Every point of the pieces of an element lies in that element, and
+    // the pieces cover the circle once
+    const iguana::QuadratureBoundary<double, 2> quadrature(
+        embedded, iguana::GaussLegendre<double, 1>(8));
+    double covered = 0.;
+
+    for (int group = 0; group < quadrature.num_elements(); ++group) {
+        const int element = quadrature.elements()(group);
+        const std::array<double, 2> start = grid.element_start(element);
+        const std::array<double, 2> end = grid.element_end(element);
+
+        for (const Piece& piece : embedded.pieces_on_element(element))
+            covered += piece.end - piece.start;
+
+        for (int point = quadrature.offsets()(group);
+             point < quadrature.offsets()(group + 1); ++point)
+            for (std::size_t axis = 0; axis < 2; ++axis) {
+                const double coordinate = quadrature.points()(
+                    point, static_cast<Eigen::Index>(axis));
+
+                REQUIRE(coordinate >= start[axis] - 1e-14);
+                REQUIRE(coordinate <= end[axis] + 1e-14);
+            }
+    }
+
+    REQUIRE_THAT(covered, WithinAbs(1., 1e-15));
+    REQUIRE_THAT(quadrature.weights().sum(),
+                 WithinAbs(4. * std::acos(-1.), 1e-10));
 }
 
 TEST_CASE("Pieces in an element follow their faces, elements and "

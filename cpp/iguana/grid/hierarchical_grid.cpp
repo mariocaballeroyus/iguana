@@ -247,37 +247,6 @@ bool holds(const std::vector<int>& sorted, int value) noexcept
 }
 
 /**
- * @brief Active element covering an element of a level grid, the element
- *        itself if active, or else its nearest active ancestor
- *
- * @return Hierarchical index of the active element
- *
- * @pre The element lies in the domain of its level, or in that of a level
- *      before it
- */
-template<std::floating_point T, std::size_t d>
-int covering(const HierarchicalGrid<T, d>& grid, int level, int element)
-{
-    for (;; --level) {
-        const std::vector<int>& active = grid.active_elements(level);
-        const auto found = std::ranges::lower_bound(active, element);
-
-        if (found != active.end() && *found == element)
-            return grid.offset(level)
-                   + static_cast<int>(std::distance(active.begin(), found));
-
-        // The parent, i / 2 in each direction
-        std::array<int, d> index =
-            unflatten(element, element_counts(grid.level(level)));
-
-        for (int& axis : index)
-            axis /= 2;
-
-        element = flatten(index, element_counts(grid.level(level - 1)));
-    }
-}
-
-/**
  * @brief Active elements to refine so that the boxes holding the marked
  *        elements are refined, the box of a level holding an element being
  *        the aligned q elements along each direction, q its degree plus two
@@ -331,9 +300,9 @@ std::vector<int> boxes(const HierarchicalGrid<T, d>& grid,
             // element marks that one in turn
             if (holds(grid.domain(level), flat)) {
                 if (holds(grid.active_elements(level), flat))
-                    result.push_back(covering(grid, level, flat));
+                    result.push_back(element_covering(grid, level, flat));
             } else {
-                marked.push_back(covering(grid, level, flat));
+                marked.push_back(element_covering(grid, level, flat));
             }
         } while (next_lexicographic(offset, extent));
     }
@@ -391,7 +360,7 @@ std::vector<int> violations(const HierarchicalGrid<T, d>& grid)
                 const int flat = flatten(other, coarse_counts);
 
                 if (!holds(grid.domain(before), flat))
-                    marked.push_back(covering(grid, before, flat));
+                    marked.push_back(element_covering(grid, before, flat));
             } while (next_lexicographic(offset, extent));
         }
     }
@@ -461,6 +430,29 @@ int element_holding(const HierarchicalGrid<T, d>& grid,
     }
 }
 
+template<std::floating_point T, std::size_t d>
+int element_covering(const HierarchicalGrid<T, d>& grid, int level,
+                     int element)
+{
+    for (;; --level) {
+        const std::vector<int>& active = grid.active_elements(level);
+        const auto found = std::ranges::lower_bound(active, element);
+
+        if (found != active.end() && *found == element)
+            return grid.offset(level)
+                   + static_cast<int>(std::distance(active.begin(), found));
+
+        // The parent, i / 2 in each direction
+        std::array<int, d> index =
+            unflatten(element, element_counts(grid.level(level)));
+
+        for (int& axis : index)
+            axis /= 2;
+
+        element = flatten(index, element_counts(grid.level(level - 1)));
+    }
+}
+
 template class HierarchicalGrid<double, 1>;
 template class HierarchicalGrid<double, 2>;
 template class HierarchicalGrid<double, 3>;
@@ -478,6 +470,10 @@ template int element_holding(const HierarchicalGrid<double, 2>&,
                              const std::array<double, 2>&);
 template int element_holding(const HierarchicalGrid<double, 3>&,
                              const std::array<double, 3>&);
+
+template int element_covering(const HierarchicalGrid<double, 1>&, int, int);
+template int element_covering(const HierarchicalGrid<double, 2>&, int, int);
+template int element_covering(const HierarchicalGrid<double, 3>&, int, int);
 
 template HierarchicalGrid<double, 1> refine(
     const HierarchicalGrid<double, 1>&, std::span<const int>);

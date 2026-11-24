@@ -6,6 +6,8 @@
 #ifndef IGUANA_EMBEDDING_NURBS_VOLUME_FRACTIONS_HPP
 #define IGUANA_EMBEDDING_NURBS_VOLUME_FRACTIONS_HPP
 
+#include <concepts>
+
 #include <Eigen/Core>
 
 #include "iguana/geometry/boundary.hpp"
@@ -48,6 +50,32 @@ template<typename Basis>
 Eigen::VectorX<typename Basis::Scalar> volume_fractions(
     const Patch<Basis, 2>& patch,
     const Boundary<typename Basis::Scalar, 2>& boundary);
+
+/**
+ * @brief Volume fraction of each active element of a patch refined onto a
+ *        hierarchical grid, the part of its area inside the domain a
+ *        boundary encloses
+ *
+ * The fractions are first those of the cells of the finest level, as the
+ * tensor-product patch of the same affine map on the B-splines of that
+ * level gives them, and each active element takes the mean over the cells
+ * it covers, which have equal areas. An element whose cells all lie inside
+ * or outside keeps a fraction of exactly 1 or 0
+ *
+ * @param patch Patch whose grid holds the elements
+ * @param boundary Boundary of the domain in the physical space of the patch
+ * @return Volume fraction of each active element, in the numbering of the
+ *         grid
+ *
+ * @throws std::invalid_argument If the map of the patch is not affine, or
+ *         if the knot vector of a face is not clamped
+ *
+ * @pre The boundary is closed and lies inside the grid, and no face runs
+ *      back and forth along a knot line
+ */
+template<std::floating_point T>
+Eigen::VectorX<T> volume_fractions(const Patch<THBSpline<T, 2>, 2>& patch,
+                                   const Boundary<T, 2>& boundary);
 
 } // namespace iguana
 
