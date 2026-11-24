@@ -163,6 +163,39 @@ def test_classify_cells():
     assert np.all(np.isin(fractions[~cut], [0., 1.]))
 
 
+def test_classify_cells_of_a_refined_patch():
+    """On a patch refined twice around the circle, the volume fractions of
+    the active cells keep the area inside each coarse cell, those of the
+    cells the circle does not cross are exactly 0 or 1, and the cut cells
+    are those it crosses."""
+    patch = iguana.create_rectangle(lengths=(3., 2.), elements=(14, 14))
+    cell_types, coarse = classify_cells(patch, circle())
+    refined = patch.refine([cell for cell, kind in enumerate(cell_types)
+                            if kind == CellType.cut])
+    cell_types, fractions = classify_cells(refined, circle())
+    levels = refined.grid.levels
+    refined = refined.refine([cell for cell, kind in enumerate(cell_types)
+                              if kind == CellType.cut and levels[cell] == 1])
+    cell_types, fractions = classify_cells(refined, circle())
+
+    # The coarse cell of each active one, from the middle of its parameters
+    bounds = refined.grid.bounds
+    middles = bounds.mean(axis=1)
+    columns, rows = (middles * 14.).astype(int).T
+    areas = np.prod(bounds[:, 1] - bounds[:, 0], axis=1) * 3. * 2.
+    inside = np.bincount(columns + 14 * rows, weights=fractions * areas,
+                         minlength=14 * 14)
+    cut = (fractions > 0.) & (fractions < 1.)
+    crossed = np.unique(embed(refined, circle()).elements)
+
+    assert refined.grid.num_levels == 3
+    np.testing.assert_allclose(inside, coarse * 3. / 14. * 2. / 14.,
+                               rtol=0., atol=1e-14)
+    assert [cell == CellType.cut for cell in cell_types] == list(cut)
+    assert np.array_equal(np.flatnonzero(cut), crossed)
+    assert np.all(np.isin(fractions[~cut], [0., 1.]))
+
+
 @pytest.mark.petsc
 def test_classified_cells_solve_a_shifted_problem():
     """The inside cells of the classification carry the shifted boundary
