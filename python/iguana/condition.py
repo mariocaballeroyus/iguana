@@ -463,8 +463,9 @@ class LagrangeMultiplierCondition:
                 least one.
 
         Raises:
-            TypeError: If the trace is not the trace of an element, or if
-                the quadrature is not a boundary quadrature.
+            TypeError: If the trace is not the trace of an element, if the
+                quadrature is not a boundary quadrature, or if it lies on
+                a refined patch.
             ValueError: If the quadrature lies along a surrogate boundary,
                 whose faces are sides of cells, if `normal` is asked of a
                 trace of one value per point, if the values are not those
@@ -476,6 +477,9 @@ class LagrangeMultiplierCondition:
 
         if not isinstance(quadrature, QuadratureBoundary):
             raise TypeError('the quadrature must be a boundary quadrature')
+
+        if quadrature.patch.refined:
+            raise TypeError('the patch must not be refined')
 
         # A shifted quadrature lies along a surrogate boundary too
         if isinstance(quadrature.boundary, SurrogateBoundary):

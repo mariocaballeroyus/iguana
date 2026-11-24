@@ -46,15 +46,17 @@ class CellClassification(NamedTuple):
 
 def classify_cells(patch: PlanarPatch,
                    boundary: Boundary) -> CellClassification:
-    """Classify the elements of a patch against the domain a boundary
-    encloses.
+    """Classify the elements of a patch, the active ones of a refined patch,
+    against the domain a boundary encloses.
 
     The volume fraction of each element, the part of its area inside the
     domain, is computed from the exact faces of the boundary. An element
     the boundary does not cross lies inside or outside, with a fraction of
     exactly 1 or 0, and one it crosses is cut. Faces whose normals point
     into the curve they close make an obstacle, whose domain is the region
-    around it.
+    around it. On a refined patch, the fractions are first those of the
+    cells of the finest level of its grid, and each active element takes
+    their mean over the cells it covers.
 
     Args:
         patch: The background patch, a planar patch whose map is affine,
@@ -66,16 +68,13 @@ def classify_cells(patch: PlanarPatch,
         The type and the volume fraction of each element.
 
     Raises:
-        TypeError: If the patch is not a planar patch or is refined, or
-            if the boundary is not made of curves in the plane.
+        TypeError: If the patch is not a planar patch, or if the boundary
+            is not made of curves in the plane.
         ValueError: If the map of the patch is not affine, or if the knot
             vector of a face is not clamped.
     """
     if not isinstance(patch, PlanarPatch):
         raise TypeError('the patch must be a planar patch')
-
-    if patch.refined:
-        raise TypeError('the patch must not be refined')
 
     if not (isinstance(boundary, Boundary)
             and isinstance(boundary._cpp_object, _cpp.Boundary2d)):
