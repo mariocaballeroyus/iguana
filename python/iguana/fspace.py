@@ -24,7 +24,6 @@ import numpy as np
 import numpy.typing as npt
 
 from iguana import cpp as _cpp
-from iguana.grid import HierarchicalGrid
 from iguana.embedding import CellType
 from iguana.patch import PlanarPatch, SurfacePatch, VolumePatch
 
@@ -34,7 +33,7 @@ class FunctionSpace:
     of freedom per function active on the physical domain."""
 
     _cpp_object: (_cpp.FunctionSpace2d | _cpp.FunctionSpace3d
-                  | _cpp.NURBSFunctionSpace2d)
+                  | _cpp.NURBSFunctionSpace2d | _cpp.THBFunctionSpace2d)
 
     def __init__(
         self,
@@ -52,7 +51,9 @@ class FunctionSpace:
         once per degree plus one, so that each degree raised above the
         patch adds an order of continuity across its knots, as the
         components of the velocity of a divergence-conforming space take
-        them.
+        them. On a refined patch, the truncated hierarchical B-splines of
+        those degrees on its grid do, their functions selected level by
+        level by the same domains as those of the patch.
 
         Args:
             patch: The background patch, a planar, surface or volume
@@ -80,18 +81,19 @@ class FunctionSpace:
         elif isinstance(patch, (PlanarPatch, SurfacePatch)):
             classification = _cpp.CellClassification2d
 
-            # A NURBS surface spans its space with its rational functions
+            # A NURBS surface spans its space with its rational functions,
+            # and a refined patch with its hierarchical ones
             if isinstance(patch._cpp_object, _cpp.NURBSSurfacePatch):
                 space = _cpp.NURBSFunctionSpace2d
+            elif isinstance(patch, PlanarPatch):
+                space = patch._cpp_class('FunctionSpace2d')
             else:
                 space = _cpp.FunctionSpace2d
         else:
             raise TypeError('the patch must be a planar, surface or volume '
                             'patch')
 
-        # The elements of the patch, as a grid that is not refined
-        num_elements = HierarchicalGrid(patch.degrees,
-                                          patch.knots).num_elements
+        num_elements = patch.grid.num_elements
 
         if cell_types is None:
             cell_types = [CellType.inside] * num_elements
@@ -114,6 +116,7 @@ class FunctionSpace:
                                                                degrees)
 
         self._patch = patch
+        self._basis = basis
         self._cpp_object = space(basis, classification(list(cell_types)),
                                  int(block_size))
 
@@ -154,7 +157,7 @@ class FunctionSpace:
     def control_points(self) -> npt.NDArray[np.float64]:
         """Control point of the function of each degree of freedom, of
         shape `(num_dofs, 2)` on a planar patch and `(num_dofs, 3)`
-        otherwise.
+        otherwise, those of the hierarchical functions on a refined patch.
 
         Raises:
             ValueError: If the space has other degrees than its patch,
@@ -169,22 +172,48 @@ class FunctionSpace:
     @property
     def boundary_dofs(self) -> npt.NDArray[np.int64]:
         """Degrees of freedom of the functions that do not vanish on the
-        boundary of the patch, in increasing order. With open knot vectors,
-        as those of `create_rectangle` and `create_box`, they are the
-        functions first or last along some direction."""
-        counts = [len(knots) - degree - 1
-                  for degree, knots in zip(self._degrees, self._knots)]
+        boundary of the patch, in increasing order: those of the sides
+        normal to any direction, as `side_dofs` gives them."""
+        return np.unique(np.concatenate([
+            self.side_dofs(direction)
+            for direction in range(len(self._degrees))]))
 
-        # Index of the function of each degree of freedom along each
-        # direction, the first running fastest
-        indices = np.unravel_index(self._cpp_object.functions, counts,
-                                   order='F')
-        on_boundary = np.zeros(self.num_dofs, dtype=bool)
+    def side_dofs(self, direction: int) -> npt.NDArray[np.int64]:
+        """Degrees of freedom of the functions that do not vanish on the
+        two sides of the patch normal to a direction.
 
-        for index, count in zip(indices, counts):
-            on_boundary |= (index == 0) | (index == count - 1)
+        With open knot vectors, as those of `create_rectangle` and
+        `create_box`, they are the functions first or last along the
+        direction, on each level of a refined patch, the only ones that can
+        be non-zero there. The normal component of a divergence-conforming
+        velocity is held on them.
 
-        return np.flatnonzero(on_boundary)
+        Args:
+            direction: The direction normal to the sides.
+
+        Returns:
+            The degrees of freedom, in increasing order.
+
+        Raises:
+            ValueError: If the direction is not one of the patch.
+        """
+        if not 0 <= direction < len(self._degrees):
+            raise ValueError('the direction must be one of the patch')
+
+        functions = self._cpp_object.functions
+
+        if isinstance(self._basis, _cpp.THBSpline2d):
+            on_sides = np.isin(functions,
+                               self._basis.boundary_functions(direction))
+        else:
+            # Index of the function of each degree of freedom along the
+            # direction, the first running fastest
+            counts = [len(knots) - degree - 1
+                      for degree, knots in zip(self._degrees, self._knots)]
+            index = np.unravel_index(functions, counts, order='F')[direction]
+            on_sides = (index == 0) | (index == counts[direction] - 1)
+
+        return np.flatnonzero(on_sides)
 
     def _holds_unknowns(self, num_unknowns: int) -> bool:
         """Whether the space gives each of a number of unknowns a component
@@ -238,7 +267,7 @@ class MixedFunctionSpace:
     function space of its own degrees and block size, their degrees of
     freedom one field after another."""
 
-    _cpp_object: _cpp.MixedFunctionSpace2d
+    _cpp_object: _cpp.MixedFunctionSpace2d | _cpp.THBMixedFunctionSpace2d
 
     def __init__(self, fields: Sequence[FunctionSpace]) -> None:
         """Initialize the space of several fields.
@@ -274,7 +303,7 @@ class MixedFunctionSpace:
             raise TypeError('the fields must lie on a planar patch')
 
         self._fields = fields
-        self._cpp_object = _cpp.MixedFunctionSpace2d(
+        self._cpp_object = patch._cpp_class('MixedFunctionSpace2d')(
             [field._cpp_object for field in fields])
 
     @classmethod
@@ -291,7 +320,11 @@ class MixedFunctionSpace:
         of continuity more along its own direction, (p + 1, q) and
         (p, q + 1). The divergence then maps the velocities onto the
         pressures, so that a velocity whose divergence is orthogonal to
-        every pressure is divergence-free at every point.
+        every pressure is divergence-free at every point. On a refined
+        patch, the three hierarchical bases select their functions by the
+        domains of its grid, which keeps the divergence of every velocity
+        in the pressure space, and the boxes the patch is refined by keep
+        it onto.
 
         Args:
             patch: The background patch, a planar patch with open knots.
@@ -378,11 +411,12 @@ class MixedFunctionSpace:
 def _bspline_basis(
     patch: PlanarPatch | SurfacePatch | VolumePatch,
     degrees: Sequence[int],
-) -> tuple[_cpp.BivariateBSpline | _cpp.TrivariateBSpline, tuple[int, ...],
+) -> tuple[_cpp.BivariateBSpline | _cpp.TrivariateBSpline
+           | _cpp.THBSpline2d, tuple[int, ...],
            tuple[npt.NDArray[np.float64], ...]]:
     """B-splines of some degrees on the knots of a patch, with its interior
     knots and its ends repeated once per degree plus one, and their degrees
-    and knots."""
+    and knots, hierarchical on the grid of a refined patch."""
     degrees = tuple(int(degree) for degree in degrees)
 
     if len(degrees) != len(patch.degrees) or min(degrees) < 0:
@@ -406,7 +440,11 @@ def _bspline_basis(
         axes.append(_cpp.BSpline(degree, knots.tolist()))
         all_knots.append(knots)
 
-    basis = (_cpp.BivariateBSpline(axes) if len(axes) == 2
-             else _cpp.TrivariateBSpline(axes))
+    if isinstance(patch, PlanarPatch) and patch.refined:
+        basis = _cpp.THBSpline2d(patch.grid._cpp_object, degrees)
+    elif len(axes) == 2:
+        basis = _cpp.BivariateBSpline(axes)
+    else:
+        basis = _cpp.TrivariateBSpline(axes)
 
     return basis, degrees, tuple(all_knots)
