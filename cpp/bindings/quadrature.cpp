@@ -343,9 +343,9 @@ QuadratureSkeleton2d skeleton_gauss_legendre(const PlanarPatch& patch,
 }
 
 /**
- * @brief Walks the elements a boundary quadrature holds, giving each the
- *        first active function of the patch in each direction, its index,
- *        and its first point and number of points
+ * @brief Walks the elements a boundary quadrature holds, those of the grid
+ *        of a patch, the active ones of a hierarchical grid, giving each
+ *        its index, and its first point and number of points
  *
  * @throws std::invalid_argument If an element of the quadrature lies
  *         outside the grid of the patch
@@ -353,33 +353,25 @@ QuadratureSkeleton2d skeleton_gauss_legendre(const PlanarPatch& patch,
  * @pre The boundary of the quadrature was divided over the grid of the
  *      patch
  */
-template<typename Visit>
+template<typename Basis, typename Visit>
 void walk_held_elements(const QuadratureBoundary2d& quadrature,
-                        const PlanarPatch& patch, Visit&& visit)
+                        const Patch<Basis, 2>& patch, Visit&& visit)
 {
-    const TensorBSpline<double, 2>& basis = patch.basis();
-    const TensorGrid<double, 2>& grid = basis.grid();
-    const std::array<int, 2> counts{grid.knots(0).num_elements(),
-                                    grid.knots(1).num_elements()};
+    const int num_elements = patch.basis().grid().num_elements();
     const Eigen::VectorXi& offsets = quadrature.offsets();
 
     for (int position = 0; position < quadrature.num_elements(); ++position) {
         const int element = quadrature.elements()(position);
 
-        if (element < 0 || element >= grid.num_elements())
+        if (element < 0 || element >= num_elements)
             throw std::invalid_argument("QuadratureBoundary: "
                                         "the elements must lie in the grid "
                                         "of the patch");
 
-        const std::array<int, 2> axis_elements = unflatten(element, counts);
-        const std::array<int, 2> first_active{
-            basis.axis(0).first_active(axis_elements[0]),
-            basis.axis(1).first_active(axis_elements[1])};
-
         const int first = offsets(position);
         const int count = offsets(position + 1) - first;
 
-        visit(first_active, element, first, count);
+        visit(element, first, count);
     }
 }
 
@@ -388,8 +380,9 @@ void walk_held_elements(const QuadratureBoundary2d& quadrature,
  *
  * @throws std::invalid_argument As walk_held_elements() does
  */
+template<typename Basis>
 PointMatrix<double, 2> boundary_positions(
-    const QuadratureBoundary2d& quadrature, const PlanarPatch& patch)
+    const QuadratureBoundary2d& quadrature, const Patch<Basis, 2>& patch)
 {
     PointMatrix<double, 2> result(quadrature.num_points(), 2);
 
@@ -401,10 +394,9 @@ PointMatrix<double, 2> boundary_positions(
 
     walk_held_elements(
         quadrature, patch,
-        [&](const std::array<int, 2>& first_active, int element, int first,
-            int count) {
+        [&](int element, int first, int count) {
             parameters = quadrature.points().middleRows(first, count);
-            patch.basis().eval_on_element(first_active, parameters, values);
+            patch.basis().eval_on_element(element, parameters, values);
             patch.basis().active_on_element(element, actives);
             patch.position_on_element(actives, values, element_positions);
 
@@ -420,8 +412,9 @@ PointMatrix<double, 2> boundary_positions(
  *
  * @throws std::invalid_argument As walk_held_elements() does
  */
+template<typename Basis>
 Eigen::VectorXd physical_boundary_weights(
-    const QuadratureBoundary2d& quadrature, const PlanarPatch& patch)
+    const QuadratureBoundary2d& quadrature, const Patch<Basis, 2>& patch)
 {
     Eigen::VectorXd result(quadrature.num_points());
 
@@ -436,16 +429,15 @@ Eigen::VectorXd physical_boundary_weights(
 
     walk_held_elements(
         quadrature, patch,
-        [&](const std::array<int, 2>& first_active, int element, int first,
-            int count) {
+        [&](int element, int first, int count) {
             parameters = quadrature.points().middleRows(first, count);
             normals = quadrature.normals().middleRows(first, count);
-            patch.basis().grad_on_element(first_active, parameters, values,
+            patch.basis().grad_on_element(element, parameters, values,
                                           gradients);
             patch.basis().active_on_element(element, actives);
             patch.tangent_on_element(actives, gradients, tangents);
-            PlanarPatch::boundary_measure_on_element(tangents, normals,
-                                                     measures);
+            Patch<Basis, 2>::boundary_measure_on_element(tangents, normals,
+                                                         measures);
 
             result.segment(first, count) =
                 quadrature.weights().segment(first, count).cwiseProduct(
@@ -461,8 +453,9 @@ Eigen::VectorXd physical_boundary_weights(
  *
  * @throws std::invalid_argument As walk_held_elements() does
  */
+template<typename Basis>
 PointMatrix<double, 2> physical_boundary_normals(
-    const QuadratureBoundary2d& quadrature, const PlanarPatch& patch)
+    const QuadratureBoundary2d& quadrature, const Patch<Basis, 2>& patch)
 {
     PointMatrix<double, 2> result(quadrature.num_points(), 2);
 
@@ -477,16 +470,15 @@ PointMatrix<double, 2> physical_boundary_normals(
 
     walk_held_elements(
         quadrature, patch,
-        [&](const std::array<int, 2>& first_active, int element, int first,
-            int count) {
+        [&](int element, int first, int count) {
             parameters = quadrature.points().middleRows(first, count);
             normals = quadrature.normals().middleRows(first, count);
-            patch.basis().grad_on_element(first_active, parameters, values,
+            patch.basis().grad_on_element(element, parameters, values,
                                           gradients);
             patch.basis().active_on_element(element, actives);
             patch.tangent_on_element(actives, gradients, tangents);
-            PlanarPatch::physical_normal_on_element(tangents, normals,
-                                                    physical_normals);
+            Patch<Basis, 2>::physical_normal_on_element(tangents, normals,
+                                                        physical_normals);
 
             result.middleRows(first, count) = physical_normals;
         });
@@ -560,9 +552,21 @@ void quadrature(py::module_& module)
         .def_property_readonly("points", &QuadratureBoundary2d::points)
         .def_property_readonly("parameters",
                                &QuadratureBoundary2d::parameters)
-        .def("positions", &boundary_positions, py::arg("patch"))
-        .def("physical_weights", &physical_boundary_weights, py::arg("patch"))
-        .def("physical_normals", &physical_boundary_normals,
+        .def("positions", &boundary_positions<TensorBSpline<double, 2>>,
+             py::arg("patch"))
+        .def("positions", &boundary_positions<THBSpline<double, 2>>,
+             py::arg("patch"))
+        .def("physical_weights",
+             &physical_boundary_weights<TensorBSpline<double, 2>>,
+             py::arg("patch"))
+        .def("physical_weights",
+             &physical_boundary_weights<THBSpline<double, 2>>,
+             py::arg("patch"))
+        .def("physical_normals",
+             &physical_boundary_normals<TensorBSpline<double, 2>>,
+             py::arg("patch"))
+        .def("physical_normals",
+             &physical_boundary_normals<THBSpline<double, 2>>,
              py::arg("patch"));
 
     py::class_<QuadratureSkeleton2d>(module, "QuadratureSkeleton2d")

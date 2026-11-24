@@ -24,6 +24,7 @@ using CellClassification3d = CellClassification<double, 3>;
 using EmbeddedBoundary2d = EmbeddedBoundary<double, 2>;
 using SurrogateBoundary2d = SurrogateBoundary<double, 2>;
 using PlanarPatch = Patch<TensorBSpline<double, 2>, 2>;
+using THBPlanarPatch = Patch<THBSpline<double, 2>, 2>;
 
 /// @brief Element of the grid holding each piece, in the order of the
 ///        pieces
@@ -137,15 +138,23 @@ void embedding(py::module_& module)
         .def(py::init<std::vector<CellType>>(), py::arg("cell_types"));
 
     // The volume fractions of the elements of a planar patch inside a
-    // boundary in its plane, and the cell types they give
+    // boundary in its plane, the active ones of a refined patch, and the
+    // cell types they give
     module.def("volume_fractions",
                &volume_fractions<TensorBSpline<double, 2>>, py::arg("patch"),
                py::arg("boundary"));
+    module.def("volume_fractions",
+               py::overload_cast<const THBPlanarPatch&,
+                                 const Boundary<double, 2>&>(
+                   &volume_fractions<double>),
+               py::arg("patch"), py::arg("boundary"));
     module.def("cell_types", &cell_types<double>,
                py::arg("volume_fractions"));
 
     py::class_<EmbeddedBoundary2d>(module, "EmbeddedBoundary2d")
         .def(py::init<const PlanarPatch&, const Boundary<double, 2>&>(),
+             py::arg("patch"), py::arg("boundary"))
+        .def(py::init<const THBPlanarPatch&, const Boundary<double, 2>&>(),
              py::arg("patch"), py::arg("boundary"))
         .def_property_readonly("num_pieces", &EmbeddedBoundary2d::num_pieces)
         .def_property_readonly("elements", &elements)
