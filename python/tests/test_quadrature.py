@@ -386,3 +386,27 @@ def test_invalid_arguments():
     with pytest.raises(ValueError):
         QuadratureBoundary(rectangle, surrogate, 3, shift=circle(1.6),
                            order=-1)
+
+
+def test_refined_patch():
+    """The cells of a refined patch are those of its grid, through which the
+    hierarchical functions place the points where the coarse patch does."""
+    patch = iguana.create_rectangle(lengths=(2., 3.), elements=(7, 6))
+    refined = patch.refine([10, 30])
+
+    quadrature = QuadratureDomain(refined)
+    quadrature.fill_gauss_legendre(CellType.inside, 3)
+    coarse = QuadratureDomain(patch, grid=refined.grid)
+    coarse.fill_gauss_legendre(CellType.inside, 3)
+
+    assert quadrature.grid == refined.grid
+    assert quadrature.num_elements == refined.grid.num_elements
+    np.testing.assert_allclose(quadrature.positions, coarse.positions,
+                               atol=1e-14)
+    np.testing.assert_allclose(quadrature.weights, coarse.weights,
+                               rtol=1e-14)
+    np.testing.assert_allclose(quadrature.weights.sum(), 6.)
+
+    # The grid of a refined patch is the grid of its quadratures
+    with pytest.raises(ValueError):
+        QuadratureDomain(refined, grid=patch.grid)

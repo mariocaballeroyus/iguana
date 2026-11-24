@@ -73,3 +73,14 @@ def test_rejects_what_it_cannot_build_or_refine():
 
     with pytest.raises(ValueError):
         grid().refine([8])
+
+
+def test_grids_compare_by_their_knots_and_elements():
+    """Two grids are equal when they share their knots and their active
+    elements level by level, however they were refined to them."""
+    coarse = grid()
+
+    assert coarse == grid()
+    assert coarse.refine([5]) == coarse.refine([5, 5])
+    assert coarse.refine([5]) != coarse.refine([4])
+    assert coarse.refine([5]) != coarse
