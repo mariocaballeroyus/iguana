@@ -128,6 +128,45 @@ def test_surrogate_boundary():
     assert flux == pytest.approx(2. * (2. / 3.) * .5)
 
 
+def test_surrogate_boundary_of_a_refined_patch():
+    """On a refined patch, cells keeping the types of the cells they lie in
+    bound the same block in more stretches, and the child of the cut cell
+    at its lower left corner, made inside, adds itself to the block."""
+    patch = iguana.create_rectangle(lengths=(2., 3.), elements=(6, 6))
+    coarse = [CellType.outside] * 36
+    coarse[20] = coarse[21] = CellType.inside
+    coarse[22] = CellType.cut
+    refined = patch.refine([21, 22, 27])
+
+    bounds = refined.grid.bounds
+    columns, rows = (bounds.mean(axis=1) * 6.).astype(int).T
+    cell_types = [coarse[cell] for cell in columns + 6 * rows]
+
+    def measures(types):
+        surrogate = SurrogateBoundary(refined, types)
+        quadrature = QuadratureBoundary(refined, surrogate, 2)
+        flux = quadrature.weights @ np.sum(quadrature.positions
+                                           * quadrature.normals, axis=1)
+
+        return surrogate.num_faces, quadrature.weights.sum(), flux
+
+    faces, perimeter, flux = measures(cell_types)
+
+    assert faces > 6
+    assert perimeter == pytest.approx(2. * (2. / 3. + .5))
+    assert flux == pytest.approx(2. * (2. / 3.) * .5)
+
+    # The child spans [4/3, 3/2] x [1.5, 1.75], sharing a quarter of the
+    # right side of the block
+    corner, = np.flatnonzero(np.isclose(bounds[:, 0], [4. / 6., 3. / 6.])
+                             .all(axis=1))
+    cell_types[corner] = CellType.inside
+    _, perimeter, flux = measures(cell_types)
+
+    assert perimeter == pytest.approx(2. * (2. / 3. + .5) + 2. / 6.)
+    assert flux == pytest.approx(2. * ((2. / 3.) * .5 + 1. / 24.))
+
+
 def test_invalid_surrogate_boundaries():
     patch = iguana.create_rectangle(lengths=(2., 3.), elements=(6, 6))
     cell_types = [CellType.inside] * 36
