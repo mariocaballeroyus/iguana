@@ -206,6 +206,71 @@ TEST_CASE("Active elements are found by index, by point and by the cells "
     REQUIRE(!same_elements(grid, refine(once, std::vector<int>{6})));
 }
 
+TEST_CASE("Faces of a hierarchical grid tile its interior skeleton",
+          "[grid]")
+{
+    const TensorGrid<double, 2> tensor(
+        {KnotVector<double>(2, {0., 0., 0., 1., 1., 3., 4., 4., 4.}),
+         KnotVector<double>(1, {0., 0., .5, 2., 2.})});
+    const HierarchicalGrid<double, 2> coarse(tensor);
+
+    // Without refinement, the faces are those of the tensor grid
+    REQUIRE(coarse.num_faces() == tensor.num_faces());
+
+    for (int face = 0; face < tensor.num_faces(); ++face) {
+        REQUIRE(coarse.face_direction(face) == tensor.face_direction(face));
+        REQUIRE(coarse.face_elements(face) == tensor.face_elements(face));
+        REQUIRE(coarse.face_start(face) == tensor.face_start(face));
+        REQUIRE(coarse.face_end(face) == tensor.face_end(face));
+    }
+
+    // Three levels, a fine element of level 2 next to a coarse one
+    const HierarchicalGrid<double, 2> once =
+        refine(coarse, std::vector<int>{0, 4});
+    const HierarchicalGrid<double, 2> grid =
+        refine(once, std::vector<int>{6, 7});
+    std::vector<std::array<int, 2>> pairs;
+    double length = 0.;
+
+    for (int face = 0; face < grid.num_faces(); ++face) {
+        const std::size_t direction = grid.face_direction(face);
+        const std::size_t across = 1 - direction;
+        const auto [before, after] = grid.face_elements(face);
+        const std::array<double, 2> start = grid.face_start(face);
+        const std::array<double, 2> end = grid.face_end(face);
+
+        // The face lies on the end side of the element before it and the
+        // start side of the element after it, within both
+        REQUIRE(start[direction] == end[direction]);
+        REQUIRE(start[direction] == grid.element_end(before)[direction]);
+        REQUIRE(start[direction] == grid.element_start(after)[direction]);
+        REQUIRE(start[across] < end[across]);
+
+        for (const int element : {before, after}) {
+            REQUIRE(start[across] >= grid.element_start(element)[across]);
+            REQUIRE(end[across] <= grid.element_end(element)[across]);
+        }
+
+        pairs.push_back({before, after});
+        length += end[across] - start[across];
+    }
+
+    // Each pair of neighbors shares one face, and the sides of the elements
+    // count every face twice and the edges of the domain once
+    std::ranges::sort(pairs);
+    REQUIRE(std::ranges::adjacent_find(pairs) == pairs.end());
+
+    double perimeters = 0.;
+
+    for (int element = 0; element < grid.num_elements(); ++element) {
+        const std::array<double, 2> start = grid.element_start(element);
+        const std::array<double, 2> end = grid.element_end(element);
+        perimeters += 2. * (end[0] - start[0] + end[1] - start[1]);
+    }
+
+    REQUIRE_THAT(perimeters, WithinAbs(2. * length + 2. * (4. + 2.), 1e-12));
+}
+
 TEST_CASE("Refinement rejects what it cannot refine", "[grid]")
 {
     const KnotVector<double> knots(1, {0., 0., 1., 1.});

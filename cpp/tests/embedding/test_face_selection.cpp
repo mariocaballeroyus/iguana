@@ -5,6 +5,7 @@
 
 #include <iguana/iguana.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <numeric>
@@ -175,4 +176,55 @@ TEST_CASE("With cells inside or outside, the jump faces are the surrogate "
     REQUIRE(iguana::jump_faces(TensorGrid<double, 2>({halves, halves}),
                                CellClassification<double, 2>(two_cut))
                 .size() == 4);
+}
+
+TEST_CASE("The faces of a hierarchical grid are selected by the cells on "
+          "either side", "[face_selection]")
+{
+    const TensorGrid<double, 2> tensor(
+        {KnotVector<double>(1, {0., 0., .2, .6, 1., 1.}),
+         KnotVector<double>(1, {0., 0., .3, .5, 1., 1.})});
+    const std::vector<CellType> types{
+        CellType::inside, CellType::inside, CellType::outside,
+        CellType::inside, CellType::cut, CellType::outside,
+        CellType::outside, CellType::outside, CellType::outside};
+    const CellClassification<double, 2> classification(types);
+    const iguana::HierarchicalGrid<double, 2> coarse(tensor);
+
+    // Without refinement, the selections are those of the tensor grid
+    REQUIRE(iguana::jump_faces(coarse, classification)
+            == iguana::jump_faces(tensor, classification));
+
+    for (const iguana::GhostFaces kind :
+         {iguana::GhostFaces::all, iguana::GhostFaces::cut,
+          iguana::GhostFaces::outside, iguana::GhostFaces::global})
+        REQUIRE(iguana::ghost_faces(coarse, classification, kind)
+                == iguana::ghost_faces(tensor, classification, kind));
+
+    // The cut cell refined into two cut children and two inside ones, its
+    // neighbors keeping their types
+    const iguana::HierarchicalGrid<double, 2> grid =
+        iguana::refine(coarse, std::vector<int>{4});
+    std::vector<CellType> refined(types);
+    refined.erase(refined.begin() + 4);
+    refined.insert(refined.end(), {CellType::inside, CellType::cut,
+                                   CellType::inside, CellType::cut});
+    const CellClassification<double, 2> fine(refined);
+    const std::vector<int> jump = iguana::jump_faces(grid, fine);
+    const std::vector<int> ghost = iguana::ghost_faces(grid, fine);
+
+    // A face is selected exactly when the cells on its sides call for it
+    for (int face = 0; face < grid.num_faces(); ++face) {
+        const std::array<int, 2> cells = grid.face_elements(face);
+        const CellType before = refined[static_cast<std::size_t>(cells[0])];
+        const CellType after = refined[static_cast<std::size_t>(cells[1])];
+        const bool jumps = before != after || before == CellType::cut;
+        const bool ghosts = before == CellType::cut
+                            || after == CellType::cut
+                            || (before == CellType::outside
+                                && after == CellType::outside);
+
+        REQUIRE(std::ranges::binary_search(jump, face) == jumps);
+        REQUIRE(std::ranges::binary_search(ghost, face) == ghosts);
+    }
 }
