@@ -9,15 +9,18 @@
 #include <cstddef>
 #include <stdexcept>
 
+#include "iguana/grid/hierarchical_grid.hpp"
+#include "iguana/grid/tensor_grid.hpp"
 #include "iguana/quadrature/box_rule.hpp"
 
 namespace iguana
 {
 
 template<std::floating_point T, std::size_t d>
+template<typename Grid>
+    requires (Grid::dimension == d)
 QuadratureSkeleton<T, d>::QuadratureSkeleton(
-    const TensorGrid<T, d>& grid,
-    std::span<const int> faces,
+    const Grid& grid, std::span<const int> faces,
     const GaussLegendre<T, 1>& rule)
 {
     for (const int face : faces) {
@@ -77,5 +80,12 @@ QuadratureSkeleton<T, d>::QuadratureSkeleton(
 }
 
 template class QuadratureSkeleton<double, 2>;
+
+template QuadratureSkeleton<double, 2>::QuadratureSkeleton(
+    const TensorGrid<double, 2>&, std::span<const int>,
+    const GaussLegendre<double, 1>&);
+template QuadratureSkeleton<double, 2>::QuadratureSkeleton(
+    const HierarchicalGrid<double, 2>&, std::span<const int>,
+    const GaussLegendre<double, 1>&);
 
 } // namespace iguana

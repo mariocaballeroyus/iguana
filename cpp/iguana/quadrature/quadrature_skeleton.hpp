@@ -43,15 +43,18 @@ public:
      *          across its direction, so that the weights measure length in
      *          parameter space
      *
-     * @param grid Grid whose interior faces are listed
+     * @param grid Grid whose interior faces are listed, a tensor or a
+     *        hierarchical grid, whose faces are the stretches its active
+     *        elements share
      * @param faces Indices of the faces in the numbering of the grid
      * @param rule Rule placed on every face
      *
      * @throws std::invalid_argument If an index does not number an interior
      *         face of @p grid
      */
-    QuadratureSkeleton(const TensorGrid<T, d>& grid,
-                       std::span<const int> faces,
+    template<typename Grid>
+        requires (Grid::dimension == d)
+    QuadratureSkeleton(const Grid& grid, std::span<const int> faces,
                        const GaussLegendre<T, 1>& rule);
 
     /// @brief Number of faces
