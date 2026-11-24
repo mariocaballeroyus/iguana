@@ -143,6 +143,86 @@ void HierarchicalGrid<T, d>::update()
         const auto repeats = std::ranges::unique(domain);
         domain.erase(repeats.begin(), repeats.end());
     }
+
+    // The faces after the end side of each active element, direction by
+    // direction, so that the element before each face finds it
+    faces_.clear();
+
+    for (std::size_t direction = 0; direction < d; ++direction) {
+        for (std::size_t level = 0; level < active_.size(); ++level) {
+            const std::array<int, d> counts = element_counts(levels_[level]);
+            const std::vector<int>& active = active_[level];
+
+            for (std::size_t position = 0; position < active.size();
+                 ++position) {
+                std::array<int, d> cell = unflatten(active[position], counts);
+
+                if (cell[direction] + 1 == counts[direction])
+                    continue;
+
+                ++cell[direction];
+                add_faces(offsets_[level] + static_cast<int>(position),
+                          direction, static_cast<int>(level),
+                          flatten(cell, counts));
+            }
+        }
+    }
+}
+
+template<std::floating_point T, std::size_t d>
+void HierarchicalGrid<T, d>::add_faces(int before, std::size_t direction,
+                                       int level, int cell)
+{
+    const std::size_t at = static_cast<std::size_t>(level);
+
+    // The face between the element before and one after it, a side of the
+    // finer of the two at the line they meet on
+    const auto add = [&](int after) {
+        const int finer = level_of(after) > level_of(before) ? after : before;
+        const T line = element_end(before)[direction];
+        Face face{direction, {before, after}, element_start(finer),
+                  element_end(finer)};
+
+        face.start[direction] = line;
+        face.end[direction] = line;
+        faces_.push_back(face);
+    };
+
+    const std::vector<int>& active = active_[at];
+    const auto found = std::ranges::lower_bound(active, cell);
+
+    if (found != active.end() && *found == cell) {
+        add(offsets_[at]
+            + static_cast<int>(std::distance(active.begin(), found)));
+        return;
+    }
+
+    // A cell of the domain is refined further: its children on its start
+    // side along the direction meet the element before
+    if (std::ranges::binary_search(domains_[at], cell)) {
+        const std::array<int, d> index =
+            unflatten(cell, element_counts(levels_[at]));
+        const std::array<int, d> fine_counts =
+            element_counts(levels_[at + 1]);
+
+        for (int corner = 0; corner < (1 << d); ++corner) {
+            if ((corner >> direction) & 1)
+                continue;
+
+            std::array<int, d> child{};
+
+            for (std::size_t axis = 0; axis < d; ++axis)
+                child[axis] = 2 * index[axis] + ((corner >> axis) & 1);
+
+            add_faces(before, direction, level + 1,
+                      flatten(child, fine_counts));
+        }
+
+        return;
+    }
+
+    // Otherwise a coarser active element covers the cell
+    add(element_covering(*this, level, cell));
 }
 
 template<std::floating_point T, std::size_t d>

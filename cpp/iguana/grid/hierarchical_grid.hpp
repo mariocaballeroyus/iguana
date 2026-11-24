@@ -6,6 +6,7 @@
 #ifndef IGUANA_GRID_HIERARCHICAL_GRID_HPP
 #define IGUANA_GRID_HIERARCHICAL_GRID_HPP
 
+#include <array>
 #include <concepts>
 #include <cstddef>
 #include <iterator>
@@ -27,6 +28,12 @@ namespace iguana
  * the 2^d children 2i + {0, 1}^d. The active elements of the levels tile
  * the parametric domain. They are numbered level by level and, within a
  * level, in increasing index of the level grid
+ *
+ * An interior face is the stretch two neighboring active elements share, a
+ * side of the finer one, or of both on the same level, so that each face
+ * has one element on either side. The faces are numbered direction by
+ * direction and then by the element before them, as those of a tensor grid
+ * are when no element is refined
  *
  * @tparam T Floating-point type
  * @tparam d Number of parametric directions
@@ -139,6 +146,54 @@ public:
      */
     std::array<T, d> element_end(int element) const noexcept;
 
+    /// @brief Number of interior faces, each between two neighboring active
+    ///        elements
+    constexpr int num_faces() const noexcept
+    { return static_cast<int>(faces_.size()); }
+
+    /**
+     * @brief Direction normal to an interior face
+     *
+     * @param face Face index
+     *
+     * @pre @p face lies in [0, num_faces())
+     */
+    constexpr std::size_t face_direction(int face) const noexcept
+    { return faces_[static_cast<std::size_t>(face)].direction; }
+
+    /**
+     * @brief Active elements on either side of an interior face: the
+     *        element before it along its direction, then the element after
+     *        it
+     *
+     * @param face Face index
+     *
+     * @pre @p face lies in [0, num_faces())
+     */
+    constexpr std::array<int, 2> face_elements(int face) const noexcept
+    { return faces_[static_cast<std::size_t>(face)].elements; }
+
+    /**
+     * @brief Corner of an interior face where every parameter is lowest
+     *
+     * @param face Face index
+     *
+     * @pre @p face lies in [0, num_faces())
+     */
+    constexpr std::array<T, d> face_start(int face) const noexcept
+    { return faces_[static_cast<std::size_t>(face)].start; }
+
+    /**
+     * @brief Corner of an interior face where every parameter is highest,
+     *        equal to its start in its direction
+     *
+     * @param face Face index
+     *
+     * @pre @p face lies in [0, num_faces())
+     */
+    constexpr std::array<T, d> face_end(int face) const noexcept
+    { return faces_[static_cast<std::size_t>(face)].end; }
+
     /// @brief Iterator at the first active element
     HierarchicalGridIterator<T, d> begin() const noexcept;
 
@@ -154,9 +209,43 @@ private:
     friend HierarchicalGrid<U, e> refine(const HierarchicalGrid<U, e>&,
                                            std::span<const int>);
 
+    /// @brief Interior face, the stretch two active elements share: a side
+    ///        of the finer one, or of both on the same level
+    struct Face
+    {
+        /// @brief Direction normal to the face
+        std::size_t direction;
+
+        /// @brief Element before the face, then the element after it
+        std::array<int, 2> elements;
+
+        /// @brief Corner of the face where every parameter is lowest
+        std::array<T, d> start;
+
+        /// @brief Corner of the face where every parameter is highest
+        std::array<T, d> end;
+
+        bool operator==(const Face& other) const = default;
+    };
+
     /// @brief Numbers the active elements and finds the domain of each
-    ///        level from the active elements of the levels
+    ///        level from the active elements of the levels, then numbers
+    ///        the faces
     void update();
+
+    /**
+     * @brief Adds the faces between an active element and the cell of a
+     *        level just after it in a direction: one face with the cell if
+     *        it is active, one with each active descendant of the cell
+     *        along the shared side if it is refined further, or one with
+     *        the coarser active element covering the cell otherwise
+     *
+     * @param before Active element before the faces
+     * @param direction Direction normal to the faces
+     * @param level Level of the cell
+     * @param cell Index of the cell in the grid of its level
+     */
+    void add_faces(int before, std::size_t direction, int level, int cell);
 
     /// @brief Tensor grid of each level
     std::vector<TensorGrid<T, d>> levels_;
@@ -170,6 +259,10 @@ private:
     /// @brief Index of the first active element of each level, followed by
     ///        the number of active elements
     std::vector<int> offsets_;
+
+    /// @brief Interior faces, direction by direction, then by the element
+    ///        before them
+    std::vector<Face> faces_;
 };
 
 /**
