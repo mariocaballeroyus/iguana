@@ -776,9 +776,9 @@ class SkeletonNitscheCondition:
 
         Raises:
             TypeError: If the trace is not the trace of an element, if the
-                patch is not a planar patch, if the boundary is not a
-                boundary, or if a source is neither `Derivatives` nor a
-                function of the points.
+                patch is not a planar patch or is refined, if the boundary
+                is not a boundary, or if a source is neither `Derivatives`
+                nor a function of the points.
             ValueError: If there is not one cell type per element, if the
                 map of the patch is not affine, if the values are not those
                 of the trace at each point, if the penalty is negative, or
@@ -1067,8 +1067,8 @@ class SkeletonMultiplierCondition:
 
         Raises:
             TypeError: If the trace is not the velocity of a fluid, if the
-                patch is not a planar patch, or if the boundary is not a
-                boundary.
+                patch is not a planar patch or is refined, or if the
+                boundary is not a boundary.
             ValueError: If there is not one cell type per element, if the
                 map of the patch is not affine, if the number of points is
                 not positive, if the values are not the velocity at each
@@ -1279,6 +1279,9 @@ def _jump_faces(
     degree of the patch."""
     if not isinstance(patch, PlanarPatch):
         raise TypeError('the patch must be a planar patch')
+
+    if patch.refined:
+        raise TypeError('the patch must not be refined')
 
     if not isinstance(boundary, Boundary):
         raise TypeError('the boundary must be a boundary')
