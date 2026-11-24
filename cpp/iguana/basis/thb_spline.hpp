@@ -195,6 +195,81 @@ public:
         std::array<Eigen::MatrixX<T>, d * (d + 1) / 2>& hessians) const;
 
     /**
+     * @brief Evaluates a derivative of the non-zero functions on an active
+     *        element, of one order along each direction
+     *
+     * The functions combine those of the level of the element with
+     * coefficients constant on it, so their derivatives combine the
+     * derivatives of those, which vanish above the degree
+     *
+     * @param element Element index, in the numbering of the grid
+     * @param points Evaluation points, with size (num_points, dimension)
+     * @param orders Order of the derivative along each direction
+     * @param derivatives Output with the rows and columns of
+     *        eval_on_element(). It is resized when necessary
+     *
+     * @pre @p element lies in [0, grid().num_elements()), @p points has
+     *      dimension columns and every point lies inside that element, and
+     *      every order is non-negative
+     */
+    void deriv_on_element(int element, const Eigen::MatrixX<T>& points,
+                          const std::array<int, d>& orders,
+                          Eigen::MatrixX<T>& derivatives) const;
+
+    /**
+     * @brief Expands the non-zero functions on an active element in Taylor
+     *        series from points along shifts, up to a total order
+     *
+     * Each function becomes the sum, over multi-indices alpha of total order
+     * at most @p order, of its derivative of order alpha at the point times
+     * s^alpha / alpha!, with s the shift of the point, as
+     * TensorBSpline::taylor_on_element() expands those of the level
+     *
+     * @param element Element index, in the numbering of the grid
+     * @param points Points the series start from, with size
+     *        (num_points, dimension)
+     * @param shifts Shift of each point in parameter space, of the size of
+     *        @p points
+     * @param order Highest total order of the derivatives kept
+     * @param values Output with the rows and columns of eval_on_element().
+     *        It is resized when necessary
+     *
+     * @pre @p element lies in [0, grid().num_elements()), @p points has
+     *      dimension columns and every point lies inside that element,
+     *      @p shifts has the size of @p points, and @p order is non-negative
+     */
+    void taylor_on_element(int element, const Eigen::MatrixX<T>& points,
+                           const Eigen::MatrixX<T>& shifts, int order,
+                           Eigen::MatrixX<T>& values) const;
+
+    /**
+     * @brief Combines the derivatives of the non-zero functions on an active
+     *        element at points, with weights per point, up to a total order
+     *
+     *     sum_{|alpha| <= order} w_alpha d^alpha N_i
+     *
+     * @details The polynomial of the element is used at every point, which
+     *          extends it beyond the element at points outside it
+     *
+     * @param element Element index, in the numbering of the grid
+     * @param points Points where the derivatives are taken, with size
+     *        (num_points, dimension)
+     * @param weights Weight of each multi-index alpha of total order at most
+     *        @p order at each point, with size (num_points, num_terms), the
+     *        multi-indices with the first direction running fastest
+     * @param order Highest total order of the derivatives
+     * @param values Output with the rows of eval_on_element() and a column
+     *        per point. It is resized when necessary
+     *
+     * @pre @p element lies in [0, grid().num_elements()), @p points has
+     *      dimension columns, @p weights one row per point and one column
+     *      per multi-index, and @p order is non-negative
+     */
+    void combine_on_element(int element, const Eigen::MatrixX<T>& points,
+                            const Eigen::MatrixX<T>& weights, int order,
+                            Eigen::MatrixX<T>& values) const;
+
+    /**
      * @brief Coefficients in the basis of splines of the coarse tensor
      *        space, which the basis spans
      *
