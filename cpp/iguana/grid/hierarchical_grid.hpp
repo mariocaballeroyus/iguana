@@ -200,6 +200,22 @@ int element_holding(const HierarchicalGrid<T, d>& grid,
                     const std::array<T, d>& parameters);
 
 /**
+ * @brief Active element covering an element of a level grid: the element
+ *        itself if it is active, or else the active ancestor it lies in
+ *
+ * @param grid Grid
+ * @param level Level of the element
+ * @param element Index of the element in the grid of its level
+ * @return Element index in [0, grid.num_elements())
+ *
+ * @pre @p element lies in an active element of @p level or of a level
+ *      before it, as every element of the finest level does
+ */
+template<std::floating_point T, std::size_t d>
+int element_covering(const HierarchicalGrid<T, d>& grid, int level,
+                     int element);
+
+/**
  * @brief Hierarchical grid with elements replaced by their children
  *
  * Each marked element is replaced by its 2^d children on the next level,
