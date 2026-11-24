@@ -39,6 +39,39 @@ T snapped(T coordinate, const std::vector<T>& lines, T tolerance)
                                                         : coordinate;
 }
 
+/// @brief Knot lines dividing a boundary over a tensor-product grid, those
+///        of its elements
+template<std::floating_point T, std::size_t d>
+std::array<std::vector<T>, d> dividing_lines(const TensorGrid<T, d>& grid)
+{
+    return grid.lines();
+}
+
+/// @brief Knot lines dividing a boundary over a hierarchical grid, those of
+///        its finest level, which hold every side of every active element
+template<std::floating_point T, std::size_t d>
+std::array<std::vector<T>, d> dividing_lines(
+    const HierarchicalGrid<T, d>& grid)
+{
+    return grid.level(grid.num_levels() - 1).lines();
+}
+
+/// @brief Element of a tensor-product grid holding a cell between its
+///        lines, the cell itself
+template<std::floating_point T, std::size_t d>
+int element_of(const TensorGrid<T, d>&, int cell)
+{
+    return cell;
+}
+
+/// @brief Active element of a hierarchical grid covering a cell between the
+///        lines of its finest level
+template<std::floating_point T, std::size_t d>
+int element_of(const HierarchicalGrid<T, d>& grid, int cell)
+{
+    return element_covering(grid, grid.num_levels() - 1, cell);
+}
+
 /**
  * @brief Boundary pulled back into the parameter space of a patch
  *
@@ -52,7 +85,8 @@ T snapped(T coordinate, const std::vector<T>& lines, T tolerance)
 template<typename Basis, std::size_t n>
 Boundary<typename Basis::Scalar, n> pull_back(
     const Boundary<typename Basis::Scalar, n>& boundary,
-    const Patch<Basis, n>& patch)
+    const Patch<Basis, n>& patch,
+    const std::array<std::vector<typename Basis::Scalar>, n>& lines)
 {
     using T = typename Basis::Scalar;
 
@@ -60,7 +94,6 @@ Boundary<typename Basis::Scalar, n> pull_back(
         throw std::invalid_argument("EmbeddedBoundary: "
                                     "the map of the patch must be affine");
 
-    const std::array<std::vector<T>, n> lines = patch.basis().grid().lines();
     const T rounding = 4096 * std::numeric_limits<T>::epsilon();
     const int orientation =
         patch.linear_part().determinant() < T{0} ? -1 : 1;
@@ -107,10 +140,11 @@ template<typename Basis>
     requires (Basis::dimension == d)
 EmbeddedBoundary<T, d>::EmbeddedBoundary(const Patch<Basis, d>& patch,
                                          const Boundary<T, d>& boundary)
-    : boundary_(pull_back(boundary, patch))
+    : boundary_(pull_back(boundary, patch,
+                          dividing_lines(patch.basis().grid())))
 {
-    const TensorGrid<T, d>& grid = patch.basis().grid();
-    const std::array<std::vector<T>, d> lines = grid.lines();
+    const auto& grid = patch.basis().grid();
+    const std::array<std::vector<T>, d> lines = dividing_lines(grid);
     const int num_elements = grid.num_elements();
 
     // Pieces of every face, with the element of the grid holding each
@@ -136,7 +170,7 @@ EmbeddedBoundary<T, d>::EmbeddedBoundary(const Patch<Basis, d>& patch,
                     curve_parameter(knots, face_element, piece.start);
                 const T end = curve_parameter(knots, face_element, piece.end);
 
-                elements.push_back(piece.cell);
+                elements.push_back(element_of(grid, piece.cell));
                 pieces.push_back({face, face_element, start, end});
             }
         }
@@ -165,5 +199,7 @@ template EmbeddedBoundary<double, 2>::EmbeddedBoundary(
     const Patch<TensorBSpline<double, 2>, 2>&, const Boundary<double, 2>&);
 template EmbeddedBoundary<double, 2>::EmbeddedBoundary(
     const Patch<TensorNURBS<double, 2>, 2>&, const Boundary<double, 2>&);
+template EmbeddedBoundary<double, 2>::EmbeddedBoundary(
+    const Patch<THBSpline<double, 2>, 2>&, const Boundary<double, 2>&);
 
 } // namespace iguana

@@ -27,7 +27,10 @@ namespace iguana
  *
  * The faces are pulled back into the parameter space of the patch, where
  * each element of a face is split where it crosses a knot line, so that
- * each piece lies in one element of its face and one of the grid. A piece
+ * each piece lies in one element of its face and one of the grid. On a
+ * hierarchical grid the knot lines are those of its finest level, which
+ * hold every side of every active element, and a piece goes to the active
+ * element covering the cell of the finest level it lies in. A piece
  * lying on a knot line goes to the element opposite its normal, and parts
  * outside the grid are left out. The faces pulled back keep the parameters
  * of those given, so that a piece is the same stretch of either
@@ -68,7 +71,7 @@ public:
 
     /**
      * @brief Divides the faces of a boundary over the elements of the grid
-     *        of a patch
+     *        of a patch, the active elements of a hierarchical one
      *
      * The control points of each face map through the inverse of the
      * patch, and a coordinate within rounding of a knot line is set onto
