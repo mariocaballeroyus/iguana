@@ -107,6 +107,33 @@ void TensorBSpline<T, d>::hess_on_element(
 }
 
 template<std::floating_point T, std::size_t d>
+void TensorBSpline<T, d>::deriv_on_element(
+    int element, const Eigen::MatrixX<T>& points,
+    const std::array<int, d>& orders, Eigen::MatrixX<T>& derivatives) const
+{
+    deriv_on_element(first_active(element), points, orders, derivatives);
+}
+
+template<std::floating_point T, std::size_t d>
+void TensorBSpline<T, d>::taylor_on_element(int element,
+                                            const Eigen::MatrixX<T>& points,
+                                            const Eigen::MatrixX<T>& shifts,
+                                            int order,
+                                            Eigen::MatrixX<T>& values) const
+{
+    taylor_on_element(first_active(element), points, shifts, order, values);
+}
+
+template<std::floating_point T, std::size_t d>
+void TensorBSpline<T, d>::combine_on_element(
+    int element, const Eigen::MatrixX<T>& points,
+    const Eigen::MatrixX<T>& weights, int order,
+    Eigen::MatrixX<T>& values) const
+{
+    combine_on_element(first_active(element), points, weights, order, values);
+}
+
+template<std::floating_point T, std::size_t d>
 void TensorBSpline<T, d>::active_on_element(
     const std::array<int, d>& first_active, Eigen::VectorXi& actives) const
 {
