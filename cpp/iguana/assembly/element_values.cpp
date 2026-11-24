@@ -128,10 +128,11 @@ template<typename Basis, std::size_t n>
 void ElementValues<Basis, n>::shift(const Eigen::MatrixX<Scalar>& shifts,
                                     int order)
     requires std::same_as<Basis, TensorBSpline<Scalar, dim>>
+             || std::same_as<Basis, THBSpline<Scalar, dim>>
 {
     for (Field& field : fields_) {
-        field.basis.taylor_on_element(field.basis.first_active(element_),
-                                      points_, shifts, order, field.values);
+        field.basis.taylor_on_element(element_, points_, shifts, order,
+                                      field.values);
     }
 }
 
@@ -142,6 +143,7 @@ void ElementValues<Basis, n>::shift(
     const std::vector<Eigen::MatrixX<Scalar>>& coupled, int order,
     ShiftCenter center)
     requires std::same_as<Basis, TensorBSpline<Scalar, dim>>
+             || std::same_as<Basis, THBSpline<Scalar, dim>>
 {
     // From the surrogate, the combinations add to the Taylor series of the
     // values and take the derivatives at the points themselves
@@ -155,9 +157,7 @@ void ElementValues<Basis, n>::shift(
     Eigen::MatrixX<Scalar> combination;
 
     for (Field& field : fields_) {
-        const std::array<int, dim> first_active =
-            field.basis.first_active(element_);
-        field.basis.combine_on_element(first_active, at, weights, order,
+        field.basis.combine_on_element(element_, at, weights, order,
                                        combination);
         field.values += combination;
 
@@ -165,7 +165,7 @@ void ElementValues<Basis, n>::shift(
         field.combinations.resize(coupled.size());
 
         for (std::size_t set = 0; set < coupled.size(); ++set) {
-            field.basis.combine_on_element(first_active, at, coupled[set],
+            field.basis.combine_on_element(element_, at, coupled[set],
                                            order, field.combinations[set]);
         }
     }
@@ -174,6 +174,7 @@ void ElementValues<Basis, n>::shift(
 template<typename Basis, std::size_t n>
 void ElementValues<Basis, n>::differentiate(std::size_t direction)
     requires std::same_as<Basis, TensorBSpline<Scalar, dim>>
+             || std::same_as<Basis, THBSpline<Scalar, dim>>
 {
     // |J^-T e_k| is the measure of a knot line of the direction over that of
     // the patch, by Nanson's formula with the normal e_k
@@ -186,12 +187,12 @@ void ElementValues<Basis, n>::differentiate(std::size_t direction)
                                                  line_measures);
 
     for (Field& field : fields_) {
-        const int degree = field.basis.grid().knots(direction).degree();
+        const int degree = field.basis.degrees()[direction];
         std::array<int, dim> orders{};
         orders[direction] = degree;
 
-        field.basis.deriv_on_element(field.basis.first_active(element_),
-                                     points_, orders, field.values);
+        field.basis.deriv_on_element(element_, points_, orders,
+                                     field.values);
 
         const Eigen::VectorX<Scalar> scales =
             (line_measures.array() / measures_.array())
@@ -204,11 +205,12 @@ template<typename Basis, std::size_t n>
 void ElementValues<Basis, n>::differentiate(
     const std::vector<std::array<int, dim>>& orders)
     requires std::same_as<Basis, TensorBSpline<Scalar, dim>>
+             || std::same_as<Basis, THBSpline<Scalar, dim>>
 {
     for (std::size_t index = 0; index < fields_.size(); ++index) {
         Field& field = fields_[index];
-        field.basis.deriv_on_element(field.basis.first_active(element_),
-                                     points_, orders[index], field.values);
+        field.basis.deriv_on_element(element_, points_, orders[index],
+                                     field.values);
 
         // J_kk^(−a_k) per direction, with the sign of J_kk
         Eigen::ArrayX<Scalar> scales =

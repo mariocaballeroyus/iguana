@@ -72,6 +72,9 @@ public:
     constexpr const BSpline<T>& axis(std::size_t direction) const noexcept
     { return axes_[direction]; }
 
+    /// @brief Degree of the basis along each direction
+    std::array<int, d> degrees() const noexcept;
+
     /// @brief Number of tensor-product basis functions.
     constexpr int num_functions() const noexcept
     { return num_functions_; }

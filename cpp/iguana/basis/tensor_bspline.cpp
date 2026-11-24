@@ -56,6 +56,17 @@ TensorBSpline<T, d>::TensorBSpline(std::array<BSpline<T>, d> axes)
 }
 
 template<std::floating_point T, std::size_t d>
+std::array<int, d> TensorBSpline<T, d>::degrees() const noexcept
+{
+    std::array<int, d> result{};
+
+    for (std::size_t direction = 0; direction < d; ++direction)
+        result[direction] = axes_[direction].degree();
+
+    return result;
+}
+
+template<std::floating_point T, std::size_t d>
 std::array<int, d> TensorBSpline<T, d>::first_active(int element) const
     noexcept
 {

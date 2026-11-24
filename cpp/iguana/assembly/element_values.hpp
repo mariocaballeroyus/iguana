@@ -16,6 +16,7 @@
 #include <Eigen/Core>
 
 #include "iguana/basis/tensor_bspline.hpp"
+#include "iguana/basis/thb_spline.hpp"
 #include "iguana/geometry/boundary_projection.hpp"
 #include "iguana/geometry/patch.hpp"
 
@@ -158,7 +159,8 @@ public:
      *      @p order is non-negative
      */
     void shift(const Eigen::MatrixX<Scalar>& shifts, int order)
-        requires std::same_as<Basis, TensorBSpline<Scalar, dim>>;
+        requires std::same_as<Basis, TensorBSpline<Scalar, dim>>
+                 || std::same_as<Basis, THBSpline<Scalar, dim>>;
 
     /**
      * @brief Adds to the values of every field a combination of their
@@ -193,7 +195,8 @@ public:
                const Eigen::MatrixX<Scalar>& weights,
                const std::vector<Eigen::MatrixX<Scalar>>& coupled, int order,
                ShiftCenter center)
-        requires std::same_as<Basis, TensorBSpline<Scalar, dim>>;
+        requires std::same_as<Basis, TensorBSpline<Scalar, dim>>
+                 || std::same_as<Basis, THBSpline<Scalar, dim>>;
 
     /**
      * @brief Replaces the values of every field by their derivatives across
@@ -215,7 +218,8 @@ public:
      * @pre reinit() was called, and @p direction lies in [0, dim)
      */
     void differentiate(std::size_t direction)
-        requires std::same_as<Basis, TensorBSpline<Scalar, dim>>;
+        requires std::same_as<Basis, TensorBSpline<Scalar, dim>>
+                 || std::same_as<Basis, THBSpline<Scalar, dim>>;
 
     /**
      * @brief Replaces the values of every field by a derivative of its own
@@ -238,7 +242,8 @@ public:
      *      points
      */
     void differentiate(const std::vector<std::array<int, dim>>& orders)
-        requires std::same_as<Basis, TensorBSpline<Scalar, dim>>;
+        requires std::same_as<Basis, TensorBSpline<Scalar, dim>>
+                 || std::same_as<Basis, THBSpline<Scalar, dim>>;
 
     /// @brief Number of fields, one per basis
     constexpr std::size_t num_fields() const noexcept
