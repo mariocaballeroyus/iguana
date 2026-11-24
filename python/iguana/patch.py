@@ -11,6 +11,7 @@ import numpy as np
 import numpy.typing as npt
 
 from iguana import cpp as _cpp
+from iguana.grid import HierarchicalGrid, _wrap
 
 
 class CurvePatch:
@@ -66,9 +67,10 @@ class CurvePatch:
 
 class PlanarPatch:
     """A spline map from a two-dimensional parameter box onto a planar
-    region."""
+    region, on tensor-product B-splines or, once refined, on truncated
+    hierarchical B-splines."""
 
-    _cpp_object: _cpp.PlanarPatch
+    _cpp_object: _cpp.PlanarPatch | _cpp.THBPlanarPatch
 
     def __init__(self, patch: _cpp.PlanarPatch) -> None:
         """Initialize the patch from a C++ patch.
@@ -78,27 +80,48 @@ class PlanarPatch:
         """
         self._cpp_object = patch
 
+        # The tensor-product patch every refinement starts from
+        self._coarse = patch
+
+    @property
+    def refined(self) -> bool:
+        """Whether the patch is refined, its basis hierarchical."""
+        return isinstance(self._cpp_object, _cpp.THBPlanarPatch)
+
+    @property
+    def grid(self) -> HierarchicalGrid:
+        """The grid of the elements of the patch, refined with it. Before
+        any refinement, it holds the elements of the patch on level 0, the
+        first direction running fastest."""
+        if self.refined:
+            return _wrap(self._cpp_object.basis.grid)
+
+        return HierarchicalGrid(self.degrees, self.knots)
+
     @property
     def degrees(self) -> tuple[int, ...]:
         """Polynomial degree of each parametric direction."""
-        basis = self._cpp_object.basis
+        basis = self._tensor_basis()
 
         return tuple(basis.axis(direction).degree
                      for direction in range(2))
 
     @property
     def knots(self) -> tuple[npt.NDArray[np.float64], ...]:
-        """Knot vector of each parametric direction."""
-        basis = self._cpp_object.basis
+        """Knot vector of each parametric direction, those of the coarse
+        level of a refined patch."""
+        basis = self._tensor_basis()
 
         return tuple(np.asarray(basis.axis(direction).knots, float)
                      for direction in range(2))
 
     @property
     def control_points(self) -> npt.NDArray[np.float64]:
-        """Control points, of shape `(num_control_points, 2)`.
+        """Control points, of shape `(num_control_points, 2)`, one per
+        basis function.
 
-        They are numbered with the first direction running fastest.
+        They are numbered with the first direction running fastest, and on
+        a refined patch level by level.
         """
         return self._cpp_object.coefficients
 
@@ -115,7 +138,14 @@ class PlanarPatch:
 
         The curves pinned in the first direction come first, then those
         pinned in the second, each group in increasing order of knot line.
+
+        Raises:
+            TypeError: If the patch is refined, whose knot lines differ
+                from level to level.
         """
+        if self.refined:
+            raise TypeError('a refined patch has no isocurves')
+
         return [CurvePatch(curve) for curve in self._cpp_object.isocurves()]
 
     def invert_points(self,
@@ -137,9 +167,60 @@ class PlanarPatch:
         """
         return self._cpp_object.invert_points(np.asarray(points, float))
 
+    def refine(self, elements: npt.ArrayLike,
+               boxes: bool = False) -> PlanarPatch:
+        """Refine the patch at elements of its grid.
+
+        The refined patch is the same map, written on truncated hierarchical
+        B-splines: each marked element is replaced by its children, and
+        coarser elements are then refined until the functions non-zero on
+        any element come from at most two consecutive levels. Refining by
+        boxes expands each marked element to the aligned box of degree + 2
+        elements of its level along each direction that holds it, the last
+        box along a direction cut short where its count is not a multiple,
+        and grades by boxes too. Either way the divergence of a velocity of
+        the divergence-conforming space of the refined patch lies in its
+        pressure space, which keeps the velocity divergence-free; the boxes
+        also keep that divergence onto the pressures, so that no pressure
+        is left undetermined. This patch is left unchanged.
+
+        Args:
+            elements: Indices of the active elements of the grid to
+                refine, in any order and possibly repeated.
+            boxes: Whether to refine the boxes holding the elements rather
+                than the elements alone.
+
+        Returns:
+            The refined patch.
+
+        Raises:
+            ValueError: If an index lies outside [0, grid.num_elements),
+                or if the knots of the patch are not open.
+        """
+        grid = self.grid._refine_admissible(elements, boxes)
+        refined = PlanarPatch.__new__(PlanarPatch)
+        refined._cpp_object = _cpp.refine(self._coarse, grid._cpp_object)
+        refined._coarse = self._coarse
+
+        return refined
+
+    def _tensor_basis(self) -> _cpp.BivariateBSpline:
+        """The tensor-product basis of the patch, the coarse level of a
+        refined one."""
+        basis = self._cpp_object.basis
+
+        return basis.level(0) if self.refined else basis
+
+    def _cpp_class(self, name: str) -> type:
+        """The compiled class of a name on the patch, that of the
+        hierarchical basis once refined."""
+        return getattr(_cpp, ('THB' if self.refined else '') + name)
+
     def __repr__(self) -> str:
+        refined = ', refined=True' if self.refined else ''
+
         return (f'PlanarPatch(degrees={self.degrees}, '
-                f'num_control_points={len(self.control_points)})')
+                f'num_control_points={len(self.control_points)}{refined})')
 
 
 class SurfacePatch:
@@ -179,6 +260,12 @@ class SurfacePatch:
         They are numbered with the first direction running fastest.
         """
         return self._cpp_object.coefficients
+
+    @property
+    def grid(self) -> HierarchicalGrid:
+        """The elements of the patch as a grid that is not refined, the
+        first direction running fastest."""
+        return HierarchicalGrid(self.degrees, self.knots)
 
     @property
     def weights(self) -> npt.NDArray[np.float64]:
@@ -243,6 +330,12 @@ class VolumePatch:
         long as the patch does.
         """
         return self._cpp_object.coefficients
+
+    @property
+    def grid(self) -> HierarchicalGrid:
+        """The elements of the patch as a grid that is not refined, the
+        first direction running fastest."""
+        return HierarchicalGrid(self.degrees, self.knots)
 
     @property
     def weights(self) -> npt.NDArray[np.float64]:
