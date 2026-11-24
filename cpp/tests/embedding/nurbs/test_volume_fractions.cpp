@@ -151,6 +151,87 @@ TEST_CASE("Volume fractions measure a disc and the obstacle it makes",
     }
 }
 
+TEST_CASE("Volume fractions on a hierarchical grid hold the area of each "
+          "coarse element", "[volume_fractions]")
+{
+    const iguana::Patch<Basis, 2> patch = rectangle();
+    const iguana::TensorGrid<double, 2>& coarse = patch.basis().grid();
+    const Eigen::VectorXd tensor = iguana::volume_fractions(patch,
+                                                            circle(false));
+
+    // Without refinement, the fractions are those of the tensor product
+    const iguana::HierarchicalGrid<double, 2> unrefined(coarse);
+    const Eigen::VectorXd same = iguana::volume_fractions(
+        iguana::refine(patch, unrefined), circle(false));
+
+    REQUIRE((same - tensor).cwiseAbs().maxCoeff() < 1e-14);
+
+    // The elements the circle crosses refined twice, so that the grid has
+    // three levels
+    const iguana::EmbeddedBoundary<double, 2> crossing(patch, circle(false));
+    std::vector<int> marked;
+
+    for (int element = 0; element < count * count; ++element)
+        if (!crossing.pieces_on_element(element).empty())
+            marked.push_back(element);
+
+    const iguana::HierarchicalGrid<double, 2> once =
+        iguana::refine(unrefined, marked);
+    const iguana::EmbeddedBoundary<double, 2> recrossing(
+        iguana::refine(patch, once), circle(false));
+    marked.clear();
+
+    for (int element = once.offset(1); element < once.num_elements();
+         ++element)
+        if (!recrossing.pieces_on_element(element).empty())
+            marked.push_back(element);
+
+    const iguana::HierarchicalGrid<double, 2> grid =
+        iguana::refine(once, marked);
+    const iguana::Patch<iguana::THBSpline<double, 2>, 2> refined =
+        iguana::refine(patch, grid);
+    const Eigen::VectorXd fractions =
+        iguana::volume_fractions(refined, circle(false));
+
+    REQUIRE(grid.num_levels() == 3);
+    REQUIRE(fractions.size() == grid.num_elements());
+
+    // The area inside each coarse element is that of its tensor fraction,
+    // however its parts are refined, and they add up to the disc
+    Eigen::VectorXd inside = Eigen::VectorXd::Zero(count * count);
+
+    for (int element = 0; element < grid.num_elements(); ++element) {
+        const std::array<double, 2> start = grid.element_start(element);
+        const std::array<double, 2> end = grid.element_end(element);
+        const std::array<double, 2> middle{(start[0] + end[0]) / 2.,
+                                           (start[1] + end[1]) / 2.};
+        const double area =
+            width * height * (end[0] - start[0]) * (end[1] - start[1]);
+
+        inside(iguana::element_holding(coarse, middle)) +=
+            fractions(element) * area;
+    }
+
+    REQUIRE((inside / cell - tensor).cwiseAbs().maxCoeff() < 1e-12);
+    REQUIRE_THAT(inside.sum(), WithinAbs(std::numbers::pi * .71 * .71,
+                                         1e-12));
+
+    // The elements the circle crosses are the cut ones, and the others are
+    // exactly inside or outside
+    const iguana::EmbeddedBoundary<double, 2> embedded(refined,
+                                                        circle(false));
+    const std::vector<CellType> types = iguana::cell_types(fractions);
+
+    for (int element = 0; element < grid.num_elements(); ++element) {
+        INFO("element " << element);
+
+        const bool crossed = !embedded.pieces_on_element(element).empty();
+
+        REQUIRE((types[static_cast<std::size_t>(element)] == CellType::cut)
+                == crossed);
+    }
+}
+
 TEST_CASE("Volume fractions of a polygon with sides on knot lines",
           "[volume_fractions]")
 {

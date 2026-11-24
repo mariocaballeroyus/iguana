@@ -108,7 +108,8 @@ TEST_CASE("Refined elements tile the parametric domain", "[grid]")
     REQUIRE_THAT(area, WithinAbs(4. * 2., 1e-12));
 }
 
-TEST_CASE("Active elements are found by index and by point", "[grid]")
+TEST_CASE("Active elements are found by index, by point and by the cells "
+          "they cover", "[grid]")
 {
     const HierarchicalGrid<double, 2> coarse(TensorGrid<double, 2>(
         {KnotVector<double>(2, {0., 0., 0., 1., 1., 3., 4., 4., 4.}),
@@ -144,6 +145,26 @@ TEST_CASE("Active elements are found by index and by point", "[grid]")
 
         REQUIRE(element_holding(grid, middle) == element.index());
         REQUIRE(element_holding(grid, element.start()) == element.index());
+
+        // An active element covers itself on its level
+        REQUIRE(element_covering(grid, element.level(),
+                                 grid.level_index(element.index()))
+                == element.index());
+    }
+
+    // Each cell of the finest level is covered by the active element that
+    // holds its midpoint
+    const int finest = grid.num_levels() - 1;
+    const TensorGrid<double, 2>& cells = grid.level(finest);
+
+    for (int cell = 0; cell < cells.num_elements(); ++cell) {
+        const std::array<double, 2> start = cells.element_start(cell);
+        const std::array<double, 2> end = cells.element_end(cell);
+        const std::array<double, 2> middle{(start[0] + end[0]) / 2,
+                                           (start[1] + end[1]) / 2};
+
+        REQUIRE(element_covering(grid, finest, cell)
+                == element_holding(grid, middle));
     }
 
     // The domain of a level holds its active elements and the parents of
