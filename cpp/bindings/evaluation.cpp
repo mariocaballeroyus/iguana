@@ -16,13 +16,21 @@ namespace iguana::bindings
 void evaluation(py::module_& module)
 {
     using Basis2d = TensorBSpline<double, 2>;
+    using THBBasis2d = THBSpline<double, 2>;
 
     module.def("trace_at_points", &trace_at_points<Basis2d>, py::arg("space"),
                py::arg("patch"), py::arg("trace"), py::arg("coefficients"),
                py::arg("points"));
+    module.def("trace_at_points", &trace_at_points<THBBasis2d>,
+               py::arg("space"), py::arg("patch"), py::arg("trace"),
+               py::arg("coefficients"), py::arg("points"));
     module.def("flux_at_points", &flux_at_points<Basis2d>, py::arg("space"),
                py::arg("patch"), py::arg("flux"), py::arg("coefficients"),
                py::arg("points"), py::arg("normals"));
+    module.def("flux_at_points", &flux_at_points<THBBasis2d>,
+               py::arg("space"), py::arg("patch"), py::arg("flux"),
+               py::arg("coefficients"), py::arg("points"),
+               py::arg("normals"));
 }
 
 } // namespace iguana::bindings

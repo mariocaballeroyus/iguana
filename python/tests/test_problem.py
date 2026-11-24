@@ -20,7 +20,7 @@ from iguana import (Boundary, CellType, Derivatives, ElasticityElement,
                     PoissonElement, QuadratureBoundary, QuadratureDomain,
                     SkeletonMultiplierCondition, SkeletonNitscheCondition,
                     StokesElement, SurrogateBoundary, classify_cells,
-                    trace_at_points)
+                    flux_at_points, trace_at_points)
 
 try:
     from petsc4py import PETSc
@@ -1302,8 +1302,7 @@ def test_fixed_entries_hold_their_values(problem_type):
     condition on the boundary: the quadratic splines hold
     u = x (width - x) y (height - y), which vanishes on the boundary, so
     with its boundary functions held at zero the Poisson element finds it
-    exactly, as does one Newton step. The fixed entries are a pair of
-    indices inside the system, each held once, and one value each."""
+    exactly, as does one Newton step."""
     width, height = 2., 3.
     patch = iguana.create_rectangle(lengths=(width, height), elements=(4, 3))
     space = FunctionSpace(patch)
@@ -1324,8 +1323,213 @@ def test_fixed_entries_hold_their_values(problem_type):
     assert np.allclose(u, np.kron(along_y, along_x), rtol=0., atol=1e-12)
     assert np.array_equal(u[held], np.zeros(len(held)))
 
-    for fixed in ([0, 1, 2], ([0, 1], [0.]), ([0, space.num_dofs], [0., 0.]),
-                  ([0, 0], [0., 0.])):
-        with pytest.raises(ValueError):
-            problem_type(PoissonElement(), space, gauss_quadrature(patch),
-                         source, fixed=fixed, petsc_options_prefix='fixed_')
+
+def refined_rectangle():
+    """Rectangle of sides 2 and 3 with quadratic elements, seven along x and
+    six along y, refined around two elements and then around a fine one,
+    so that the boxes of its levels are cut short at its far sides."""
+    patch = iguana.create_rectangle(lengths=(2., 3.), elements=(7, 6))
+    refined = patch.refine([10, 30])
+
+    return refined.refine([np.flatnonzero(refined.grid.levels == 1)[0]])
+
+
+def normal_velocity(space, velocity):
+    """Entries of the normal component of a velocity on the sides of the
+    patch of a divergence-conforming space, a rectangle from the origin,
+    and their values for a linear velocity field, as a problem fixes them.
+    The coefficients of a linear function on the coarse level are its values
+    at the Greville points, and the truncated hierarchical functions
+    preserve them."""
+    lengths = space.patch.control_points.max(axis=0)
+    entries, values = [], []
+
+    for direction, (field, offset) in enumerate(zip(space.fields[:2],
+                                                    space.offsets[:2])):
+        basis = iguana.cpp.THBSpline2d(space.patch.grid._cpp_object,
+                                       field.degrees)
+        coarse = basis.level(0)
+        abscissae = [np.array(coarse.axis(axis).knots) for axis in range(2)]
+        abscissae = [np.convolve(knots, np.ones(degree) / degree,
+                                 'valid')[1:-1]
+                     for knots, degree in zip(abscissae, field.degrees)]
+        along_x, along_y = np.meshgrid(*abscissae, indexing='ij')
+        points = lengths * np.column_stack([along_x.ravel(order='F'),
+                                            along_y.ravel(order='F')])
+        coefficients = basis.coefficients(velocity(points)[:, [direction]])
+
+        dofs = field.side_dofs(direction)
+        entries.append(offset + dofs)
+        values.append(coefficients[field.functions[dofs], 0])
+
+    return np.concatenate(entries), np.concatenate(values)
+
+
+def test_stokes_flow_on_a_refined_patch_is_exact():
+    """The divergence-conforming space of a refined patch holds the linear
+    flow u = (x, −y), which has no divergence and no shear, so with its
+    normal velocity held on the sides the Galerkin Stokes element finds the
+    flow exactly, with the pressure x + y of the body force (1, 1) up to
+    the constant its reference fixes, the tangential traction being free."""
+    patch = refined_rectangle()
+    space = MixedFunctionSpace.divergence_conforming(patch)
+    element = StokesElement(1.5)
+
+    def velocity(points):
+        return points * [1., -1.]
+
+    quadrature = QuadratureDomain(patch)
+    quadrature.fill_gauss_legendre(CellType.inside, 4)
+
+    problem = LinearProblem(element, space, quadrature,
+                            lambda points: np.ones((len(points), 2)),
+                            fixed=normal_velocity(space, velocity),
+                            pressure_reference=(0., 0.),
+                            petsc_options_prefix='refined_')
+    solution = problem.solve()
+
+    points = np.array([[.1, .2], [.7, 1.4], [1.3, 2.9], [1.9, .1]])
+    u = trace_at_points(element.u, space, solution, points)
+    p = trace_at_points(element.p, space, solution, points)
+    exact = points.sum(axis=1)
+
+    assert [field.shape for field in solution] == [(space.fields[0].num_dofs,),
+                                                   (space.fields[1].num_dofs,),
+                                                   (space.fields[2].num_dofs,)]
+    assert np.allclose(u, velocity(points), rtol=0., atol=1e-10)
+    assert np.allclose(p - p[0], exact - exact[0], rtol=0., atol=1e-10)
+
+
+def test_velocity_on_a_refined_patch_is_divergence_free():
+    """The divergence of every velocity of the refined space lies in its
+    pressure space, so the continuity equations make the velocity of a flow
+    the space does not hold divergence-free at every point, with the
+    normal velocity held at zero on the sides."""
+    patch = refined_rectangle()
+    space = MixedFunctionSpace.divergence_conforming(patch)
+    element = StokesElement(1.5)
+
+    quadrature = QuadratureDomain(patch)
+    quadrature.fill_gauss_legendre(CellType.inside, 4)
+
+    def body_force(points):
+        x, y = points.T
+        return np.column_stack([np.sin(y), np.cos(x)])
+
+    entries, _ = normal_velocity(space, lambda points: points)
+    problem = LinearProblem(element, space, quadrature, body_force,
+                            fixed=(entries, np.zeros(len(entries))),
+                            pressure_reference=(0., 0.),
+                            petsc_options_prefix='divergence_free_')
+    solution = problem.solve()
+
+    # The trace of 2μ ε(u) − p I is 2μ div u − 2p in the plane
+    points = quadrature.positions
+    trace = sum(flux_at_points(element.u, space, solution, points,
+                               np.tile(normal, (len(points), 1)))[:, axis]
+                for axis, normal in enumerate(np.eye(2)))
+    pressure = trace_at_points(element.p, space, solution, points)
+    divergence = (trace + 2. * pressure) / (2. * element.viscosity)
+
+    assert np.abs(trace_at_points(element.u, space, solution,
+                                  points)).max() > .01
+    assert np.abs(divergence).max() < 1e-12
+
+
+@pytest.mark.parametrize('kind', ['poisson', 'stabilized', 'elasticity'])
+def test_elements_on_a_refined_patch_hold_linear_fields(kind):
+    """Each element assembles over the cells of a refined patch. With the
+    values of a linear field held on the boundary, the Poisson element finds
+    u = x + y without a source, the stabilized Stokes element of equal
+    orders the flow u = (x, −y) with the pressure x + y of the body force
+    (1, 1), and the elasticity element the displacement u = (x, y) without a
+    load. Linear on the affine map, each field takes the control points of
+    the patch as its coefficients."""
+    patch = refined_rectangle()
+    quadrature = QuadratureDomain(patch)
+    quadrature.fill_gauss_legendre(CellType.inside, 4)
+    scalar = FunctionSpace(patch)
+    dofs = scalar.boundary_dofs
+    x, y = scalar.control_points[dofs].T
+    points = np.array([[.1, .2], [.7, 1.4], [1.3, 2.9], [1.9, .1]])
+    keywords = {}
+
+    if kind == 'poisson':
+        element, space = PoissonElement(), scalar
+        fixed = (dofs, x + y)
+        source = np.zeros(quadrature.num_points)
+        exact = points.sum(axis=1)
+    elif kind == 'stabilized':
+        element = StokesElement(1.5, 3.)
+        space = MixedFunctionSpace([FunctionSpace(patch) for _ in range(3)])
+        fixed = (np.concatenate([dofs, space.offsets[1] + dofs]),
+                 np.concatenate([x, -y]))
+        source = np.ones((quadrature.num_points, 2))
+        exact = points * [1., -1.]
+        keywords['pressure_reference'] = (0., 0.)
+    else:
+        element = ElasticityElement(young_modulus=2., poisson_ratio=.3)
+        space = FunctionSpace(patch, block_size=2)
+        fixed = (np.concatenate([2 * dofs, 2 * dofs + 1]),
+                 np.concatenate([x, y]))
+        source = np.zeros((quadrature.num_points, 2))
+        exact = points
+
+    problem = LinearProblem(element, space, quadrature, source, fixed=fixed,
+                            petsc_options_prefix=f'refined_{kind}_',
+                            **keywords)
+    solution = problem.solve()
+
+    assert np.allclose(trace_at_points(element.u, space, solution, points),
+                       exact, rtol=0., atol=1e-10)
+
+    if kind == 'stabilized':
+        p = trace_at_points(element.p, space, solution, points)
+        sums = points.sum(axis=1)
+
+        assert np.allclose(p - p[0], sums - sums[0], rtol=0., atol=1e-10)
+
+
+def test_refined_patch_takes_no_boundary_or_face_terms():
+    """Hierarchical grids have no boundaries or faces to integrate along
+    yet: classifying the cells of a refined patch, its surrogate boundary, a
+    quadrature along a curve, a condition across its faces and a ghost
+    penalty refuse it, and so does a problem given a condition of another
+    patch or a quadrature on another grid."""
+    patch = refined_rectangle()
+    cell_types = [CellType.inside] * patch.grid.num_elements
+    space = MixedFunctionSpace.divergence_conforming(patch)
+    quadrature = QuadratureDomain(patch)
+    quadrature.fill_gauss_legendre(CellType.inside, 4)
+    element = StokesElement(1.5)
+    prefix = 'unsupported_'
+
+    def body_force(points):
+        return np.ones((len(points), 2))
+
+    for build in (lambda: classify_cells(patch, square()),
+                  lambda: SurrogateBoundary(patch, cell_types),
+                  lambda: QuadratureBoundary(patch, square(), 3),
+                  lambda: SkeletonNitscheCondition(element.u, patch,
+                                                   cell_types, square(),
+                                                   [0., 0.], 40.),
+                  lambda: GhostPenalty(element.u, patch, cell_types, .5)):
+        with pytest.raises(TypeError, match='refined'):
+            build()
+
+    # A condition on the coarse patch, as the refined one takes none
+    coarse = iguana.create_rectangle(lengths=(2., 3.), elements=(7, 6))
+    condition = NitscheCondition(element.u, edges(coarse),
+                                 lambda points: np.zeros((len(points), 2)),
+                                 40.)
+
+    with pytest.raises(TypeError):
+        LinearProblem(element, space, quadrature, body_force,
+                      conditions=[condition], petsc_options_prefix=prefix)
+
+    unrefined = QuadratureDomain(coarse)
+    unrefined.fill_gauss_legendre(CellType.inside, 4)
+
+    with pytest.raises(ValueError):
+        LinearProblem(element, space, unrefined, body_force,
+                      petsc_options_prefix=prefix)

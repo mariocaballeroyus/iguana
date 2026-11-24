@@ -40,15 +40,17 @@ class QuadratureDomain:
             cell_types: The type of each cell, in the numbering of the
                 grid. Without them, every cell lies inside.
             grid: A hierarchical grid on the knots of the patch, whose
-                active elements are the cells. Without it, the cells are
-                the elements of the patch, with the first direction running
-                fastest.
+                active elements are the cells. Without it, the grid of the
+                patch: its elements, with the first direction running
+                fastest, or those of a refined patch, whose grid it must
+                be.
 
         Raises:
             TypeError: If the patch is not a planar, surface or volume
                 patch, or if the grid is not a hierarchical grid.
             ValueError: If the grid does not lie on the knots of the
-                patch, or if there is not one cell type per cell.
+                patch, or is not that of a refined patch, or if there is
+                not one cell type per cell.
         """
         if isinstance(patch, VolumePatch):
             self._cpp_object = _cpp.QuadratureDomain3d()
@@ -63,13 +65,15 @@ class QuadratureDomain:
                             'patch')
 
         if grid is None:
-            # The elements of the patch, as a grid that is not refined
-            grid = HierarchicalGrid(patch.degrees, patch.knots)
+            grid = patch.grid
         elif not isinstance(grid, HierarchicalGrid):
             raise TypeError('the grid must be a hierarchical grid')
         elif grid._dimension != self._dimension:
             raise ValueError('the grid must lie on the knots of the '
                              'patch')
+        elif (isinstance(patch, PlanarPatch) and patch.refined
+              and grid != patch.grid):
+            raise ValueError('the grid must be that of the refined patch')
         else:
             # Positions of the empty quadrature only check that the grid
             # lies on the knots of the patch
@@ -253,10 +257,10 @@ class QuadratureBoundary:
                 the patch.
 
         Raises:
-            TypeError: If the patch is not a planar patch, if the boundary
-                is neither made of curves in the plane nor a surrogate
-                boundary, or if the shift is not made of curves in the
-                plane.
+            TypeError: If the patch is not a planar patch or is refined,
+                if the boundary is neither made of curves in the plane nor
+                a surrogate boundary, or if the shift is not made of curves
+                in the plane.
             ValueError: If a surrogate boundary lies on another patch, if
                 the map of the patch is not affine for a boundary of
                 curves or a shift, if the knot vector of a face is not
@@ -266,6 +270,9 @@ class QuadratureBoundary:
         """
         if not isinstance(patch, PlanarPatch):
             raise TypeError('the patch must be a planar patch')
+
+        if patch.refined:
+            raise TypeError('the patch must not be refined')
 
         if isinstance(boundary, SurrogateBoundary):
             if boundary.patch is not patch:

@@ -31,6 +31,7 @@ using QuadratureDomain3d = QuadratureDomain<double, 3>;
 using QuadratureBoundary2d = QuadratureBoundary<double, 2>;
 using QuadratureSkeleton2d = QuadratureSkeleton<double, 2>;
 using PlanarPatch = Patch<TensorBSpline<double, 2>, 2>;
+using THBPlanarPatch = Patch<THBSpline<double, 2>, 2>;
 
 /// @brief Fills the cells of one type with a Gauss-Legendre rule, which
 ///        Python never handles itself
@@ -207,6 +208,108 @@ Eigen::VectorXd physical_weights(
             patch.basis().active_on_element(element, actives);
             patch.tangent_on_element(actives, gradients, tangents);
             Patch<Basis, n>::measure_on_element(tangents, measures);
+
+            result.segment(first, count).array() *= measures.array();
+        });
+
+    return result;
+}
+
+/**
+ * @brief Walks the elements a quadrature holds on a hierarchical patch,
+ *        giving each its index and the range of its points
+ *
+ * The elements of the grid are those of the patch, whose basis evaluates
+ * on each of them directly
+ *
+ * @throws std::invalid_argument If the grid does not have the elements of
+ *         the patch, or if an element of the quadrature lies outside it
+ */
+template<typename Visit>
+void walk_active_elements(const QuadratureDomain2d& quadrature,
+                          const THBPlanarPatch& patch,
+                          const HierarchicalGrid<double, 2>& grid,
+                          Visit&& visit)
+{
+    if (!same_elements(grid, patch.basis().grid()))
+        throw std::invalid_argument("QuadratureDomain: "
+                                    "the grid must have the elements of the "
+                                    "patch");
+
+    const Eigen::VectorXi& offsets = quadrature.offsets();
+
+    for (int position = 0; position < quadrature.num_elements(); ++position) {
+        const int element = quadrature.elements()(position);
+
+        if (element < 0 || element >= grid.num_elements())
+            throw std::invalid_argument("QuadratureDomain: "
+                                        "the elements must lie in the grid");
+
+        const int first = offsets(position);
+        const int count = offsets(position + 1) - first;
+
+        visit(element, first, count);
+    }
+}
+
+/**
+ * @brief Positions of the points in the plane of a hierarchical patch
+ *
+ * @throws std::invalid_argument As walk_active_elements() does
+ */
+PointMatrix<double, 2> thb_positions(const QuadratureDomain2d& quadrature,
+                                     const THBPlanarPatch& patch,
+                                     const HierarchicalGrid<double, 2>& grid)
+{
+    PointMatrix<double, 2> result(quadrature.num_points(), 2);
+
+    // Buffers reused over the elements
+    Eigen::MatrixXd parameters;
+    Eigen::MatrixXd values;
+    Eigen::VectorXi actives;
+    PointMatrix<double, 2> element_positions;
+
+    walk_active_elements(
+        quadrature, patch, grid, [&](int element, int first, int count) {
+            parameters = quadrature.points().middleRows(first, count);
+            patch.basis().eval_on_element(element, parameters, values);
+            patch.basis().active_on_element(element, actives);
+            patch.position_on_element(actives, values, element_positions);
+
+            result.middleRows(first, count) = element_positions;
+        });
+
+    return result;
+}
+
+/**
+ * @brief Weights of the points in the plane of a hierarchical patch, each
+ *        parametric weight times the measure of the patch at its point
+ *
+ * @throws std::invalid_argument As walk_active_elements() does
+ */
+Eigen::VectorXd thb_physical_weights(const QuadratureDomain2d& quadrature,
+                                     const THBPlanarPatch& patch,
+                                     const HierarchicalGrid<double, 2>& grid)
+{
+    Eigen::VectorXd result = quadrature.weights();
+
+    // Buffers reused over the elements
+    Eigen::MatrixXd parameters;
+    Eigen::MatrixXd values;
+    Eigen::VectorXi actives;
+    Eigen::VectorXd measures;
+    std::array<Eigen::MatrixXd, 2> gradients;
+    std::array<PointMatrix<double, 2>, 2> tangents;
+
+    walk_active_elements(
+        quadrature, patch, grid, [&](int element, int first, int count) {
+            parameters = quadrature.points().middleRows(first, count);
+            patch.basis().grad_on_element(element, parameters, values,
+                                          gradients);
+            patch.basis().active_on_element(element, actives);
+            patch.tangent_on_element(actives, gradients, tangents);
+            THBPlanarPatch::measure_on_element(tangents, measures);
 
             result.segment(first, count).array() *= measures.array();
         });
@@ -417,12 +520,15 @@ void quadrature(py::module_& module)
              py::arg("patch"), py::arg("grid"))
         .def("positions", &positions<TensorNURBS<double, 2>, 3>,
              py::arg("patch"), py::arg("grid"))
+        .def("positions", &thb_positions, py::arg("patch"), py::arg("grid"))
         .def("physical_weights", &physical_weights<TensorBSpline<double, 2>, 2>,
              py::arg("patch"), py::arg("grid"))
         .def("physical_weights", &physical_weights<TensorBSpline<double, 2>, 3>,
              py::arg("patch"), py::arg("grid"))
         .def("physical_weights", &physical_weights<TensorNURBS<double, 2>, 3>,
-             py::arg("patch"), py::arg("grid"));
+             py::arg("patch"), py::arg("grid"))
+        .def("physical_weights", &thb_physical_weights, py::arg("patch"),
+             py::arg("grid"));
 
     py::class_<QuadratureDomain3d>(module, "QuadratureDomain3d")
         .def(py::init<>())

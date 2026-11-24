@@ -33,6 +33,7 @@ using VolumePatch = Patch<TensorBSpline<double, 3>, 3>;
 using NURBSPlanarCurvePatch = Patch<TensorNURBS<double, 1>, 2>;
 using NURBSCurvePatch = Patch<TensorNURBS<double, 1>, 3>;
 using NURBSSurfacePatch = Patch<TensorNURBS<double, 2>, 3>;
+using THBPlanarPatch = Patch<THBSpline<double, 2>, 2>;
 
 /**
  * @brief Axes of a basis, leaving out the one of a given direction
@@ -239,6 +240,14 @@ PointMatrix<double, n> invert_points(const Patch<Basis, n>& patch,
     return parameters;
 }
 
+/// @brief Planar patch refined on a hierarchical grid, the same map on
+///        truncated hierarchical functions
+THBPlanarPatch refined(const PlanarPatch& patch,
+                       const HierarchicalGrid<double, 2>& grid)
+{
+    return refine(patch, grid);
+}
+
 } // namespace
 
 void patch(py::module_& module)
@@ -302,6 +311,15 @@ void patch(py::module_& module)
         .def_property_readonly("coefficients",
                                &NURBSSurfacePatch::coefficients)
         .def("isocurves", &isopatches<TensorNURBS<double, 2>, 3>);
+
+    py::class_<THBPlanarPatch>(module, "THBPlanarPatch")
+        .def_property_readonly("basis", &THBPlanarPatch::basis)
+        .def_property_readonly("coefficients",
+                               &THBPlanarPatch::coefficients)
+        .def("invert_points", &invert_points<THBSpline<double, 2>, 2>,
+             py::arg("points"));
+
+    module.def("refine", &refined, py::arg("patch"), py::arg("grid"));
 }
 
 } // namespace iguana::bindings

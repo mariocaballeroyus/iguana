@@ -44,7 +44,7 @@ def trace_at_points(
     Args:
         trace: The trace to evaluate, such as `fluid.u` or `fluid.p`.
         space: The space of the field, on a planar patch whose map is
-            affine.
+            affine, refined or not.
         coefficients: The coefficients of the field, as a problem returns
             them: of shape `(num_dofs,)`, or `(num_dofs, block_size)` for a
             space of several components, or those of each field of a mixed
@@ -70,7 +70,7 @@ def trace_at_points(
 
     return _components(trace, [
         _cpp.trace_at_points(compiled_space, patch, compiled, entries, points)
-        for compiled in trace._cpp_traces()])
+        for compiled in trace._cpp_traces(space.patch)])
 
 
 def flux_at_points(
@@ -133,7 +133,7 @@ def flux_at_points(
     return _components(trace, [
         _cpp.flux_at_points(compiled_space, patch, compiled, entries, points,
                             normals)
-        for compiled in trace._cpp_fluxes()])
+        for compiled in trace._cpp_fluxes(space.patch)])
 
 
 def _arguments(
@@ -142,8 +142,9 @@ def _arguments(
     space: FunctionSpace | MixedFunctionSpace,
     coefficients: npt.ArrayLike | Sequence[npt.ArrayLike],
     points: npt.ArrayLike,
-) -> tuple[_cpp.MixedFunctionSpace2d, _cpp.PlanarPatch,
-           npt.NDArray[np.float64], npt.NDArray[np.float64]]:
+) -> tuple[_cpp.MixedFunctionSpace2d | _cpp.THBMixedFunctionSpace2d,
+           _cpp.PlanarPatch | _cpp.THBPlanarPatch, npt.NDArray[np.float64],
+           npt.NDArray[np.float64]]:
     """Compiled space and patch, entries of the coefficients and points of an
     evaluation, checked as the functions of this module document."""
     element = _ELEMENTS.get(type(trace))
@@ -175,9 +176,10 @@ def _arguments(
                          '(num_points, 2)')
 
     # A plain space is a mixed one of one field
-    compiled_space = (space._cpp_object
-                      if isinstance(space, MixedFunctionSpace)
-                      else _cpp.MixedFunctionSpace2d([space._cpp_object]))
+    compiled_space = (
+        space._cpp_object if isinstance(space, MixedFunctionSpace)
+        else space.patch._cpp_class('MixedFunctionSpace2d')(
+            [space._cpp_object]))
 
     return compiled_space, space.patch._cpp_object, entries, points
 

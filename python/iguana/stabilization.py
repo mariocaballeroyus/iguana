@@ -46,6 +46,9 @@ def _ghost_faces(
     if not isinstance(patch, PlanarPatch):
         raise TypeError('the patch must be a planar patch')
 
+    if patch.refined:
+        raise TypeError('the patch must not be refined')
+
     cell_types = list(cell_types)
     num_elements = HierarchicalGrid(patch.degrees, patch.knots).num_elements
 
@@ -126,7 +129,8 @@ class GhostPenalty:
 
         Raises:
             TypeError: If the trace is not one of a Poisson or a Stokes
-                element, or if the patch is not a planar patch.
+                element, or if the patch is not a planar patch or is
+                refined.
             ValueError: If there is not one cell type per element, if the
                 penalty is not positive, or if the faces are not all, cut,
                 outside or global.
@@ -177,7 +181,7 @@ class GhostPenalty:
         problem, assembled with its faces coupled."""
         factor, scaling = self._trace._ghost_scaling()
 
-        for trace in self._trace._cpp_traces():
+        for trace in self._trace._cpp_traces(self._patch):
             penalty = _cpp.SkeletonGhostPenalty2d(trace,
                                                   factor * self._penalty,
                                                   scaling)
@@ -234,7 +238,8 @@ class VolumeGhostPenalty:
 
         Raises:
             TypeError: If the trace is not one of a Poisson or a Stokes
-                element, or if the patch is not a planar patch.
+                element, or if the patch is not a planar patch or is
+                refined.
             ValueError: If there is not one cell type per element, if the
                 penalty is not positive, or if the faces are not all, cut,
                 outside or global.
@@ -289,7 +294,7 @@ class VolumeGhostPenalty:
         problem, assembled with its faces coupled."""
         factor, scaling = self._trace._ghost_scaling()
 
-        for trace in self._trace._cpp_traces():
+        for trace in self._trace._cpp_traces(self._patch):
             penalty = _cpp.VolumeGhostPenalty2d(trace,
                                                 factor * self._penalty,
                                                 scaling)
@@ -357,7 +362,7 @@ class MixedGhostPenalty:
 
         Raises:
             TypeError: If the element is not a Stokes element, or if the
-                patch is not a planar patch.
+                patch is not a planar patch or is refined.
             ValueError: If there is not one cell type per element, if the
                 penalty is not positive, or if the faces are not all, cut,
                 outside or global.

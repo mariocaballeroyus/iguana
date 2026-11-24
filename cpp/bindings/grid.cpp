@@ -10,6 +10,7 @@
 
 #include <Eigen/Core>
 #include <pybind11/eigen.h>
+#include <pybind11/operators.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
@@ -56,6 +57,16 @@ HierarchicalGrid<double, d> refined(
     return refine(grid, elements);
 }
 
+/// @brief Grid refined at the marked elements, or by the boxes holding
+///        them, graded to admissibility
+template<std::size_t d>
+HierarchicalGrid<double, d> refined_admissible(
+    const HierarchicalGrid<double, d>& grid,
+    const std::vector<int>& elements, bool boxes)
+{
+    return refine_admissible(grid, elements, boxes);
+}
+
 /// @brief Level of each active element
 template<std::size_t d>
 Eigen::VectorXi levels(const HierarchicalGrid<double, d>& grid)
@@ -92,6 +103,10 @@ void grid(py::module_& module)
     py::class_<HierarchicalGrid2d>(module, "HierarchicalGrid2d")
         .def(py::init(&create<2>), py::arg("degrees"), py::arg("knots"))
         .def("refine", &refined<2>, py::arg("elements"))
+        .def("refine_admissible", &refined_admissible<2>,
+             py::arg("elements"), py::arg("boxes"))
+        .def("offset", &HierarchicalGrid2d::offset, py::arg("level"))
+        .def(py::self == py::self)
         .def_property_readonly("num_levels",
                                &HierarchicalGrid2d::num_levels)
         .def_property_readonly("num_elements",
@@ -102,6 +117,10 @@ void grid(py::module_& module)
     py::class_<HierarchicalGrid3d>(module, "HierarchicalGrid3d")
         .def(py::init(&create<3>), py::arg("degrees"), py::arg("knots"))
         .def("refine", &refined<3>, py::arg("elements"))
+        .def("refine_admissible", &refined_admissible<3>,
+             py::arg("elements"), py::arg("boxes"))
+        .def("offset", &HierarchicalGrid3d::offset, py::arg("level"))
+        .def(py::self == py::self)
         .def_property_readonly("num_levels",
                                &HierarchicalGrid3d::num_levels)
         .def_property_readonly("num_elements",

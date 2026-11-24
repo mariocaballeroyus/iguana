@@ -167,3 +167,42 @@ def test_invalid_arguments():
 
     with pytest.raises(TypeError):
         MixedFunctionSpace.divergence_conforming(box)
+
+
+def test_refined_divergence_conforming_space():
+    """On a refined patch each field spans the truncated hierarchical
+    B-splines of its degrees on the grid of the patch, the pressure those
+    of the patch itself, and the sides of the patch hold the functions
+    first or last along their normal on every level."""
+    patch = iguana.create_rectangle(lengths=(2., 3.), elements=(7, 6))
+    refined = patch.refine([10], boxes=True)
+    space = MixedFunctionSpace.divergence_conforming(refined)
+    first, second, pressure = space.fields
+
+    assert space.patch is refined
+    assert [field.degrees for field in space.fields] == [(3, 2), (2, 3),
+                                                        (2, 2)]
+    assert pressure.num_dofs == len(refined.control_points)
+    assert np.array_equal(pressure.control_points, refined.control_points)
+    assert space.offsets == (0, first.num_dofs,
+                             first.num_dofs + second.num_dofs)
+
+    # The hierarchical basis of the velocity along x holds every function
+    # of the coarse one, 10 by 8 of degrees (3, 2), but the 4 by 4 whose
+    # supports lie in the 4 by 4 elements of the refined box, and the 8 by
+    # 8 functions of the fine level whose supports lie in it
+    assert first.num_dofs == 10 * 8 - 4 * 4 + 8 * 8
+    assert len(first.functions) == first.num_dofs
+
+    # Along the side x = 0, the 4 coarse functions left first along x and
+    # the 8 fine ones; along x = 2, the 8 coarse functions last along x
+    assert len(first.side_dofs(0)) == 4 + 8 + 8
+    assert np.array_equal(
+        first.boundary_dofs,
+        np.unique(np.concatenate([first.side_dofs(0), first.side_dofs(1)])))
+
+    with pytest.raises(ValueError):
+        first.side_dofs(2)
+
+    with pytest.raises(ValueError):
+        first.control_points

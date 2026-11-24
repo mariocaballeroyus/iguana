@@ -134,7 +134,9 @@ class PenaltyCondition:
     def _add_to(self, form: _cpp.Form2d) -> None:
         """Add the integral of the condition to the compiled form of a
         planar problem, which reads its values where they lie."""
-        for trace, values in zip(self._trace._cpp_traces(), self._values):
+        traces = self._trace._cpp_traces(self._quadrature.patch)
+
+        for trace, values in zip(traces, self._values):
             condition = _cpp.PenaltyCondition2d(trace, self._penalty)
             _add_along(form, condition, self._quadrature, values)
 
@@ -285,10 +287,12 @@ class NitscheCondition:
     def _add_to(self, form: _cpp.Form2d) -> None:
         """Add the integral of the condition to the compiled form of a
         planar problem, which reads its values where they lie."""
-        test_traces, test_fluxes = _test_side(self._trace, self._test_pressure)
+        patch = self._quadrature.patch
+        test_traces, test_fluxes = _test_side(self._trace, patch,
+                                              self._test_pressure)
 
         for trace, flux, test_trace, test_flux, values in zip(
-                self._trace._cpp_traces(), self._trace._cpp_fluxes(),
+                self._trace._cpp_traces(patch), self._trace._cpp_fluxes(patch),
                 test_traces, test_fluxes, self._values):
             condition = _cpp.NitscheCondition2d(trace, flux, test_trace,
                                                 test_flux, self._penalty,
@@ -387,7 +391,9 @@ class NeumannCondition:
     def _add_to(self, form: _cpp.Form2d) -> None:
         """Add the integral of the condition, a load, to the compiled form of
         a planar problem, which reads its values where they lie."""
-        for trace, values in zip(self._trace._cpp_traces(), self._values):
+        traces = self._trace._cpp_traces(self._quadrature.patch)
+
+        for trace, values in zip(traces, self._values):
             condition = _cpp.NeumannCondition2d(trace)
             form.add_boundary_integral(condition,
                                        self._quadrature._cpp_object, values)
@@ -496,7 +502,7 @@ class LagrangeMultiplierCondition:
                                                   elements)
 
         # One condition for the normal, or one per component
-        traces = trace._cpp_traces()
+        traces = trace._cpp_traces(quadrature.patch)
 
         if self._normal:
             self._cpp_conditions = [_cpp.LagrangeMultiplierCondition2d(
@@ -770,9 +776,9 @@ class SkeletonNitscheCondition:
 
         Raises:
             TypeError: If the trace is not the trace of an element, if the
-                patch is not a planar patch, if the boundary is not a
-                boundary, or if a source is neither `Derivatives` nor a
-                function of the points.
+                patch is not a planar patch or is refined, if the boundary
+                is not a boundary, or if a source is neither `Derivatives`
+                nor a function of the points.
             ValueError: If there is not one cell type per element, if the
                 map of the patch is not affine, if the values are not those
                 of the trace at each point, if the penalty is negative, or
@@ -949,10 +955,12 @@ class SkeletonNitscheCondition:
         problem, assembled with its faces coupled, with the weights of the
         cells. The form reads the imposed data and weights where they
         lie."""
-        test_traces, test_fluxes = _test_side(self._trace, self._test_pressure)
+        patch = self._patch
+        test_traces, test_fluxes = _test_side(self._trace, patch,
+                                              self._test_pressure)
 
         for trace, flux, test_trace, test_flux, values in zip(
-                self._trace._cpp_traces(), self._trace._cpp_fluxes(),
+                self._trace._cpp_traces(patch), self._trace._cpp_fluxes(patch),
                 test_traces, test_fluxes, self._imposed):
             condition = _cpp.SkeletonNitscheCondition2d(
                 trace, flux, test_trace, test_flux, self._penalty,
@@ -1059,8 +1067,8 @@ class SkeletonMultiplierCondition:
 
         Raises:
             TypeError: If the trace is not the velocity of a fluid, if the
-                patch is not a planar patch, or if the boundary is not a
-                boundary.
+                patch is not a planar patch or is refined, or if the
+                boundary is not a boundary.
             ValueError: If there is not one cell type per element, if the
                 map of the patch is not affine, if the number of points is
                 not positive, if the values are not the velocity at each
@@ -1116,8 +1124,9 @@ class SkeletonMultiplierCondition:
                                trace._shape)
 
         self._cpp_conditions = [_cpp.SkeletonMultiplierCondition2d(
-            trace._cpp_traces(), trace._cpp_fluxes(pressure=False),
-            trace._element.p._cpp_traces()[0], bases, quadrature,
+            trace._cpp_traces(patch),
+            trace._cpp_fluxes(patch, pressure=False),
+            trace._element.p._cpp_traces(patch)[0], bases, quadrature,
             projection, int(order), self._penalty, self._symmetric,
             periodic=closed, loops=loops if self._pin else [])]
 
@@ -1228,14 +1237,16 @@ def _check_test_pressure(
 
 def _test_side(
     trace: PoissonElement.U | StokesElement.U | ElasticityElement.U,
+    patch: PlanarPatch,
     test_pressure: bool,
 ) -> tuple[list[_cpp.Trace2d], list[_cpp.Flux2d]]:
-    """Compiled traces and fluxes of the test functions of a condition, those
-    of its trace, less the pressure unless `test_pressure`."""
+    """Compiled traces and fluxes of the test functions of a condition on a
+    patch, those of its trace, less the pressure unless `test_pressure`."""
     if test_pressure:
-        return trace._cpp_traces(), trace._cpp_fluxes()
+        return trace._cpp_traces(patch), trace._cpp_fluxes(patch)
 
-    return trace._cpp_traces(pressure=False), trace._cpp_fluxes(pressure=False)
+    return (trace._cpp_traces(patch, pressure=False),
+            trace._cpp_fluxes(patch, pressure=False))
 
 
 def _add_along(
@@ -1268,6 +1279,9 @@ def _jump_faces(
     degree of the patch."""
     if not isinstance(patch, PlanarPatch):
         raise TypeError('the patch must be a planar patch')
+
+    if patch.refined:
+        raise TypeError('the patch must not be refined')
 
     if not isinstance(boundary, Boundary):
         raise TypeError('the boundary must be a boundary')

@@ -66,13 +66,16 @@ def classify_cells(patch: PlanarPatch,
         The type and the volume fraction of each element.
 
     Raises:
-        TypeError: If the patch is not a planar patch, or if the boundary
-            is not made of curves in the plane.
+        TypeError: If the patch is not a planar patch or is refined, or
+            if the boundary is not made of curves in the plane.
         ValueError: If the map of the patch is not affine, or if the knot
             vector of a face is not clamped.
     """
     if not isinstance(patch, PlanarPatch):
         raise TypeError('the patch must be a planar patch')
+
+    if patch.refined:
+        raise TypeError('the patch must not be refined')
 
     if not (isinstance(boundary, Boundary)
             and isinstance(boundary._cpp_object, _cpp.Boundary2d)):
@@ -109,11 +112,14 @@ class SurrogateBoundary:
                 first direction running fastest.
 
         Raises:
-            TypeError: If the patch is not a planar patch.
+            TypeError: If the patch is not a planar patch or is refined.
             ValueError: If there is not one cell type per element.
         """
         if not isinstance(patch, PlanarPatch):
             raise TypeError('the patch must be a planar patch')
+
+        if patch.refined:
+            raise TypeError('the patch must not be refined')
 
         cell_types = list(cell_types)
         num_elements = HierarchicalGrid(patch.degrees,

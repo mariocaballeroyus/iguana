@@ -309,3 +309,49 @@ def test_nurbs_isocurve():
 
     assert np.allclose(curve.weights, .5 * total)
     assert np.allclose(curve.control_points, blend)
+
+
+def test_refined_patch_is_the_same_map():
+    """A patch refined around an element is the same map on truncated
+    hierarchical B-splines: the marked element gives way to the box of
+    degree + 2 elements holding it, cut short at the far sides, and the
+    patch keeps its degrees, its knots and its affine map."""
+    patch = iguana.create_rectangle(lengths=(2., 3.), elements=(7, 6))
+
+    assert not patch.refined
+    assert patch.grid.num_elements == 42
+
+    # The box of 4 by 4 elements from the corner, then the box of 4 by 4
+    # fine elements from the corner, the first fine element being numbered
+    # after the 26 coarse ones left
+    refined = patch.refine([10], boxes=True)
+    corner = refined.refine([26], boxes=True)
+
+    assert refined.refined
+    assert refined.degrees == patch.degrees
+    assert all(np.array_equal(fine, coarse)
+               for fine, coarse in zip(refined.knots, patch.knots))
+    assert np.array_equal(np.bincount(refined.grid.levels), [26, 64])
+    assert np.array_equal(np.bincount(corner.grid.levels), [26, 48, 64])
+
+    # The refined map inverts as the affine map it still is
+    assert np.allclose(refined.invert_points([[1., 1.5], [2., 3.]]),
+                       [[.5, .5], [1., 1.]])
+
+    # The hierarchical functions have a control point each
+    assert len(corner.control_points) > len(patch.control_points)
+    assert patch.grid == iguana.HierarchicalGrid(patch.degrees, patch.knots)
+
+    with pytest.raises(TypeError):
+        refined.isocurves()
+
+    # Without boxes the element alone is refined, its four children
+    # numbered after the 41 other coarse elements
+    plain = patch.refine([10])
+
+    assert np.array_equal(np.bincount(plain.grid.levels), [41, 4])
+    assert np.allclose(plain.grid.bounds[41:, 0].min(axis=0),
+                       [3. / 7., 1. / 6.])
+
+    with pytest.raises(ValueError):
+        patch.refine([42])

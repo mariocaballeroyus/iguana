@@ -31,6 +31,8 @@ const BSpline<double>& nurbs_axis(const TensorNURBS<double, d>& basis,
     return basis.bspline().axis(direction);
 }
 
+using THBSpline2d = THBSpline<double, 2>;
+
 } // namespace
 
 void basis(py::module_& module)
@@ -66,6 +68,24 @@ void basis(py::module_& module)
              py::arg("bspline"), py::arg("weights"))
         .def("axis", &nurbs_axis<2>)
         .def_property_readonly("weights", &TensorNURBS<double, 2>::weights);
+
+    // The level bases are those of the hierarchical one, which Python
+    // keeps alive with them
+    py::class_<THBSpline2d>(module, "THBSpline2d")
+        .def(py::init<HierarchicalGrid<double, 2>, std::array<int, 2>>(),
+             py::arg("grid"), py::arg("degrees"))
+        .def_property_readonly("grid", &THBSpline2d::grid)
+        .def_property_readonly("degrees", &THBSpline2d::degrees)
+        .def_property_readonly("num_levels", &THBSpline2d::num_levels)
+        .def_property_readonly("num_functions", &THBSpline2d::num_functions)
+        .def("level", &THBSpline2d::level, py::arg("level"),
+             py::return_value_policy::reference_internal)
+        .def("active_functions", &THBSpline2d::active_functions,
+             py::arg("level"))
+        .def("offset", &THBSpline2d::offset, py::arg("level"))
+        .def("coefficients", &THBSpline2d::coefficients, py::arg("coarse"))
+        .def("boundary_functions", &THBSpline2d::boundary_functions,
+             py::arg("direction"));
 }
 
 } // namespace iguana::bindings

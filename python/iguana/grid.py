@@ -95,13 +95,57 @@ class HierarchicalGrid:
             ValueError: If an index lies outside [0, num_elements), or if a
                 new level would have more elements than can be counted.
         """
-        refined = object.__new__(HierarchicalGrid)
-        refined._cpp_object = self._cpp_object.refine(
-            np.asarray(elements).tolist())
-        refined._dimension = self._dimension
+        return _wrap(self._cpp_object.refine(np.asarray(elements).tolist()))
 
-        return refined
+    def _refine_admissible(self, elements: npt.ArrayLike,
+                           boxes: bool) -> HierarchicalGrid:
+        """Refine the grid at elements, graded for the truncated
+        hierarchical B-splines on it.
+
+        Each marked element is replaced by its children, or by those of
+        the aligned box of degree + 2 elements of its level along each
+        direction that holds it when refining by boxes, the last box along
+        a direction cut short where its count is not a multiple. Coarser
+        elements, or boxes, are then refined until the functions non-zero
+        on any element come from at most two consecutive levels.
+
+        Args:
+            elements: Indices of the active elements to refine, in any
+                order and possibly repeated.
+            boxes: Whether to refine the boxes holding the elements rather
+                than the elements alone.
+
+        Returns:
+            The refined grid.
+
+        Raises:
+            ValueError: If an index lies outside [0, num_elements), or if a
+                new level would have more elements than can be counted.
+        """
+        return _wrap(self._cpp_object.refine_admissible(
+            np.asarray(elements).tolist(), boxes))
+
+    def __eq__(self, other: object) -> bool:
+        """Whether two grids have the same knots and the same active
+        elements, level by level."""
+        if not isinstance(other, HierarchicalGrid):
+            return NotImplemented
+
+        return (self._dimension == other._dimension
+                and self._cpp_object == other._cpp_object)
 
     def __repr__(self) -> str:
         return (f'HierarchicalGrid(num_levels={self.num_levels}, '
                 f'num_elements={self.num_elements})')
+
+
+def _wrap(
+    grid: _cpp.HierarchicalGrid2d | _cpp.HierarchicalGrid3d,
+) -> HierarchicalGrid:
+    """The Python grid holding a C++ grid."""
+    wrapped = object.__new__(HierarchicalGrid)
+    wrapped._cpp_object = grid
+    wrapped._dimension = (3 if isinstance(grid, _cpp.HierarchicalGrid3d)
+                          else 2)
+
+    return wrapped
