@@ -27,6 +27,8 @@ using FunctionSpace2d = FunctionSpace<TensorBSpline<double, 2>>;
 using FunctionSpace3d = FunctionSpace<TensorBSpline<double, 3>>;
 using NURBSFunctionSpace2d = FunctionSpace<TensorNURBS<double, 2>>;
 using MixedFunctionSpace2d = MixedFunctionSpace<TensorBSpline<double, 2>>;
+using THBFunctionSpace2d = FunctionSpace<THBSpline<double, 2>>;
+using THBMixedFunctionSpace2d = MixedFunctionSpace<THBSpline<double, 2>>;
 
 /// @brief Number of degrees of freedom, read from the map of the space
 template<typename Basis>
@@ -107,6 +109,27 @@ void fspace(py::module_& module)
                                &MixedFunctionSpace2d::num_fields)
         .def_property_readonly("num_dofs", &MixedFunctionSpace2d::num_dofs)
         .def("offset", &MixedFunctionSpace2d::offset, py::arg("field"));
+
+    py::class_<THBFunctionSpace2d>(module, "THBFunctionSpace2d")
+        .def(py::init<THBSpline<double, 2>,
+                      const CellClassification<double, 2>&, int>(),
+             py::arg("basis"), py::arg("classification"),
+             py::arg("block_size") = 1)
+        .def_property_readonly("block_size",
+                               &THBFunctionSpace2d::block_size)
+        .def_property_readonly("num_dofs", &num_dofs<THBSpline<double, 2>>)
+        .def_property_readonly("functions",
+                               &functions<THBSpline<double, 2>>);
+
+    py::class_<THBMixedFunctionSpace2d>(module, "THBMixedFunctionSpace2d")
+        .def(py::init<std::vector<
+                 std::reference_wrapper<const THBFunctionSpace2d>>>(),
+             py::arg("fields"), py::keep_alive<1, 2>())
+        .def_property_readonly("num_fields",
+                               &THBMixedFunctionSpace2d::num_fields)
+        .def_property_readonly("num_dofs",
+                               &THBMixedFunctionSpace2d::num_dofs)
+        .def("offset", &THBMixedFunctionSpace2d::offset, py::arg("field"));
 }
 
 } // namespace iguana::bindings
