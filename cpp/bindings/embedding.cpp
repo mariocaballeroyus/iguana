@@ -74,9 +74,10 @@ Eigen::MatrixXd intervals(const EmbeddedBoundary2d& boundary)
 }
 
 /// @brief Surrogate boundary of the inside cells among the elements of a
-///        patch
+///        patch, the active ones of a refined patch
+template<typename Basis>
 SurrogateBoundary2d surrogate_boundary(
-    const PlanarPatch& patch, const CellClassification2d& classification)
+    const Patch<Basis, 2>& patch, const CellClassification2d& classification)
 {
     return {patch.basis().grid(), classification};
 }
@@ -162,8 +163,10 @@ void embedding(py::module_& module)
         .def_property_readonly("intervals", &intervals);
 
     py::class_<SurrogateBoundary2d>(module, "SurrogateBoundary2d")
-        .def(py::init(&surrogate_boundary), py::arg("patch"),
-             py::arg("classification"))
+        .def(py::init(&surrogate_boundary<TensorBSpline<double, 2>>),
+             py::arg("patch"), py::arg("classification"))
+        .def(py::init(&surrogate_boundary<THBSpline<double, 2>>),
+             py::arg("patch"), py::arg("classification"))
         .def_property_readonly("num_faces", &SurrogateBoundary2d::num_faces)
         .def_property_readonly("elements", &face_elements);
 
