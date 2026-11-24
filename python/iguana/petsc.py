@@ -99,10 +99,8 @@ class _Problem:
             raise TypeError('the quadrature must be a domain quadrature')
 
         # The system numbers the cells as the elements of the patch, which
-        # another patch or a refined grid would not
-        refined = np.any(quadrature.grid.levels != 0)
-
-        if quadrature.patch is not patch or refined:
+        # another patch or another grid would not
+        if quadrature.patch is not patch or quadrature.grid != patch.grid:
             raise ValueError('the quadrature must lie on the elements of the '
                              'patch of the space')
 
@@ -124,8 +122,8 @@ class _Problem:
 
         # The form reads the data where it lies, so a source or values set
         # later reach it without building it again
-        self._form = _cpp.Form2d()
-        self._element = element._cpp_element()
+        self._form = patch._cpp_class('Form2d')()
+        self._element = element._cpp_element(patch)
         self._form.add_domain_integral(self._element, quadrature._cpp_object,
                                        self._source, self._cell_weights)
 
@@ -151,9 +149,8 @@ class _Problem:
         compiled = [[compiled for condition in kind
                      for compiled in condition._cpp_conditions]
                     for kind in (boundary, faces)]
-        self._assembler = _cpp.Assembler2d(space._cpp_object,
-                                           patch._cpp_object, couple_faces,
-                                           *compiled)
+        self._assembler = patch._cpp_class('Assembler2d')(
+            space._cpp_object, patch._cpp_object, couple_faces, *compiled)
         self._tangent = self._assembler.tangent
         self._mass = self._assembler.mass
         self._residual = self._assembler.residual
@@ -276,9 +273,10 @@ class LinearProblem(_Problem):
                 space with a component per unknown of the element, or a
                 mixed space with a field of one component each, such as
                 the divergence-conforming space of the Galerkin Stokes
-                element.
+                element. On a refined patch, the element alone is
+                assembled so far, without conditions or stabilizations.
             quadrature: A quadrature over the elements of the patch of the
-                space, not over a refined grid.
+                space, on its grid.
             source: The source at each point of the quadrature, in its
                 order, one value per point for the Poisson element and the
                 two components of the body force for the others, or
@@ -326,7 +324,9 @@ class LinearProblem(_Problem):
                 quadrature is not a domain quadrature, if a condition is
                 neither a penalty, a Nitsche, a Lagrange multiplier, a
                 Neumann, a skeleton Nitsche nor a skeleton multiplier
-                condition, or if a stabilization is not a ghost penalty.
+                condition, if a stabilization is not a ghost penalty, or
+                if a refined patch is given a condition or a
+                stabilization.
             ValueError: If the space does not give each unknown of the
                 element a component of one field or a field of its own, or
                 is a mixed space for an elasticity element, if
@@ -543,7 +543,7 @@ class NonlinearProblem(_Problem):
             space: The space of the solution, on a planar patch, as for a
                 linear problem.
             quadrature: A quadrature over the elements of the patch of the
-                space, not over a refined grid.
+                space, on its grid.
             source: The source at each point of the quadrature, in its
                 order, one value per point for the Poisson element and the
                 two components of the body force for the others, or
@@ -579,7 +579,9 @@ class NonlinearProblem(_Problem):
                 quadrature is not a domain quadrature, if a condition is
                 neither a penalty, a Nitsche, a Lagrange multiplier, a
                 Neumann, a skeleton Nitsche nor a skeleton multiplier
-                condition, or if a stabilization is not a ghost penalty.
+                condition, if a stabilization is not a ghost penalty, or
+                if a refined patch is given a condition or a
+                stabilization.
             ValueError: If the space does not give each unknown of the
                 element a component of one field or a field of its own, or
                 is a mixed space for an elasticity element, if a
@@ -709,7 +711,11 @@ def _check_terms(
 ) -> None:
     """Check that the conditions and stabilizations of a problem are of the
     kinds it assembles, act on traces of its element and lie on the patch of
-    its space."""
+    its space, which a refined patch has none of so far."""
+    if patch.refined and (conditions or stabilizations):
+        raise TypeError('a refined patch takes no conditions or '
+                        'stabilizations so far')
+
     # The pressure of a fluid has a ghost penalty, but no condition
     traces = ((StokesElement.U, StokesElement.P)
               if isinstance(element, StokesElement) else type(element).U)

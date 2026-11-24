@@ -14,6 +14,7 @@ components they hold.
 from __future__ import annotations
 
 from iguana import cpp as _cpp
+from iguana.patch import PlanarPatch
 
 
 class PoissonElement:
@@ -31,15 +32,21 @@ class PoissonElement:
 
         _shape: tuple[int, ...] = ()
 
-        def _cpp_traces(self) -> list[_cpp.PoissonElement2d.U]:
-            """The compiled trace, on a planar patch, the only one boundaries
+        def _cpp_traces(
+            self,
+            patch: PlanarPatch,
+        ) -> list[_cpp.PoissonElement2d.U | _cpp.THBPoissonElement2d.U]:
+            """The compiled trace on a planar patch, the only one boundaries
             lie in so far, the one component of the field."""
-            return [_cpp.PoissonElement2d.U()]
+            return [patch._cpp_class('PoissonElement2d').U()]
 
-        def _cpp_fluxes(self) -> list[_cpp.PoissonElement2d.Q]:
+        def _cpp_fluxes(
+            self,
+            patch: PlanarPatch,
+        ) -> list[_cpp.PoissonElement2d.Q | _cpp.THBPoissonElement2d.Q]:
             """The compiled flux conjugate to the trace, the normal
             derivative of u, which Nitsche's method pairs with it."""
-            return [_cpp.PoissonElement2d.Q()]
+            return [patch._cpp_class('PoissonElement2d').Q()]
 
         def _ghost_scaling(self) -> tuple[float, int]:
             """Factor of the penalty and extra powers of the size of the
@@ -54,10 +61,13 @@ class PoissonElement:
         """Trace of the field u, on which a condition imposes values."""
         return PoissonElement.U()
 
-    def _cpp_element(self) -> _cpp.PoissonElement2d:
-        """The compiled element, on a planar patch, the only one problems
+    def _cpp_element(
+        self,
+        patch: PlanarPatch,
+    ) -> _cpp.PoissonElement2d | _cpp.THBPoissonElement2d:
+        """The compiled element on a planar patch, the only one problems
         lie on so far."""
-        return _cpp.PoissonElement2d()
+        return patch._cpp_class('PoissonElement2d')()
 
     def __repr__(self) -> str:
         return 'PoissonElement()'
@@ -97,24 +107,28 @@ class StokesElement:
 
         def _cpp_traces(
             self,
+            patch: PlanarPatch,
             pressure: bool = True,
-        ) -> list[_cpp.StokesElement2d.U]:
-            """The compiled traces of the components of the velocity, on a
+        ) -> list[_cpp.StokesElement2d.U | _cpp.THBStokesElement2d.U]:
+            """The compiled traces of the components of the velocity on a
             planar patch, without the pressure gradient of a shift with the
             equation unless `pressure`."""
-            return [_cpp.StokesElement2d.U(component, pressure)
-                    for component in (0, 1)]
+            element = patch._cpp_class('StokesElement2d')
+
+            return [element.U(component, pressure) for component in (0, 1)]
 
         def _cpp_fluxes(
             self,
+            patch: PlanarPatch,
             pressure: bool = True,
-        ) -> list[_cpp.StokesElement2d.T]:
+        ) -> list[_cpp.StokesElement2d.T | _cpp.THBStokesElement2d.T]:
             """The compiled fluxes conjugate to the traces, the components of
             the traction, which Nitsche's method pairs with them, without
             the pressure unless `pressure`."""
+            element = patch._cpp_class('StokesElement2d')
             viscosity = self._element.viscosity
 
-            return [_cpp.StokesElement2d.T(viscosity, component, pressure)
+            return [element.T(viscosity, component, pressure)
                     for component in (0, 1)]
 
         def _ghost_scaling(self) -> tuple[float, int]:
@@ -141,9 +155,12 @@ class StokesElement:
             """
             self._element = element
 
-        def _cpp_traces(self) -> list[_cpp.StokesElement2d.P]:
-            """The compiled trace of the pressure, on a planar patch."""
-            return [_cpp.StokesElement2d.P()]
+        def _cpp_traces(
+            self,
+            patch: PlanarPatch,
+        ) -> list[_cpp.StokesElement2d.P | _cpp.THBStokesElement2d.P]:
+            """The compiled trace of the pressure on a planar patch."""
+            return [patch._cpp_class('StokesElement2d').P()]
 
         def _ghost_scaling(self) -> tuple[float, int]:
             """Factor of the penalty and extra powers of the size of the
@@ -211,14 +228,16 @@ class StokesElement:
 
     def _cpp_element(
         self,
-    ) -> _cpp.StokesElement2d | _cpp.StokesStabilizedElement2d:
-        """The compiled element, on a planar patch, the only one problems
+        patch: PlanarPatch,
+    ) -> (_cpp.StokesElement2d | _cpp.StokesStabilizedElement2d
+          | _cpp.THBStokesElement2d | _cpp.THBStokesStabilizedElement2d):
+        """The compiled element on a planar patch, the only one problems
         lie on so far."""
         if self._stabilization is None:
-            return _cpp.StokesElement2d(self._viscosity)
+            return patch._cpp_class('StokesElement2d')(self._viscosity)
 
-        return _cpp.StokesStabilizedElement2d(self._viscosity,
-                                              self._stabilization)
+        return patch._cpp_class('StokesStabilizedElement2d')(
+            self._viscosity, self._stabilization)
 
     def __repr__(self) -> str:
         if self._stabilization is None:
@@ -261,21 +280,29 @@ class ElasticityElement:
             """
             self._element = element
 
-        def _cpp_traces(self) -> list[_cpp.ElasticityElement2d.U]:
-            """The compiled traces of the components of the displacement, on
+        def _cpp_traces(
+            self,
+            patch: PlanarPatch,
+        ) -> list[_cpp.ElasticityElement2d.U
+                  | _cpp.THBElasticityElement2d.U]:
+            """The compiled traces of the components of the displacement on
             a planar patch."""
-            return [_cpp.ElasticityElement2d.U(component)
-                    for component in (0, 1)]
+            compiled = patch._cpp_class('ElasticityElement2d')
 
-        def _cpp_fluxes(self) -> list[_cpp.ElasticityElement2d.T]:
+            return [compiled.U(component) for component in (0, 1)]
+
+        def _cpp_fluxes(
+            self,
+            patch: PlanarPatch,
+        ) -> list[_cpp.ElasticityElement2d.T
+                  | _cpp.THBElasticityElement2d.T]:
             """The compiled fluxes conjugate to the traces, the components of
             the traction under small displacements, which Nitsche's method
             pairs with them."""
+            compiled = patch._cpp_class('ElasticityElement2d')
             element = self._element
 
-            return [_cpp.ElasticityElement2d.T(element.lame,
-                                               element.shear_modulus,
-                                               component)
+            return [compiled.T(element.lame, element.shear_modulus, component)
                     for component in (0, 1)]
 
         def __repr__(self) -> str:
@@ -352,10 +379,14 @@ class ElasticityElement:
         values."""
         return ElasticityElement.U(self)
 
-    def _cpp_element(self) -> _cpp.ElasticityElement2d:
-        """The compiled element, on a planar patch, the only one problems
+    def _cpp_element(
+        self,
+        patch: PlanarPatch,
+    ) -> _cpp.ElasticityElement2d | _cpp.THBElasticityElement2d:
+        """The compiled element on a planar patch, the only one problems
         lie on so far."""
-        return _cpp.ElasticityElement2d(self.lame, self.shear_modulus)
+        return patch._cpp_class('ElasticityElement2d')(self.lame,
+                                                       self.shear_modulus)
 
     def __repr__(self) -> str:
         plane_stress = ', plane_stress=True' if self._plane_stress else ''

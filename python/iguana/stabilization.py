@@ -177,7 +177,7 @@ class GhostPenalty:
         problem, assembled with its faces coupled."""
         factor, scaling = self._trace._ghost_scaling()
 
-        for trace in self._trace._cpp_traces():
+        for trace in self._trace._cpp_traces(self._patch):
             penalty = _cpp.SkeletonGhostPenalty2d(trace,
                                                   factor * self._penalty,
                                                   scaling)
@@ -289,7 +289,7 @@ class VolumeGhostPenalty:
         problem, assembled with its faces coupled."""
         factor, scaling = self._trace._ghost_scaling()
 
-        for trace in self._trace._cpp_traces():
+        for trace in self._trace._cpp_traces(self._patch):
             penalty = _cpp.VolumeGhostPenalty2d(trace,
                                                 factor * self._penalty,
                                                 scaling)
