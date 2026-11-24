@@ -55,6 +55,15 @@ using MixedFunctionSpace2d = MixedFunctionSpace<TensorBSpline<double, 2>>;
 using Form2d = Form<TensorBSpline<double, 2>, 2>;
 using Data = Form2d::Data;
 using Source = Form2d::Source;
+using THBBasis2d = THBSpline<double, 2>;
+using THBTrace2d = Trace<THBBasis2d, 2>;
+using THBFlux2d = Flux<THBBasis2d, 2>;
+using THBPoissonElement2d = PoissonElement<THBBasis2d, 2>;
+using THBStokesElement2d = StokesElement<THBBasis2d, 2>;
+using THBStokesStabilizedElement2d = StokesStabilizedElement<THBBasis2d, 2>;
+using THBElasticityElement2d = ElasticityElement<THBBasis2d, 2>;
+using THBAssembler2d = Assembler<THBBasis2d, 2>;
+using THBForm2d = Form<THBBasis2d, 2>;
 
 /// @brief Integrals of a ghost penalty across faces, the overloads of
 ///        add_skeleton_integral that are not templates
@@ -375,6 +384,145 @@ void assembly(py::module_& module)
         .def("assemble_residual", &Form2d::assemble_residual,
              py::arg("assembler"), py::arg("coefficients"))
         .def("assemble_mass", &Form2d::assemble_mass, py::arg("assembler"));
+
+    // On a hierarchical basis, the elements integrated over the cells: the
+    // terms on boundaries and faces need a tensor-product grid
+    py::class_<THBTrace2d>(module, "THBTrace2d");
+    py::class_<THBFlux2d>(module, "THBFlux2d");
+
+    py::class_<THBPoissonElement2d> thb_poisson_element_2d(
+        module, "THBPoissonElement2d");
+    thb_poisson_element_2d.def(py::init<>());
+
+    py::class_<THBPoissonElement2d::U, THBTrace2d>(thb_poisson_element_2d,
+                                                   "U")
+        .def(py::init<>());
+
+    py::class_<THBPoissonElement2d::Q, THBFlux2d>(thb_poisson_element_2d, "Q")
+        .def(py::init<>());
+
+    py::class_<THBStokesElement2d> thb_stokes_element_2d(
+        module, "THBStokesElement2d");
+    thb_stokes_element_2d.def(py::init<double>(), py::arg("viscosity"));
+
+    py::class_<THBStokesStabilizedElement2d, THBStokesElement2d>(
+        module, "THBStokesStabilizedElement2d")
+        .def(py::init<double, double>(), py::arg("viscosity"),
+             py::arg("stabilization"));
+
+    py::class_<THBStokesElement2d::U, THBTrace2d>(thb_stokes_element_2d, "U")
+        .def(py::init<std::size_t, bool>(), py::arg("component"),
+             py::arg("pressure") = true);
+
+    py::class_<THBStokesElement2d::P, THBTrace2d>(thb_stokes_element_2d, "P")
+        .def(py::init<>());
+
+    py::class_<THBStokesElement2d::T, THBFlux2d>(thb_stokes_element_2d, "T")
+        .def(py::init<double, std::size_t, bool>(), py::arg("viscosity"),
+             py::arg("component"), py::arg("pressure") = true);
+
+    py::class_<THBElasticityElement2d> thb_elasticity_element_2d(
+        module, "THBElasticityElement2d");
+    thb_elasticity_element_2d.def(py::init<double, double>(),
+                                  py::arg("lame"), py::arg("shear_modulus"));
+
+    py::class_<THBElasticityElement2d::U, THBTrace2d>(
+        thb_elasticity_element_2d, "U")
+        .def(py::init<std::size_t>(), py::arg("component"));
+
+    py::class_<THBElasticityElement2d::T, THBFlux2d>(
+        thb_elasticity_element_2d, "T")
+        .def(py::init<double, double, std::size_t>(), py::arg("lame"),
+             py::arg("shear_modulus"), py::arg("component"));
+
+    // Its multipliers take the arguments of the tensor-product assembler,
+    // so that Python builds both alike, although none is bound yet
+    py::class_<THBAssembler2d>(module, "THBAssembler2d")
+        .def(py::init<const FunctionSpace<THBBasis2d>&,
+                      const Patch<THBBasis2d, 2>&, bool,
+                      THBAssembler2d::Multipliers,
+                      THBAssembler2d::SkeletonMultipliers>(),
+             py::arg("space"), py::arg("patch"),
+             py::arg("couple_faces") = false,
+             py::arg("multipliers") = THBAssembler2d::Multipliers(),
+             py::arg("skeleton_multipliers") =
+                 THBAssembler2d::SkeletonMultipliers(),
+             py::keep_alive<1, 2>(), py::keep_alive<1, 3>(),
+             py::keep_alive<1, 5>(), py::keep_alive<1, 6>())
+        .def(py::init<const MixedFunctionSpace<THBBasis2d>&,
+                      const Patch<THBBasis2d, 2>&, bool,
+                      THBAssembler2d::Multipliers,
+                      THBAssembler2d::SkeletonMultipliers>(),
+             py::arg("space"), py::arg("patch"),
+             py::arg("couple_faces") = false,
+             py::arg("multipliers") = THBAssembler2d::Multipliers(),
+             py::arg("skeleton_multipliers") =
+                 THBAssembler2d::SkeletonMultipliers(),
+             py::keep_alive<1, 2>(), py::keep_alive<1, 3>(),
+             py::keep_alive<1, 5>(), py::keep_alive<1, 6>())
+        .def("clear", &THBAssembler2d::clear)
+        .def_property_readonly("tangent", &THBAssembler2d::tangent)
+        .def_property_readonly("mass", &THBAssembler2d::mass)
+        .def_property_readonly("residual", &THBAssembler2d::residual);
+
+    // The stabilized element before the Galerkin one it derives from, so
+    // that each takes its own overload
+    py::class_<THBForm2d>(module, "THBForm2d")
+        .def(py::init<>())
+        .def("add_domain_integral",
+             &THBForm2d::add_domain_integral<THBPoissonElement2d>,
+             py::arg("element"), py::arg("quadrature"),
+             py::arg("source").noconvert(),
+             py::arg("cell_weights").noconvert(), py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>(),
+             py::keep_alive<1, 5>())
+        .def("add_domain_integral",
+             &THBForm2d::add_domain_integral<THBStokesStabilizedElement2d>,
+             py::arg("element"), py::arg("quadrature"),
+             py::arg("source").noconvert(),
+             py::arg("cell_weights").noconvert(), py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>(),
+             py::keep_alive<1, 5>())
+        .def("add_domain_integral",
+             &THBForm2d::add_domain_integral<THBStokesElement2d>,
+             py::arg("element"), py::arg("quadrature"),
+             py::arg("source").noconvert(),
+             py::arg("cell_weights").noconvert(), py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>(),
+             py::keep_alive<1, 5>())
+        .def("add_domain_integral",
+             &THBForm2d::add_domain_integral<THBElasticityElement2d>,
+             py::arg("element"), py::arg("quadrature"),
+             py::arg("source").noconvert(),
+             py::arg("cell_weights").noconvert(), py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>(),
+             py::keep_alive<1, 5>())
+        .def("add_mass_integral",
+             &THBForm2d::add_mass_integral<THBPoissonElement2d>,
+             py::arg("element"), py::arg("quadrature"),
+             py::arg("cell_weights").noconvert(), py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>())
+        .def("add_mass_integral",
+             &THBForm2d::add_mass_integral<THBStokesStabilizedElement2d>,
+             py::arg("element"), py::arg("quadrature"),
+             py::arg("cell_weights").noconvert(), py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>())
+        .def("add_mass_integral",
+             &THBForm2d::add_mass_integral<THBStokesElement2d>,
+             py::arg("element"), py::arg("quadrature"),
+             py::arg("cell_weights").noconvert(), py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>())
+        .def("add_mass_integral",
+             &THBForm2d::add_mass_integral<THBElasticityElement2d>,
+             py::arg("element"), py::arg("quadrature"),
+             py::arg("cell_weights").noconvert(), py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>())
+        .def("assemble_tangent", &THBForm2d::assemble_tangent,
+             py::arg("assembler"), py::arg("coefficients"))
+        .def("assemble_residual", &THBForm2d::assemble_residual,
+             py::arg("assembler"), py::arg("coefficients"))
+        .def("assemble_mass", &THBForm2d::assemble_mass,
+             py::arg("assembler"));
 }
 
 } // namespace iguana::bindings
