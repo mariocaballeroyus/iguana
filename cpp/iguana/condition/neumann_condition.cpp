@@ -52,5 +52,6 @@ template class NeumannCondition<TensorBSpline<double, 3>, 3>;
 template class NeumannCondition<TensorNURBS<double, 2>, 2>;
 template class NeumannCondition<TensorNURBS<double, 2>, 3>;
 template class NeumannCondition<TensorNURBS<double, 3>, 3>;
+template class NeumannCondition<THBSpline<double, 2>, 2>;
 
 } // namespace iguana

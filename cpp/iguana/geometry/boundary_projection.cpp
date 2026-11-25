@@ -13,6 +13,7 @@
 
 #include "iguana/basis/tensor_bspline.hpp"
 #include "iguana/basis/tensor_nurbs.hpp"
+#include "iguana/basis/thb_spline.hpp"
 #include "iguana/geometry/nurbs/bezier_points.hpp"
 #include "iguana/geometry/nurbs/curve_projection.hpp"
 #include "iguana/grid/knot_vector.hpp"
@@ -168,6 +169,9 @@ template BoundaryProjection<double> project_closest_points(
     const PointMatrix<double, 2>&);
 template BoundaryProjection<double> project_closest_points(
     const Patch<TensorNURBS<double, 2>, 2>&, const Boundary<double, 2>&,
+    const PointMatrix<double, 2>&);
+template BoundaryProjection<double> project_closest_points(
+    const Patch<THBSpline<double, 2>, 2>&, const Boundary<double, 2>&,
     const PointMatrix<double, 2>&);
 
 } // namespace iguana

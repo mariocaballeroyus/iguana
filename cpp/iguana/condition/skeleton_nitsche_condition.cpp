@@ -11,6 +11,7 @@
 
 #include "iguana/basis/tensor_bspline.hpp"
 #include "iguana/basis/tensor_nurbs.hpp"
+#include "iguana/basis/thb_spline.hpp"
 
 namespace iguana
 {
@@ -205,5 +206,6 @@ template class SkeletonNitscheCondition<TensorBSpline<double, 3>, 3>;
 template class SkeletonNitscheCondition<TensorNURBS<double, 2>, 2>;
 template class SkeletonNitscheCondition<TensorNURBS<double, 2>, 3>;
 template class SkeletonNitscheCondition<TensorNURBS<double, 3>, 3>;
+template class SkeletonNitscheCondition<THBSpline<double, 2>, 2>;
 
 } // namespace iguana

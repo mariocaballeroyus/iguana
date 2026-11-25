@@ -81,7 +81,8 @@ void shift_values(ElementValues<Basis, n>& values,
     using Scalar = typename Basis::Scalar;
     constexpr std::size_t dim = Basis::dimension;
 
-    if constexpr (std::same_as<Basis, TensorBSpline<Scalar, dim>>) {
+    if constexpr (std::same_as<Basis, TensorBSpline<Scalar, dim>>
+                  || std::same_as<Basis, THBSpline<Scalar, dim>>) {
         const Eigen::MatrixX<Scalar> distances =
             projection.distances.middleRows(first, count);
 
@@ -102,8 +103,7 @@ void shift_values(ElementValues<Basis, n>& values,
                          coupled, order, projection.shift_center);
         }
     }
-    else if constexpr (std::same_as<Basis, TensorNURBS<Scalar, dim>>
-                       || std::same_as<Basis, THBSpline<Scalar, dim>>) {
+    else if constexpr (std::same_as<Basis, TensorNURBS<Scalar, dim>>) {
         throw std::invalid_argument("Assembler: "
                                     "a projection needs a B-spline patch");
     }
@@ -240,11 +240,11 @@ void differentiate_values(ElementValues<Basis, n>& values,
     using Scalar = typename Basis::Scalar;
     constexpr std::size_t dim = Basis::dimension;
 
-    if constexpr (std::same_as<Basis, TensorBSpline<Scalar, dim>>) {
+    if constexpr (std::same_as<Basis, TensorBSpline<Scalar, dim>>
+                  || std::same_as<Basis, THBSpline<Scalar, dim>>) {
         values.differentiate(direction);
     }
-    else if constexpr (std::same_as<Basis, TensorNURBS<Scalar, dim>>
-                       || std::same_as<Basis, THBSpline<Scalar, dim>>) {
+    else if constexpr (std::same_as<Basis, TensorNURBS<Scalar, dim>>) {
         throw std::invalid_argument("Assembler: "
                                     "a ghost penalty needs a B-spline patch");
     }
@@ -265,11 +265,11 @@ void differentiate_values(
     using Scalar = typename Basis::Scalar;
     constexpr std::size_t dim = Basis::dimension;
 
-    if constexpr (std::same_as<Basis, TensorBSpline<Scalar, dim>>) {
+    if constexpr (std::same_as<Basis, TensorBSpline<Scalar, dim>>
+                  || std::same_as<Basis, THBSpline<Scalar, dim>>) {
         values.differentiate(orders);
     }
-    else if constexpr (std::same_as<Basis, TensorNURBS<Scalar, dim>>
-                       || std::same_as<Basis, THBSpline<Scalar, dim>>) {
+    else if constexpr (std::same_as<Basis, TensorNURBS<Scalar, dim>>) {
         throw std::invalid_argument("Assembler: "
                                     "a ghost penalty needs a B-spline patch");
     }
@@ -2739,6 +2739,9 @@ template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_tangent(
     const PenaltyCondition<TensorNURBS<double, 2>, 2>&,
     const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&, Vec);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_tangent(
+    const PenaltyCondition<THBSpline<double, 2>, 2>&,
+    const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&, Vec);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
     const PenaltyCondition<TensorBSpline<double, 2>, 2>&,
@@ -2748,12 +2751,19 @@ template void Assembler<TensorNURBS<double, 2>, 2>::assemble_tangent(
     const PenaltyCondition<TensorNURBS<double, 2>, 2>&,
     const QuadratureBoundary<double, 2>&, const BoundaryProjection<double>&,
     int, const Eigen::VectorX<double>&, Vec);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_tangent(
+    const PenaltyCondition<THBSpline<double, 2>, 2>&,
+    const QuadratureBoundary<double, 2>&, const BoundaryProjection<double>&,
+    int, const Eigen::VectorX<double>&, Vec);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_residual(
     const PenaltyCondition<TensorBSpline<double, 2>, 2>&,
     const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&, Vec);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_residual(
     const PenaltyCondition<TensorNURBS<double, 2>, 2>&,
+    const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&, Vec);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_residual(
+    const PenaltyCondition<THBSpline<double, 2>, 2>&,
     const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&, Vec);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_residual(
@@ -2762,6 +2772,10 @@ template void Assembler<TensorBSpline<double, 2>, 2>::assemble_residual(
     int, const Eigen::VectorX<double>&, Vec);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_residual(
     const PenaltyCondition<TensorNURBS<double, 2>, 2>&,
+    const QuadratureBoundary<double, 2>&, const BoundaryProjection<double>&,
+    int, const Eigen::VectorX<double>&, Vec);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_residual(
+    const PenaltyCondition<THBSpline<double, 2>, 2>&,
     const QuadratureBoundary<double, 2>&, const BoundaryProjection<double>&,
     int, const Eigen::VectorX<double>&, Vec);
 
@@ -2771,6 +2785,9 @@ template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_tangent(
     const NitscheCondition<TensorNURBS<double, 2>, 2>&,
     const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&, Vec);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_tangent(
+    const NitscheCondition<THBSpline<double, 2>, 2>&,
+    const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&, Vec);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
     const NitscheCondition<TensorBSpline<double, 2>, 2>&,
@@ -2780,12 +2797,19 @@ template void Assembler<TensorNURBS<double, 2>, 2>::assemble_tangent(
     const NitscheCondition<TensorNURBS<double, 2>, 2>&,
     const QuadratureBoundary<double, 2>&, const BoundaryProjection<double>&,
     int, const Eigen::VectorX<double>&, Vec);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_tangent(
+    const NitscheCondition<THBSpline<double, 2>, 2>&,
+    const QuadratureBoundary<double, 2>&, const BoundaryProjection<double>&,
+    int, const Eigen::VectorX<double>&, Vec);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_residual(
     const NitscheCondition<TensorBSpline<double, 2>, 2>&,
     const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&, Vec);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_residual(
     const NitscheCondition<TensorNURBS<double, 2>, 2>&,
+    const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&, Vec);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_residual(
+    const NitscheCondition<THBSpline<double, 2>, 2>&,
     const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&, Vec);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_residual(
@@ -2794,6 +2818,10 @@ template void Assembler<TensorBSpline<double, 2>, 2>::assemble_residual(
     int, const Eigen::VectorX<double>&, Vec);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_residual(
     const NitscheCondition<TensorNURBS<double, 2>, 2>&,
+    const QuadratureBoundary<double, 2>&, const BoundaryProjection<double>&,
+    int, const Eigen::VectorX<double>&, Vec);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_residual(
+    const NitscheCondition<THBSpline<double, 2>, 2>&,
     const QuadratureBoundary<double, 2>&, const BoundaryProjection<double>&,
     int, const Eigen::VectorX<double>&, Vec);
 
@@ -2803,6 +2831,9 @@ template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_tangent(
     const NeumannCondition<TensorNURBS<double, 2>, 2>&,
     const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&, Vec);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_tangent(
+    const NeumannCondition<THBSpline<double, 2>, 2>&,
+    const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&, Vec);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_residual(
     const NeumannCondition<TensorBSpline<double, 2>, 2>&,
@@ -2810,6 +2841,9 @@ template void Assembler<TensorBSpline<double, 2>, 2>::assemble_residual(
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_residual(
     const NeumannCondition<TensorNURBS<double, 2>, 2>&,
     const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&, Vec);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_residual(
+    const NeumannCondition<THBSpline<double, 2>, 2>&,
+    const QuadratureBoundary<double, 2>&, const Eigen::VectorX<double>&, Vec);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
     const SkeletonNitscheCondition<TensorBSpline<double, 2>, 2>&,
@@ -2817,6 +2851,10 @@ template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
     const Eigen::VectorX<double>&, Vec);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_tangent(
     const SkeletonNitscheCondition<TensorNURBS<double, 2>, 2>&,
+    const QuadratureSkeleton<double, 2>&, const Eigen::VectorX<double>&,
+    const Eigen::VectorX<double>&, Vec);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_tangent(
+    const SkeletonNitscheCondition<THBSpline<double, 2>, 2>&,
     const QuadratureSkeleton<double, 2>&, const Eigen::VectorX<double>&,
     const Eigen::VectorX<double>&, Vec);
 
@@ -2826,6 +2864,10 @@ template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
     int, const Eigen::VectorX<double>&, const Eigen::VectorX<double>&, Vec);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_tangent(
     const SkeletonNitscheCondition<TensorNURBS<double, 2>, 2>&,
+    const QuadratureSkeleton<double, 2>&, const BoundaryProjection<double>&,
+    int, const Eigen::VectorX<double>&, const Eigen::VectorX<double>&, Vec);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_tangent(
+    const SkeletonNitscheCondition<THBSpline<double, 2>, 2>&,
     const QuadratureSkeleton<double, 2>&, const BoundaryProjection<double>&,
     int, const Eigen::VectorX<double>&, const Eigen::VectorX<double>&, Vec);
 
@@ -2837,6 +2879,10 @@ template void Assembler<TensorNURBS<double, 2>, 2>::assemble_residual(
     const SkeletonNitscheCondition<TensorNURBS<double, 2>, 2>&,
     const QuadratureSkeleton<double, 2>&, const Eigen::VectorX<double>&,
     const Eigen::VectorX<double>&, Vec);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_residual(
+    const SkeletonNitscheCondition<THBSpline<double, 2>, 2>&,
+    const QuadratureSkeleton<double, 2>&, const Eigen::VectorX<double>&,
+    const Eigen::VectorX<double>&, Vec);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_residual(
     const SkeletonNitscheCondition<TensorBSpline<double, 2>, 2>&,
@@ -2844,6 +2890,10 @@ template void Assembler<TensorBSpline<double, 2>, 2>::assemble_residual(
     int, const Eigen::VectorX<double>&, const Eigen::VectorX<double>&, Vec);
 template void Assembler<TensorNURBS<double, 2>, 2>::assemble_residual(
     const SkeletonNitscheCondition<TensorNURBS<double, 2>, 2>&,
+    const QuadratureSkeleton<double, 2>&, const BoundaryProjection<double>&,
+    int, const Eigen::VectorX<double>&, const Eigen::VectorX<double>&, Vec);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_residual(
+    const SkeletonNitscheCondition<THBSpline<double, 2>, 2>&,
     const QuadratureSkeleton<double, 2>&, const BoundaryProjection<double>&,
     int, const Eigen::VectorX<double>&, const Eigen::VectorX<double>&, Vec);
 
