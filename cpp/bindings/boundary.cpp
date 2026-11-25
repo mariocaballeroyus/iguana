@@ -85,6 +85,9 @@ void boundary(py::module_& module)
     module.def("project_closest_points",
                &project_closest_points<TensorBSpline<double, 2>>,
                py::arg("patch"), py::arg("boundary"), py::arg("points"));
+    module.def("project_closest_points",
+               &project_closest_points<THBSpline<double, 2>>,
+               py::arg("patch"), py::arg("boundary"), py::arg("points"));
 
     // The shift of a Dirichlet condition rewritten with the Poisson
     // equation, at the points of a projection
