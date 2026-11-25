@@ -35,6 +35,7 @@ add_library(iguana
     quadrature/xiao_gimbutas/xiao_gimbutas_tables.cpp
     assembly/element_values.cpp
     element/elasticity/elasticity_element.cpp
+    element/navier_stokes/navier_stokes_element.cpp
     element/poisson/poisson_element.cpp
     element/poisson/poisson_shift.cpp
     element/stokes/stokes_element.cpp

@@ -29,6 +29,7 @@
 #include "iguana/condition/penalty_condition.hpp"
 #include "iguana/condition/skeleton_nitsche_condition.hpp"
 #include "iguana/element/elasticity/elasticity_element.hpp"
+#include "iguana/element/navier_stokes/navier_stokes_element.hpp"
 #include "iguana/element/poisson/poisson_element.hpp"
 #include "iguana/element/stokes/stokes_element.hpp"
 #include "iguana/element/stokes/stokes_stabilized_element.hpp"
@@ -2732,6 +2733,80 @@ template void Assembler<TensorNURBS<double, 3>, 3>::assemble_mass(
 template void Assembler<THBSpline<double, 2>, 2>::assemble_mass(
     const StokesStabilizedElement<THBSpline<double, 2>, 2>&,
     const QuadratureDomain<double, 2>&, const Eigen::VectorX<double>&);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
+    const NavierStokesElement<TensorBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&, Vec);
+template void Assembler<TensorBSpline<double, 3>, 3>::assemble_tangent(
+    const NavierStokesElement<TensorBSpline<double, 3>, 3>&,
+    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_tangent(
+    const NavierStokesElement<TensorNURBS<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 3>, 3>::assemble_tangent(
+    const NavierStokesElement<TensorNURBS<double, 3>, 3>&,
+    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&, Vec);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_tangent(
+    const NavierStokesElement<THBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&, Vec);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
+    const NavierStokesElement<TensorBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&,
+    const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorBSpline<double, 3>, 3>::assemble_tangent(
+    const NavierStokesElement<TensorBSpline<double, 3>, 3>&,
+    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&,
+    const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_tangent(
+    const NavierStokesElement<TensorNURBS<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&,
+    const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 3>, 3>::assemble_tangent(
+    const NavierStokesElement<TensorNURBS<double, 3>, 3>&,
+    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&,
+    const Eigen::VectorX<double>&, Vec);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_tangent(
+    const NavierStokesElement<THBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&,
+    const Eigen::VectorX<double>&, Vec);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_residual(
+    const NavierStokesElement<TensorBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&, Vec);
+template void Assembler<TensorBSpline<double, 3>, 3>::assemble_residual(
+    const NavierStokesElement<TensorBSpline<double, 3>, 3>&,
+    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_residual(
+    const NavierStokesElement<TensorNURBS<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 3>, 3>::assemble_residual(
+    const NavierStokesElement<TensorNURBS<double, 3>, 3>&,
+    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&, Vec);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_residual(
+    const NavierStokesElement<THBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&, Vec);
+
+template void Assembler<TensorBSpline<double, 2>, 2>::assemble_residual(
+    const NavierStokesElement<TensorBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&,
+    const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorBSpline<double, 3>, 3>::assemble_residual(
+    const NavierStokesElement<TensorBSpline<double, 3>, 3>&,
+    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&,
+    const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 2>, 2>::assemble_residual(
+    const NavierStokesElement<TensorNURBS<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&,
+    const Eigen::VectorX<double>&, Vec);
+template void Assembler<TensorNURBS<double, 3>, 3>::assemble_residual(
+    const NavierStokesElement<TensorNURBS<double, 3>, 3>&,
+    const QuadratureDomain<double, 3>&, const Eigen::MatrixX<double>&,
+    const Eigen::VectorX<double>&, Vec);
+template void Assembler<THBSpline<double, 2>, 2>::assemble_residual(
+    const NavierStokesElement<THBSpline<double, 2>, 2>&,
+    const QuadratureDomain<double, 2>&, const Eigen::MatrixX<double>&,
+    const Eigen::VectorX<double>&, Vec);
 
 template void Assembler<TensorBSpline<double, 2>, 2>::assemble_tangent(
     const PenaltyCondition<TensorBSpline<double, 2>, 2>&,

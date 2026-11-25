@@ -45,6 +45,7 @@
 #include "element/elasticity/elasticity_traces.hpp"
 #include "element/element.hpp"
 #include "element/flux.hpp"
+#include "element/navier_stokes/navier_stokes_element.hpp"
 #include "element/poisson/poisson_element.hpp"
 #include "element/poisson/poisson_shift.hpp"
 #include "element/poisson/poisson_traces.hpp"
