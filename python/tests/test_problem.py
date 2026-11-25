@@ -1490,12 +1490,11 @@ def test_elements_on_a_refined_patch_hold_linear_fields(kind):
         assert np.allclose(p - p[0], sums - sums[0], rtol=0., atol=1e-10)
 
 
-def test_refined_patch_takes_no_boundary_or_face_terms():
-    """Hierarchical grids have no shifts, nor boundary or face terms to
-    assemble, yet: a shifted quadrature of the surrogate boundary of a
-    refined patch, multipliers along a curve on it, a condition across its
-    faces and a ghost penalty refuse it, and so does a problem given a
-    condition of another patch or a quadrature on another grid."""
+def test_refined_patch_takes_no_shift_with_the_equation():
+    """The shift rewritten with the equation interpolates the source on
+    tensor-product patches alone, so a condition across the faces of a
+    refined patch refuses a source, and a problem on it refuses a condition
+    of another patch or a quadrature on another grid."""
     patch = refined_rectangle()
     cell_types = [CellType.inside] * patch.grid.num_elements
     space = MixedFunctionSpace.divergence_conforming(patch)
@@ -1507,26 +1506,17 @@ def test_refined_patch_takes_no_boundary_or_face_terms():
     def body_force(points):
         return np.ones((len(points), 2))
 
-    for build in (lambda: QuadratureBoundary(
-                      patch, SurrogateBoundary(patch, cell_types), 3,
-                      shift=square()),
-                  lambda: LagrangeMultiplierCondition(
-                      element.u, QuadratureBoundary(patch, square(), 3),
-                      [0., 0.]),
-                  lambda: SkeletonNitscheCondition(element.u, patch,
-                                                   cell_types, square(),
-                                                   [0., 0.], 40.),
-                  lambda: GhostPenalty(element.u, patch, cell_types, .5)):
-        with pytest.raises(TypeError, match='refined'):
-            build()
+    with pytest.raises(TypeError, match='refined'):
+        SkeletonNitscheCondition(element.u, patch, cell_types, square(),
+                                 [0., 0.], 40., source=body_force)
 
-    # A condition on the coarse patch, as the refined one takes none
+    # A condition on the coarse patch
     coarse = iguana.create_rectangle(lengths=(2., 3.), elements=(7, 6))
     condition = NitscheCondition(element.u, edges(coarse),
                                  lambda points: np.zeros((len(points), 2)),
                                  40.)
 
-    with pytest.raises(TypeError):
+    with pytest.raises(ValueError, match='patch of the space'):
         LinearProblem(element, space, quadrature, body_force,
                       conditions=[condition], petsc_options_prefix=prefix)
 

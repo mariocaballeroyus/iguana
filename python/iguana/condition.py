@@ -29,7 +29,6 @@ from iguana import cpp as _cpp
 from iguana.boundary import Boundary
 from iguana.element import ElasticityElement, PoissonElement, StokesElement
 from iguana.embedding import CellType, SurrogateBoundary
-from iguana.grid import HierarchicalGrid
 from iguana.patch import PlanarPatch, _uniform_knots
 from iguana.quadrature import QuadratureBoundary
 
@@ -131,13 +130,14 @@ class PenaltyCondition:
         """The penalty."""
         return self._penalty
 
-    def _add_to(self, form: _cpp.Form2d) -> None:
+    def _add_to(self, form: _cpp.Form2d | _cpp.THBForm2d) -> None:
         """Add the integral of the condition to the compiled form of a
         planar problem, which reads its values where they lie."""
         traces = self._trace._cpp_traces(self._quadrature.patch)
 
         for trace, values in zip(traces, self._values):
-            condition = _cpp.PenaltyCondition2d(trace, self._penalty)
+            condition = self._quadrature.patch._cpp_class(
+                'PenaltyCondition2d')(trace, self._penalty)
             _add_along(form, condition, self._quadrature, values)
 
     def __repr__(self) -> str:
@@ -284,7 +284,7 @@ class NitscheCondition:
         """Whether the pressure functions take part in the test side."""
         return self._test_pressure
 
-    def _add_to(self, form: _cpp.Form2d) -> None:
+    def _add_to(self, form: _cpp.Form2d | _cpp.THBForm2d) -> None:
         """Add the integral of the condition to the compiled form of a
         planar problem, which reads its values where they lie."""
         patch = self._quadrature.patch
@@ -294,9 +294,9 @@ class NitscheCondition:
         for trace, flux, test_trace, test_flux, values in zip(
                 self._trace._cpp_traces(patch), self._trace._cpp_fluxes(patch),
                 test_traces, test_fluxes, self._values):
-            condition = _cpp.NitscheCondition2d(trace, flux, test_trace,
-                                                test_flux, self._penalty,
-                                                self._symmetric)
+            condition = patch._cpp_class('NitscheCondition2d')(
+                trace, flux, test_trace, test_flux, self._penalty,
+                self._symmetric)
             _add_along(form, condition, self._quadrature, values)
 
     def __repr__(self) -> str:
@@ -388,13 +388,14 @@ class NeumannCondition:
         self._values[...] = _values(self._quadrature.positions, values,
                                     self._trace._shape)
 
-    def _add_to(self, form: _cpp.Form2d) -> None:
+    def _add_to(self, form: _cpp.Form2d | _cpp.THBForm2d) -> None:
         """Add the integral of the condition, a load, to the compiled form of
         a planar problem, which reads its values where they lie."""
         traces = self._trace._cpp_traces(self._quadrature.patch)
 
         for trace, values in zip(traces, self._values):
-            condition = _cpp.NeumannCondition2d(trace)
+            condition = self._quadrature.patch._cpp_class(
+                'NeumannCondition2d')(trace)
             form.add_boundary_integral(condition,
                                        self._quadrature._cpp_object, values)
 
@@ -463,9 +464,8 @@ class LagrangeMultiplierCondition:
                 least one.
 
         Raises:
-            TypeError: If the trace is not the trace of an element, if the
-                quadrature is not a boundary quadrature, or if it lies on
-                a refined patch.
+            TypeError: If the trace is not the trace of an element, or if
+                the quadrature is not a boundary quadrature.
             ValueError: If the quadrature lies along a surrogate boundary,
                 whose faces are sides of cells, if `normal` is asked of a
                 trace of one value per point, if the values are not those
@@ -477,9 +477,6 @@ class LagrangeMultiplierCondition:
 
         if not isinstance(quadrature, QuadratureBoundary):
             raise TypeError('the quadrature must be a boundary quadrature')
-
-        if quadrature.patch.refined:
-            raise TypeError('the patch must not be refined')
 
         # A shifted quadrature lies along a surrogate boundary too
         if isinstance(quadrature.boundary, SurrogateBoundary):
@@ -507,14 +504,15 @@ class LagrangeMultiplierCondition:
 
         # One condition for the normal, or one per component
         traces = trace._cpp_traces(quadrature.patch)
+        condition = quadrature.patch._cpp_class(
+            'LagrangeMultiplierCondition2d')
 
         if self._normal:
-            self._cpp_conditions = [_cpp.LagrangeMultiplierCondition2d(
-                traces, bases, quadrature._cpp_object)]
+            self._cpp_conditions = [
+                condition(traces, bases, quadrature._cpp_object)]
         else:
             self._cpp_conditions = [
-                _cpp.LagrangeMultiplierCondition2d(component, bases,
-                                                   quadrature._cpp_object)
+                condition(component, bases, quadrature._cpp_object)
                 for component in traces]
 
         # Coefficients of the multipliers of each compiled condition, which
@@ -593,7 +591,7 @@ class LagrangeMultiplierCondition:
         of the quadrature."""
         return np.einsum('ij,ji->i', self._quadrature.normals, self._values)
 
-    def _add_to(self, form: _cpp.Form2d) -> None:
+    def _add_to(self, form: _cpp.Form2d | _cpp.THBForm2d) -> None:
         """Add the integrals of the compiled conditions to the compiled form
         of a planar problem, which reads their values where they lie. Its
         assembler must number their multipliers."""
@@ -780,9 +778,11 @@ class SkeletonNitscheCondition:
 
         Raises:
             TypeError: If the trace is not the trace of an element, if the
-                patch is not a planar patch or is refined, if the boundary
-                is not a boundary, or if a source is neither `Derivatives`
-                nor a function of the points.
+                patch is not a planar patch, if the boundary is not a
+                boundary, if a source is neither `Derivatives` nor a
+                function of the points, or if a source is given on a
+                refined patch, whose shift with the equation is not
+                available so far.
             ValueError: If there is not one cell type per element, if the
                 map of the patch is not affine, if the values are not those
                 of the trace at each point, if the penalty is negative, or
@@ -828,6 +828,10 @@ class SkeletonNitscheCondition:
             if not (isinstance(source, Derivatives) or callable(source)):
                 raise TypeError('the source must be derivatives or a function '
                                 'of the points')
+
+            if patch.refined:
+                raise TypeError('a refined patch takes no shift with the '
+                                'equation so far')
 
         positions = np.array(projection.positions)
 
@@ -953,7 +957,7 @@ class SkeletonNitscheCondition:
         return derivatives.reshape(len(positions), derivatives.shape[1],
                                    math.prod(shape))
 
-    def _add_to(self, form: _cpp.Form2d,
+    def _add_to(self, form: _cpp.Form2d | _cpp.THBForm2d,
                 cell_weights: npt.NDArray[np.float64]) -> None:
         """Add the integral of the condition to the compiled form of a planar
         problem, assembled with its faces coupled, with the weights of the
@@ -966,7 +970,7 @@ class SkeletonNitscheCondition:
         for trace, flux, test_trace, test_flux, values in zip(
                 self._trace._cpp_traces(patch), self._trace._cpp_fluxes(patch),
                 test_traces, test_fluxes, self._imposed):
-            condition = _cpp.SkeletonNitscheCondition2d(
+            condition = patch._cpp_class('SkeletonNitscheCondition2d')(
                 trace, flux, test_trace, test_flux, self._penalty,
                 self._symmetric)
             form.add_skeleton_integral(condition, self._quadrature,
@@ -1071,8 +1075,8 @@ class SkeletonMultiplierCondition:
 
         Raises:
             TypeError: If the trace is not the velocity of a fluid, if the
-                patch is not a planar patch or is refined, or if the
-                boundary is not a boundary.
+                patch is not a planar patch, or if the boundary is not a
+                boundary.
             ValueError: If there is not one cell type per element, if the
                 map of the patch is not affine, if the number of points is
                 not positive, if the values are not the velocity at each
@@ -1127,7 +1131,8 @@ class SkeletonMultiplierCondition:
         self._values = _values(np.array(projection.positions), values,
                                trace._shape)
 
-        self._cpp_conditions = [_cpp.SkeletonMultiplierCondition2d(
+        self._cpp_conditions = [patch._cpp_class(
+            'SkeletonMultiplierCondition2d')(
             trace._cpp_traces(patch),
             trace._cpp_fluxes(patch, pressure=False),
             trace._element.p._cpp_traces(patch)[0], bases, quadrature,
@@ -1210,7 +1215,7 @@ class SkeletonMultiplierCondition:
 
         return self._cpp_conditions[0].values(self._coefficients[0])
 
-    def _add_to(self, form: _cpp.Form2d,
+    def _add_to(self, form: _cpp.Form2d | _cpp.THBForm2d,
                 cell_weights: npt.NDArray[np.float64]) -> None:
         """Add the integral of the condition to the compiled form of a planar
         problem, assembled with its faces coupled, with the weights of the
@@ -1254,8 +1259,9 @@ def _test_side(
 
 
 def _add_along(
-    form: _cpp.Form2d,
-    condition: _cpp.PenaltyCondition2d | _cpp.NitscheCondition2d,
+    form: _cpp.Form2d | _cpp.THBForm2d,
+    condition: (_cpp.PenaltyCondition2d | _cpp.NitscheCondition2d
+                | _cpp.THBPenaltyCondition2d | _cpp.THBNitscheCondition2d),
     quadrature: QuadratureBoundary,
     values: npt.NDArray[np.float64],
 ) -> None:
@@ -1284,14 +1290,11 @@ def _jump_faces(
     if not isinstance(patch, PlanarPatch):
         raise TypeError('the patch must be a planar patch')
 
-    if patch.refined:
-        raise TypeError('the patch must not be refined')
-
     if not isinstance(boundary, Boundary):
         raise TypeError('the boundary must be a boundary')
 
     cell_types = list(cell_types)
-    num_elements = HierarchicalGrid(patch.degrees, patch.knots).num_elements
+    num_elements = patch.grid.num_elements
 
     if len(cell_types) != num_elements:
         raise ValueError('there must be one cell type per cell')
@@ -1426,13 +1429,29 @@ def _cells_crossed(
 ) -> npt.NDArray[np.int_]:
     """Number of cells of the patch each face of the boundary of a
     quadrature crosses, those holding its points, which lie inside the
-    cells."""
+    cells, the active elements of a refined patch."""
     points = quadrature._cpp_object.points
-    breaks = [np.unique(knots) for knots in quadrature.patch.knots]
+    faces = quadrature.faces
+    patch = quadrature.patch
+    counts = []
+
+    if patch.refined:
+        # The active element whose box holds each point, face by face so
+        # as to compare the points of one face alone with every box
+        bounds = patch.grid.bounds
+
+        for face in range(len(quadrature.boundary.faces)):
+            held = points[faces == face][:, None, :]
+            inside = np.all((held >= bounds[None, :, 0])
+                            & (held <= bounds[None, :, 1]), axis=2)
+            counts.append(len(np.unique(np.argmax(inside, axis=1))))
+
+        return np.array(counts)
+
+    breaks = [np.unique(knots) for knots in patch.knots]
     index = [np.searchsorted(values, points[:, direction])
              for direction, values in enumerate(breaks)]
     cells = index[0] + len(breaks[0]) * index[1]
-    faces = quadrature.faces
 
     return np.array([len(np.unique(cells[faces == face]))
                      for face in range(len(quadrature.boundary.faces))])
