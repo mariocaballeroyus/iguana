@@ -2296,6 +2296,94 @@ TEST_CASE("A ghost penalty penalizes the jumps of the highest derivatives of "
     }
 }
 
+TEST_CASE("A ghost penalty on a refined patch holds a polynomial and "
+          "penalizes the jumps where the grid stays coarse as on the "
+          "coarse patch", "[assembler]")
+{
+    using THB = iguana::THBSpline<double, 2>;
+
+    const iguana::Patch<THB, 2> patch = refined_rectangle();
+    const THB& basis = patch.basis();
+    const iguana::Patch<Basis, 2> coarse = rectangle(basis.level(0));
+
+    // Every element inside, and every interior face a ghost face, those
+    // between a coarse and a fine element included
+    const auto every = [](int count, CellType type) {
+        return CellClassification<double, 2>(
+            std::vector<CellType>(static_cast<std::size_t>(count), type));
+    };
+    const int num_elements = basis.grid().num_elements();
+    const int num_coarse = coarse.basis().grid().num_elements();
+    const iguana::FunctionSpace<THB> space(
+        basis, every(num_elements, CellType::inside));
+    const iguana::FunctionSpace<Basis> coarse_space(
+        coarse.basis(), every(num_coarse, CellType::inside));
+    const iguana::QuadratureSkeleton<double, 2> faces(
+        basis.grid(),
+        iguana::ghost_faces(basis.grid(), every(num_elements, CellType::cut)),
+        iguana::GaussLegendre<double, 1>(3));
+    const iguana::QuadratureSkeleton<double, 2> coarse_faces(
+        coarse.basis().grid(),
+        iguana::ghost_faces(coarse.basis().grid(),
+                            every(num_coarse, CellType::cut)),
+        iguana::GaussLegendre<double, 1>(3));
+
+    // xi^2 eta^2, one polynomial across every face, and (xi - 5/6)_+^2,
+    // whose second derivative jumps across the last knot line of the first
+    // direction alone, all of whose faces lie between coarse elements
+    const KnotVector<double>& along_x = coarse.basis().axis(0).knots();
+    const KnotVector<double>& along_y = coarse.basis().axis(1).knots();
+    const int count = coarse.basis().axis(0).num_functions();
+    const Eigen::VectorXd xs = truncated_power(along_x, 0.);
+    const Eigen::VectorXd ys = truncated_power(along_y, 0.);
+    const Eigen::VectorXd kink = truncated_power(along_x, 5. / 6.);
+    Eigen::MatrixXd splines(coarse.basis().num_functions(), 2);
+
+    for (int function = 0; function < splines.rows(); ++function) {
+        splines(function, 0) = xs(function % count) * ys(function / count);
+        splines(function, 1) = kink(function % count);
+    }
+
+    for (int face = 0; face < basis.grid().num_faces(); ++face) {
+        if (basis.grid().face_start(face)[0] == 5. / 6.) {
+            for (const int element : basis.grid().face_elements(face))
+                REQUIRE(basis.grid().level_of(element) == 0);
+        }
+    }
+
+    const Eigen::MatrixXd coefficients = basis.coefficients(splines);
+    const iguana::PoissonElement<THB, 2>::U trace;
+    const iguana::PoissonElement<Basis, 2>::U coarse_trace;
+    const iguana::SkeletonGhostPenalty<THB, 2> ghost(trace, .3);
+    const iguana::SkeletonGhostPenalty<Basis, 2> coarse_ghost(coarse_trace,
+                                                              .3);
+
+    iguana::Assembler<THB, 2> assembler(space, patch, true);
+    const Eigen::Index entries = stiffness_of(assembler).nonZeros();
+    assembler.assemble_tangent(
+        ghost, faces,
+        Coefficients(Eigen::VectorXd::Zero(space.num_dofs())));
+    iguana::Assembler<Basis, 2> coarse_assembler(coarse_space, coarse, true);
+    coarse_assembler.assemble_tangent(
+        coarse_ghost, coarse_faces,
+        Coefficients(Eigen::VectorXd::Zero(coarse_space.num_dofs())));
+
+    // The coarse-fine faces were coupled beforehand, so the pattern holds
+    REQUIRE(stiffness_of(assembler).nonZeros() == entries);
+
+    const Eigen::SparseMatrix<double, Eigen::RowMajor> stiffness =
+        stiffness_of(assembler);
+    const Eigen::SparseMatrix<double, Eigen::RowMajor> coarse_stiffness =
+        stiffness_of(coarse_assembler);
+    const Eigen::VectorXd u = coefficients.col(0);
+    const Eigen::VectorXd v = coefficients.col(1);
+    const Eigen::VectorXd coarse_v = splines.col(1);
+
+    REQUIRE((stiffness * u).cwiseAbs().maxCoeff() < 1e-12);
+    REQUIRE_THAT(v.dot(stiffness * v),
+                 WithinRel(coarse_v.dot(coarse_stiffness * coarse_v), 1e-12));
+}
+
 TEST_CASE("A volume ghost penalty is the face one on equal cells of "
           "maximal continuity", "[assembler]")
 {
@@ -2812,6 +2900,92 @@ TEST_CASE("A linear field solves the weighted problem with Nitsche "
                     .maxCoeff()
                 < 1e-12 * load_of(assembler).cwiseAbs().maxCoeff());
     }
+}
+
+TEST_CASE("A linear field solves the weighted problem with Nitsche "
+          "conditions on the faces of a refined patch", "[assembler]")
+{
+    using THB = iguana::THBSpline<double, 2>;
+
+    // The grid of five by five refined around the cells the quadrilateral
+    // cuts, so that its faces lie between fine cells and the ghost faces
+    // between fine and coarse ones too
+    const iguana::Patch<Basis, 2> coarse = rectangle(five_by_five());
+    const iguana::Boundary<double, 2> boundary = inner_quadrilateral();
+    const Eigen::VectorXd coarse_fractions =
+        iguana::volume_fractions(coarse, boundary);
+    std::vector<int> cut;
+
+    for (Eigen::Index cell = 0; cell < coarse_fractions.size(); ++cell) {
+        if (coarse_fractions(cell) > 0. && coarse_fractions(cell) < 1.)
+            cut.push_back(static_cast<int>(cell));
+    }
+
+    const iguana::Patch<THB, 2> patch = refine(
+        coarse, refine_admissible(iguana::HierarchicalGrid<double, 2>(
+                                      coarse.basis().grid()),
+                                  cut, true));
+    const iguana::HierarchicalGrid<double, 2>& grid = patch.basis().grid();
+    REQUIRE(grid.num_levels() == 2);
+
+    const Eigen::VectorXd fractions =
+        iguana::volume_fractions(patch, boundary);
+    const CellClassification<double, 2> classification(
+        iguana::cell_types(fractions));
+    const iguana::FunctionSpace<THB> space(
+        patch.basis(), CellClassification<double, 2>(std::vector<CellType>(
+                           static_cast<std::size_t>(grid.num_elements()),
+                           CellType::inside)));
+
+    iguana::QuadratureDomain<double, 2> cells;
+
+    for (const CellType type :
+         {CellType::inside, CellType::cut, CellType::outside})
+        cells.fill(grid, classification, type,
+                   iguana::GaussLegendre<double, 2>(3));
+
+    const iguana::QuadratureSkeleton<double, 2> faces(
+        grid, iguana::jump_faces(grid, classification),
+        iguana::GaussLegendre<double, 1>(3));
+    const iguana::BoundaryProjection<double> projection =
+        iguana::project_closest_points(patch, boundary, faces.points());
+    const std::vector<int> selected =
+        iguana::ghost_faces(grid, classification);
+    const iguana::QuadratureSkeleton<double, 2> ghost_faces(
+        grid, selected, iguana::GaussLegendre<double, 1>(3));
+
+    REQUIRE(std::ranges::any_of(selected, [&grid](int face) {
+        const std::array<int, 2> elements = grid.face_elements(face);
+        return grid.level_of(elements[0]) != grid.level_of(elements[1]);
+    }));
+
+    const iguana::PoissonElement<THB, 2> element;
+    const iguana::PoissonElement<THB, 2>::U trace;
+    const iguana::PoissonElement<THB, 2>::Q flux;
+    const iguana::SkeletonGhostPenalty<THB, 2> ghost(trace, .1);
+    const iguana::SkeletonNitscheCondition<THB, 2> face(trace, flux, 40.,
+                                                        true);
+    const Eigen::Vector2d b(1., -2.);
+
+    const Eigen::VectorXd source = Eigen::VectorXd::Zero(cells.num_points());
+    const Eigen::VectorXd data = linear_data(faces.points(), projection, b);
+    const Coefficients zero(Eigen::VectorXd::Zero(space.num_dofs()));
+
+    // The functions sum to one, so the control points give b . x
+    const Eigen::VectorXd u = patch.coefficients() * b;
+
+    iguana::Assembler<THB, 2> assembler(space, patch, true);
+    assembler.assemble_tangent(element, cells, source, fractions, zero);
+    assembler.assemble_residual(element, cells, source, fractions, zero);
+    assembler.assemble_tangent(face, faces, projection, 2, data, fractions,
+                               zero);
+    assembler.assemble_residual(face, faces, projection, 2, data, fractions,
+                                zero);
+    assembler.assemble_tangent(ghost, ghost_faces, zero);
+
+    REQUIRE((stiffness_of(assembler) * u - load_of(assembler)).cwiseAbs()
+                .maxCoeff()
+            < 1e-12 * load_of(assembler).cwiseAbs().maxCoeff());
 }
 
 TEST_CASE("A ghost penalty takes extra powers of the size of the cells and "
