@@ -67,6 +67,10 @@ public:
     constexpr const TensorGrid<T, d>& grid() const noexcept
     { return bspline_.grid(); }
 
+    /// @brief Degree of the basis along each direction
+    std::array<int, d> degrees() const noexcept
+    { return bspline_.degrees(); }
+
     /// @brief Number of basis functions
     constexpr int num_functions() const noexcept
     { return bspline_.num_functions(); }

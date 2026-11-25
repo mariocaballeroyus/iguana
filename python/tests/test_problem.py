@@ -16,7 +16,8 @@ import iguana
 from iguana import (Boundary, CellType, Derivatives, ElasticityElement,
                     FunctionSpace, GhostPenalty, HierarchicalGrid,
                     LagrangeMultiplierCondition, MixedFunctionSpace,
-                    NeumannCondition, NitscheCondition, PenaltyCondition,
+                    MixedGhostPenalty, NeumannCondition, NitscheCondition,
+                    PenaltyCondition,
                     PoissonElement, QuadratureBoundary, QuadratureDomain,
                     SkeletonMultiplierCondition, SkeletonNitscheCondition,
                     StokesElement, SurrogateBoundary, classify_cells,
@@ -1490,12 +1491,73 @@ def test_elements_on_a_refined_patch_hold_linear_fields(kind):
         assert np.allclose(p - p[0], sums - sums[0], rtol=0., atol=1e-10)
 
 
-def test_refined_patch_takes_no_boundary_or_face_terms():
-    """Hierarchical grids have no shifts, nor boundary or face terms to
-    assemble, yet: a shifted quadrature of the surrogate boundary of a
-    refined patch, multipliers along a curve on it, a condition across its
-    faces and a ghost penalty refuse it, and so does a problem given a
-    condition of another patch or a quadrature on another grid."""
+@pytest.mark.parametrize('method', ['multipliers', 'nitsche', 'mixed'])
+def test_stokes_flow_on_a_refined_patch_by_the_shifted_boundary_method(
+        method):
+    """On a patch refined around the cells the square cuts, where the
+    weights jump across faces between fine cells and the ghost faces lie
+    between fine and coarse cells too, the generalized shifted boundary
+    method finds the flow in the square exactly: by multipliers on the
+    faces of a divergence-conforming space, or by Nitsche's method with
+    ghost penalties on the velocity and the pressure of the stabilized
+    element, or on the velocity and the divergence of the Galerkin one."""
+    coarse = iguana.create_rectangle(lengths=(2., 3.), elements=(6, 6))
+    boundary = square()
+    coarse_types, _ = classify_cells(coarse, boundary)
+    patch = coarse.refine([cell for cell, cell_type in enumerate(coarse_types)
+                           if cell_type == CellType.cut])
+    cell_types, fractions = classify_cells(patch, boundary)
+    stabilized, velocity, body_force = stokes()
+
+    assert patch.grid.num_levels == 2
+
+    quadrature = QuadratureDomain(patch, cell_types)
+
+    for cell_type in (CellType.inside, CellType.cut, CellType.outside):
+        quadrature.fill_gauss_legendre(cell_type, 4)
+
+    if method == 'nitsche':
+        element = stabilized
+        space = FunctionSpace(patch, block_size=3)
+    else:
+        element = StokesElement(stabilized.viscosity)
+        space = MixedFunctionSpace.divergence_conforming(patch)
+
+    penalty = 40. * element.viscosity
+
+    if method == 'multipliers':
+        condition = SkeletonMultiplierCondition(element.u, patch, cell_types,
+                                                boundary, velocity, penalty)
+    else:
+        condition = SkeletonNitscheCondition(element.u, patch, cell_types,
+                                             boundary, velocity, penalty)
+
+    if method == 'mixed':
+        ghosts = [GhostPenalty(element.u, patch, cell_types, .1),
+                  MixedGhostPenalty(element, patch, cell_types, .1)]
+    else:
+        ghosts = [GhostPenalty(trace, patch, cell_types, .1)
+                  for trace in (element.u, element.p)]
+
+    solution = LinearProblem(element, space, quadrature, body_force,
+                             cell_weights=fractions, conditions=[condition],
+                             stabilizations=ghosts,
+                             pressure_reference=(1., 1.75),
+                             petsc_options_prefix=f'refined_{method}_').solve()
+
+    # Points of the square, where the flow is physical
+    points = np.array(list(itertools.product(np.linspace(.55, 1.45, 7),
+                                             np.linspace(1.3, 2.2, 7))))
+    computed = trace_at_points(element.u, space, solution, points)
+
+    assert np.abs(computed - velocity(points)).max() < 1e-9
+
+
+def test_refined_patch_takes_no_shift_with_the_equation():
+    """The shift rewritten with the equation interpolates the source on
+    tensor-product patches alone, so a condition across the faces of a
+    refined patch refuses a source, and a problem on it refuses a condition
+    of another patch or a quadrature on another grid."""
     patch = refined_rectangle()
     cell_types = [CellType.inside] * patch.grid.num_elements
     space = MixedFunctionSpace.divergence_conforming(patch)
@@ -1507,26 +1569,17 @@ def test_refined_patch_takes_no_boundary_or_face_terms():
     def body_force(points):
         return np.ones((len(points), 2))
 
-    for build in (lambda: QuadratureBoundary(
-                      patch, SurrogateBoundary(patch, cell_types), 3,
-                      shift=square()),
-                  lambda: LagrangeMultiplierCondition(
-                      element.u, QuadratureBoundary(patch, square(), 3),
-                      [0., 0.]),
-                  lambda: SkeletonNitscheCondition(element.u, patch,
-                                                   cell_types, square(),
-                                                   [0., 0.], 40.),
-                  lambda: GhostPenalty(element.u, patch, cell_types, .5)):
-        with pytest.raises(TypeError, match='refined'):
-            build()
+    with pytest.raises(TypeError, match='refined'):
+        SkeletonNitscheCondition(element.u, patch, cell_types, square(),
+                                 [0., 0.], 40., source=body_force)
 
-    # A condition on the coarse patch, as the refined one takes none
+    # A condition on the coarse patch
     coarse = iguana.create_rectangle(lengths=(2., 3.), elements=(7, 6))
     condition = NitscheCondition(element.u, edges(coarse),
                                  lambda points: np.zeros((len(points), 2)),
                                  40.)
 
-    with pytest.raises(TypeError):
+    with pytest.raises(ValueError, match='patch of the space'):
         LinearProblem(element, space, quadrature, body_force,
                       conditions=[condition], petsc_options_prefix=prefix)
 

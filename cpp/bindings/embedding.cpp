@@ -83,8 +83,10 @@ SurrogateBoundary2d surrogate_boundary(
 }
 
 /// @brief Faces of a kind where a ghost penalty acts among the elements of
-///        a patch, in the numbering of its grid
-std::vector<int> ghost_faces(const PlanarPatch& patch,
+///        a patch, the active ones of a refined patch, in the numbering of
+///        its grid
+template<typename Basis>
+std::vector<int> ghost_faces(const Patch<Basis, 2>& patch,
                              const CellClassification2d& classification,
                              GhostFaces faces)
 {
@@ -92,8 +94,10 @@ std::vector<int> ghost_faces(const PlanarPatch& patch,
 }
 
 /// @brief Faces across which the volume fraction may jump among the
-///        elements of a patch, in the numbering of its grid
-std::vector<int> jump_faces(const PlanarPatch& patch,
+///        elements of a patch, the active ones of a refined patch, in the
+///        numbering of its grid
+template<typename Basis>
+std::vector<int> jump_faces(const Patch<Basis, 2>& patch,
                             const CellClassification2d& classification)
 {
     return iguana::jump_faces(patch.basis().grid(), classification);
@@ -170,11 +174,16 @@ void embedding(py::module_& module)
         .def_property_readonly("num_faces", &SurrogateBoundary2d::num_faces)
         .def_property_readonly("elements", &face_elements);
 
-    module.def("ghost_faces", &ghost_faces, py::arg("patch"),
-               py::arg("classification"),
+    module.def("ghost_faces", &ghost_faces<TensorBSpline<double, 2>>,
+               py::arg("patch"), py::arg("classification"),
                py::arg("faces") = GhostFaces::all);
-    module.def("jump_faces", &jump_faces, py::arg("patch"),
-               py::arg("classification"));
+    module.def("ghost_faces", &ghost_faces<THBSpline<double, 2>>,
+               py::arg("patch"), py::arg("classification"),
+               py::arg("faces") = GhostFaces::all);
+    module.def("jump_faces", &jump_faces<TensorBSpline<double, 2>>,
+               py::arg("patch"), py::arg("classification"));
+    module.def("jump_faces", &jump_faces<THBSpline<double, 2>>,
+               py::arg("patch"), py::arg("classification"));
 }
 
 } // namespace iguana::bindings

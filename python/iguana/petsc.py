@@ -273,8 +273,7 @@ class LinearProblem(_Problem):
                 space with a component per unknown of the element, or a
                 mixed space with a field of one component each, such as
                 the divergence-conforming space of the Galerkin Stokes
-                element. On a refined patch, the element alone is
-                assembled so far, without conditions or stabilizations.
+                element.
             quadrature: A quadrature over the elements of the patch of the
                 space, on its grid.
             source: The source at each point of the quadrature, in its
@@ -324,9 +323,7 @@ class LinearProblem(_Problem):
                 quadrature is not a domain quadrature, if a condition is
                 neither a penalty, a Nitsche, a Lagrange multiplier, a
                 Neumann, a skeleton Nitsche nor a skeleton multiplier
-                condition, if a stabilization is not a ghost penalty, or
-                if a refined patch is given a condition or a
-                stabilization.
+                condition, or if a stabilization is not a ghost penalty.
             ValueError: If the space does not give each unknown of the
                 element a component of one field or a field of its own, or
                 is a mixed space for an elasticity element, if
@@ -579,9 +576,7 @@ class NonlinearProblem(_Problem):
                 quadrature is not a domain quadrature, if a condition is
                 neither a penalty, a Nitsche, a Lagrange multiplier, a
                 Neumann, a skeleton Nitsche nor a skeleton multiplier
-                condition, if a stabilization is not a ghost penalty, or
-                if a refined patch is given a condition or a
-                stabilization.
+                condition, or if a stabilization is not a ghost penalty.
             ValueError: If the space does not give each unknown of the
                 element a component of one field or a field of its own, or
                 is a mixed space for an elasticity element, if a
@@ -711,11 +706,7 @@ def _check_terms(
 ) -> None:
     """Check that the conditions and stabilizations of a problem are of the
     kinds it assembles, act on traces of its element and lie on the patch of
-    its space, which a refined patch has none of so far."""
-    if patch.refined and (conditions or stabilizations):
-        raise TypeError('a refined patch takes no conditions or '
-                        'stabilizations so far')
-
+    its space."""
     # The pressure of a fluid has a ghost penalty, but no condition
     traces = ((StokesElement.U, StokesElement.P)
               if isinstance(element, StokesElement) else type(element).U)
@@ -907,7 +898,7 @@ def _evaluate_residual(
     solver: PETSc.SNES,
     x: PETSc.Vec,
     residual: PETSc.Vec,
-    form: _cpp.Form2d,
+    form: _cpp.Form2d | _cpp.THBForm2d,
     assembler: _cpp.Assembler2d,
     held: tuple[npt.NDArray[np.integer], npt.NDArray[np.float64]],
 ) -> None:
@@ -931,7 +922,7 @@ def _evaluate_tangent(
     x: PETSc.Vec,
     tangent: PETSc.Mat,
     preconditioner: PETSc.Mat,
-    form: _cpp.Form2d,
+    form: _cpp.Form2d | _cpp.THBForm2d,
     assembler: _cpp.Assembler2d,
     held: tuple[npt.NDArray[np.integer], npt.NDArray[np.float64]],
 ) -> None:

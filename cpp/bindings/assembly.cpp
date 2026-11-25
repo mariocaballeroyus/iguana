@@ -64,6 +64,20 @@ using THBStokesStabilizedElement2d = StokesStabilizedElement<THBBasis2d, 2>;
 using THBElasticityElement2d = ElasticityElement<THBBasis2d, 2>;
 using THBAssembler2d = Assembler<THBBasis2d, 2>;
 using THBForm2d = Form<THBBasis2d, 2>;
+using THBPenaltyCondition2d = PenaltyCondition<THBBasis2d, 2>;
+using THBNeumannCondition2d = NeumannCondition<THBBasis2d, 2>;
+using THBNitscheCondition2d = NitscheCondition<THBBasis2d, 2>;
+using THBLagrangeMultiplierCondition2d =
+    LagrangeMultiplierCondition<THBBasis2d, 2>;
+using THBComponents2d = std::vector<std::reference_wrapper<const THBTrace2d>>;
+using THBSkeletonMultiplierCondition2d =
+    SkeletonMultiplierCondition<THBBasis2d, 2>;
+using THBFluxes2d = std::vector<std::reference_wrapper<const THBFlux2d>>;
+using THBSkeletonNitscheCondition2d = SkeletonNitscheCondition<THBBasis2d, 2>;
+using THBSkeletonGhostPenalty2d = SkeletonGhostPenalty<THBBasis2d, 2>;
+using THBSkeletonMixedGhostPenalty2d =
+    SkeletonMixedGhostPenalty<THBBasis2d, 2>;
+using THBVolumeGhostPenalty2d = VolumeGhostPenalty<THBBasis2d, 2>;
 
 /// @brief Integrals of a ghost penalty across faces, the overloads of
 ///        add_skeleton_integral that are not templates
@@ -75,6 +89,16 @@ using AddMixedGhostPenalty2d =
 using AddVolumeGhostPenalty2d = void (Form2d::*)(const VolumeGhostPenalty2d&,
                                                  const QuadratureSkeleton2d&,
                                                  const QuadratureDomain2d&);
+
+using THBAddGhostPenalty2d =
+    void (THBForm2d::*)(const THBSkeletonGhostPenalty2d&,
+                        const QuadratureSkeleton2d&);
+using THBAddMixedGhostPenalty2d =
+    void (THBForm2d::*)(const THBSkeletonMixedGhostPenalty2d&,
+                        const QuadratureSkeleton2d&);
+using THBAddVolumeGhostPenalty2d =
+    void (THBForm2d::*)(const THBVolumeGhostPenalty2d&,
+                        const QuadratureSkeleton2d&, const QuadratureDomain2d&);
 
 } // namespace
 
@@ -385,8 +409,8 @@ void assembly(py::module_& module)
              py::arg("assembler"), py::arg("coefficients"))
         .def("assemble_mass", &Form2d::assemble_mass, py::arg("assembler"));
 
-    // On a hierarchical basis, the elements integrated over the cells: the
-    // terms on boundaries and faces need a tensor-product grid
+    // On a hierarchical basis, the elements, and below the conditions and
+    // ghost penalties, as on a tensor-product one
     py::class_<THBTrace2d>(module, "THBTrace2d");
     py::class_<THBFlux2d>(module, "THBFlux2d");
 
@@ -435,8 +459,97 @@ void assembly(py::module_& module)
         .def(py::init<double, double, std::size_t>(), py::arg("lame"),
              py::arg("shear_modulus"), py::arg("component"));
 
+    // The conditions and ghost penalties on a hierarchical basis, as on a
+    // tensor-product one
+    py::class_<THBPenaltyCondition2d>(module, "THBPenaltyCondition2d")
+        .def(py::init<const THBTrace2d&, double>(), py::arg("trace"),
+             py::arg("penalty"), py::keep_alive<1, 2>());
+
+    py::class_<THBNeumannCondition2d>(module, "THBNeumannCondition2d")
+        .def(py::init<const THBTrace2d&>(), py::arg("trace"),
+             py::keep_alive<1, 2>());
+
+    py::class_<THBNitscheCondition2d>(module, "THBNitscheCondition2d")
+        .def(py::init<const THBTrace2d&, const THBFlux2d&, double, bool>(),
+             py::arg("trace"), py::arg("flux"), py::arg("penalty"),
+             py::arg("symmetric") = true, py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>())
+        .def(py::init<const THBTrace2d&, const THBFlux2d&, const THBTrace2d&,
+                      const THBFlux2d&, double, bool>(),
+             py::arg("trace"), py::arg("flux"), py::arg("test_trace"),
+             py::arg("test_flux"), py::arg("penalty"),
+             py::arg("symmetric") = true, py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>(),
+             py::keep_alive<1, 5>());
+
+    py::class_<THBLagrangeMultiplierCondition2d>(
+        module, "THBLagrangeMultiplierCondition2d")
+        .def(py::init<const THBTrace2d&, std::vector<BSpline<double>>,
+                      const QuadratureBoundary2d&>(),
+             py::arg("trace"), py::arg("bases"), py::arg("quadrature"),
+             py::keep_alive<1, 2>(), py::keep_alive<1, 4>())
+        .def(py::init<THBComponents2d, std::vector<BSpline<double>>,
+                      const QuadratureBoundary2d&>(),
+             py::arg("components"), py::arg("bases"), py::arg("quadrature"),
+             py::keep_alive<1, 2>(), py::keep_alive<1, 4>())
+        .def_property_readonly(
+            "num_multipliers",
+            &THBLagrangeMultiplierCondition2d::num_multipliers)
+        .def("values", &THBLagrangeMultiplierCondition2d::values,
+             py::arg("multipliers"));
+
+    py::class_<THBSkeletonMultiplierCondition2d>(
+        module, "THBSkeletonMultiplierCondition2d")
+        .def(py::init<THBComponents2d, THBFluxes2d, const THBTrace2d&,
+                      std::vector<BSpline<double>>,
+                      const QuadratureSkeleton2d&,
+                      const BoundaryProjection2d&, int, double, bool,
+                      std::vector<bool>,
+                      const std::vector<std::vector<int>>&>(),
+             py::arg("velocity"), py::arg("fluxes"), py::arg("pressure"),
+             py::arg("bases"), py::arg("quadrature"), py::arg("projection"),
+             py::arg("order"), py::arg("penalty"), py::arg("symmetric") = true,
+             py::arg("periodic") = std::vector<bool>(),
+             py::arg("loops") = std::vector<std::vector<int>>(),
+             py::keep_alive<1, 2>(), py::keep_alive<1, 3>(),
+             py::keep_alive<1, 4>(), py::keep_alive<1, 6>(),
+             py::keep_alive<1, 7>())
+        .def_property_readonly(
+            "num_multipliers",
+            &THBSkeletonMultiplierCondition2d::num_multipliers)
+        .def("values", &THBSkeletonMultiplierCondition2d::values,
+             py::arg("multipliers"));
+
+    py::class_<THBSkeletonNitscheCondition2d>(module,
+                                              "THBSkeletonNitscheCondition2d")
+        .def(py::init<const THBTrace2d&, const THBFlux2d&, double, bool>(),
+             py::arg("trace"), py::arg("flux"), py::arg("penalty"),
+             py::arg("symmetric") = true, py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>())
+        .def(py::init<const THBTrace2d&, const THBFlux2d&, const THBTrace2d&,
+                      const THBFlux2d&, double, bool>(),
+             py::arg("trace"), py::arg("flux"), py::arg("test_trace"),
+             py::arg("test_flux"), py::arg("penalty"),
+             py::arg("symmetric") = true, py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>(),
+             py::keep_alive<1, 5>());
+
+    py::class_<THBSkeletonGhostPenalty2d>(module, "THBSkeletonGhostPenalty2d")
+        .def(py::init<const THBTrace2d&, double, int>(), py::arg("trace"),
+             py::arg("penalty"), py::arg("scaling") = 0,
+             py::keep_alive<1, 2>());
+
+    py::class_<THBSkeletonMixedGhostPenalty2d>(module,
+                                            "THBSkeletonMixedGhostPenalty2d")
+        .def(py::init<double>(), py::arg("penalty"));
+
+    py::class_<THBVolumeGhostPenalty2d>(module, "THBVolumeGhostPenalty2d")
+        .def(py::init<const THBTrace2d&, double, int>(), py::arg("trace"),
+             py::arg("penalty"), py::arg("scaling") = 0,
+             py::keep_alive<1, 2>());
+
     // Its multipliers take the arguments of the tensor-product assembler,
-    // so that Python builds both alike, although none is bound yet
+    // so that Python builds both alike
     py::class_<THBAssembler2d>(module, "THBAssembler2d")
         .def(py::init<const FunctionSpace<THBBasis2d>&,
                       const Patch<THBBasis2d, 2>&, bool,
@@ -517,6 +630,82 @@ void assembly(py::module_& module)
              py::arg("element"), py::arg("quadrature"),
              py::arg("cell_weights").noconvert(), py::keep_alive<1, 2>(),
              py::keep_alive<1, 3>(), py::keep_alive<1, 4>())
+        .def("add_boundary_integral",
+             py::overload_cast<const THBPenaltyCondition2d&,
+                               const QuadratureBoundary2d&, Data>(
+                 &THBForm2d::add_boundary_integral<THBPenaltyCondition2d>),
+             py::arg("condition"), py::arg("quadrature"),
+             py::arg("data").noconvert(), py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>())
+        .def("add_boundary_integral",
+             py::overload_cast<const THBNeumannCondition2d&,
+                               const QuadratureBoundary2d&, Data>(
+                 &THBForm2d::add_boundary_integral<THBNeumannCondition2d>),
+             py::arg("condition"), py::arg("quadrature"),
+             py::arg("data").noconvert(), py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>())
+        .def("add_boundary_integral",
+             py::overload_cast<const THBNitscheCondition2d&,
+                               const QuadratureBoundary2d&, Data>(
+                 &THBForm2d::add_boundary_integral<THBNitscheCondition2d>),
+             py::arg("condition"), py::arg("quadrature"),
+             py::arg("data").noconvert(), py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>())
+        .def("add_boundary_integral",
+             py::overload_cast<const THBPenaltyCondition2d&,
+                               const QuadratureBoundary2d&,
+                               const BoundaryProjection2d&, int, Data>(
+                 &THBForm2d::add_boundary_integral<THBPenaltyCondition2d>),
+             py::arg("condition"), py::arg("quadrature"),
+             py::arg("projection"), py::arg("order"),
+             py::arg("data").noconvert(), py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>(),
+             py::keep_alive<1, 6>())
+        .def("add_boundary_integral",
+             py::overload_cast<const THBNitscheCondition2d&,
+                               const QuadratureBoundary2d&,
+                               const BoundaryProjection2d&, int, Data>(
+                 &THBForm2d::add_boundary_integral<THBNitscheCondition2d>),
+             py::arg("condition"), py::arg("quadrature"),
+             py::arg("projection"), py::arg("order"),
+             py::arg("data").noconvert(), py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>(),
+             py::keep_alive<1, 6>())
+        .def("add_multiplier_integral",
+             py::overload_cast<const THBLagrangeMultiplierCondition2d&, Data>(
+                 &THBForm2d::add_multiplier_integral),
+             py::arg("condition"), py::arg("data").noconvert(),
+             py::keep_alive<1, 2>(), py::keep_alive<1, 3>())
+        .def("add_multiplier_integral",
+             py::overload_cast<const THBSkeletonMultiplierCondition2d&, Source,
+                               Data>(&THBForm2d::add_multiplier_integral),
+             py::arg("condition"), py::arg("data").noconvert(),
+             py::arg("cell_weights").noconvert(), py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>())
+        .def("add_skeleton_integral",
+             &THBForm2d::add_skeleton_integral<THBSkeletonNitscheCondition2d>,
+             py::arg("condition"), py::arg("quadrature"),
+             py::arg("projection"), py::arg("order"),
+             py::arg("data").noconvert(),
+             py::arg("cell_weights").noconvert(), py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>(),
+             py::keep_alive<1, 6>(), py::keep_alive<1, 7>())
+        .def("add_skeleton_integral",
+             static_cast<THBAddGhostPenalty2d>(
+                 &THBForm2d::add_skeleton_integral),
+             py::arg("penalty"), py::arg("quadrature"),
+             py::keep_alive<1, 2>(), py::keep_alive<1, 3>())
+        .def("add_skeleton_integral",
+             static_cast<THBAddMixedGhostPenalty2d>(
+                 &THBForm2d::add_skeleton_integral),
+             py::arg("penalty"), py::arg("quadrature"),
+             py::keep_alive<1, 2>(), py::keep_alive<1, 3>())
+        .def("add_skeleton_integral",
+             static_cast<THBAddVolumeGhostPenalty2d>(
+                 &THBForm2d::add_skeleton_integral),
+             py::arg("penalty"), py::arg("faces"), py::arg("cells"),
+             py::keep_alive<1, 2>(), py::keep_alive<1, 3>(),
+             py::keep_alive<1, 4>())
         .def("assemble_tangent", &THBForm2d::assemble_tangent,
              py::arg("assembler"), py::arg("coefficients"))
         .def("assemble_residual", &THBForm2d::assemble_residual,

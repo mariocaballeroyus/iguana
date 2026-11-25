@@ -70,5 +70,6 @@ template class PenaltyCondition<TensorBSpline<double, 3>, 3>;
 template class PenaltyCondition<TensorNURBS<double, 2>, 2>;
 template class PenaltyCondition<TensorNURBS<double, 2>, 3>;
 template class PenaltyCondition<TensorNURBS<double, 3>, 3>;
+template class PenaltyCondition<THBSpline<double, 2>, 2>;
 
 } // namespace iguana

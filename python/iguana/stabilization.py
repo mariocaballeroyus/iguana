@@ -21,7 +21,6 @@ from collections.abc import Sequence
 from iguana import cpp as _cpp
 from iguana.element import PoissonElement, StokesElement
 from iguana.embedding import CellType
-from iguana.grid import HierarchicalGrid
 from iguana.patch import PlanarPatch
 from iguana.quadrature import QuadratureDomain
 
@@ -46,11 +45,8 @@ def _ghost_faces(
     if not isinstance(patch, PlanarPatch):
         raise TypeError('the patch must be a planar patch')
 
-    if patch.refined:
-        raise TypeError('the patch must not be refined')
-
     cell_types = list(cell_types)
-    num_elements = HierarchicalGrid(patch.degrees, patch.knots).num_elements
+    num_elements = patch.grid.num_elements
 
     if len(cell_types) != num_elements:
         raise ValueError('there must be one cell type per cell')
@@ -129,8 +125,7 @@ class GhostPenalty:
 
         Raises:
             TypeError: If the trace is not one of a Poisson or a Stokes
-                element, or if the patch is not a planar patch or is
-                refined.
+                element, or if the patch is not a planar patch.
             ValueError: If there is not one cell type per element, if the
                 penalty is not positive, or if the faces are not all, cut,
                 outside or global.
@@ -176,15 +171,14 @@ class GhostPenalty:
         `'global'`."""
         return self._faces
 
-    def _add_to(self, form: _cpp.Form2d) -> None:
+    def _add_to(self, form: _cpp.Form2d | _cpp.THBForm2d) -> None:
         """Add the integral of the penalty to the compiled form of a planar
         problem, assembled with its faces coupled."""
         factor, scaling = self._trace._ghost_scaling()
 
         for trace in self._trace._cpp_traces(self._patch):
-            penalty = _cpp.SkeletonGhostPenalty2d(trace,
-                                                  factor * self._penalty,
-                                                  scaling)
+            penalty = self._patch._cpp_class('SkeletonGhostPenalty2d')(
+                trace, factor * self._penalty, scaling)
             form.add_skeleton_integral(penalty, self._quadrature)
 
     def __repr__(self) -> str:
@@ -238,8 +232,7 @@ class VolumeGhostPenalty:
 
         Raises:
             TypeError: If the trace is not one of a Poisson or a Stokes
-                element, or if the patch is not a planar patch or is
-                refined.
+                element, or if the patch is not a planar patch.
             ValueError: If there is not one cell type per element, if the
                 penalty is not positive, or if the faces are not all, cut,
                 outside or global.
@@ -289,15 +282,14 @@ class VolumeGhostPenalty:
         `'global'`."""
         return self._faces
 
-    def _add_to(self, form: _cpp.Form2d) -> None:
+    def _add_to(self, form: _cpp.Form2d | _cpp.THBForm2d) -> None:
         """Add the integral of the penalty to the compiled form of a planar
         problem, assembled with its faces coupled."""
         factor, scaling = self._trace._ghost_scaling()
 
         for trace in self._trace._cpp_traces(self._patch):
-            penalty = _cpp.VolumeGhostPenalty2d(trace,
-                                                factor * self._penalty,
-                                                scaling)
+            penalty = self._patch._cpp_class('VolumeGhostPenalty2d')(
+                trace, factor * self._penalty, scaling)
             form.add_skeleton_integral(penalty, self._faces_quadrature,
                                        self._cells._cpp_object)
 
@@ -362,7 +354,7 @@ class MixedGhostPenalty:
 
         Raises:
             TypeError: If the element is not a Stokes element, or if the
-                patch is not a planar patch or is refined.
+                patch is not a planar patch.
             ValueError: If there is not one cell type per element, if the
                 penalty is not positive, or if the faces are not all, cut,
                 outside or global.
@@ -411,10 +403,11 @@ class MixedGhostPenalty:
         `'global'`."""
         return self._faces
 
-    def _add_to(self, form: _cpp.Form2d) -> None:
+    def _add_to(self, form: _cpp.Form2d | _cpp.THBForm2d) -> None:
         """Add the integral of the penalty to the compiled form of a planar
         problem, assembled with its faces coupled."""
-        penalty = _cpp.SkeletonMixedGhostPenalty2d(self._penalty)
+        penalty = self._patch._cpp_class('SkeletonMixedGhostPenalty2d')(
+            self._penalty)
         form.add_skeleton_integral(penalty, self._quadrature)
 
     def __repr__(self) -> str:

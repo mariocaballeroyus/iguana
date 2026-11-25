@@ -9,6 +9,7 @@
 
 #include "iguana/basis/tensor_bspline.hpp"
 #include "iguana/basis/tensor_nurbs.hpp"
+#include "iguana/basis/thb_spline.hpp"
 
 namespace iguana
 {
@@ -113,5 +114,6 @@ void SkeletonMixedGhostPenalty<Basis, n>::local_residual(
 
 template class SkeletonMixedGhostPenalty<TensorBSpline<double, 2>, 2>;
 template class SkeletonMixedGhostPenalty<TensorNURBS<double, 2>, 2>;
+template class SkeletonMixedGhostPenalty<THBSpline<double, 2>, 2>;
 
 } // namespace iguana
