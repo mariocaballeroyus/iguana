@@ -1953,10 +1953,6 @@ TEST_CASE("A Stokes system on refined divergence-conforming spaces holds "
     // The fields of each cell gathered one after another, as the rows of
     // its terms
     REQUIRE(tangent_defect(assembler, space.num_dofs(), assemble) < 1e-12);
-
-    // Faces are not coupled on a hierarchical grid yet
-    REQUIRE_THROWS_AS((iguana::Assembler<THB, 2>(space, patch, true)),
-                      std::invalid_argument);
 }
 
 TEST_CASE("Every element on a refined space holds a linear field exactly",

@@ -408,63 +408,34 @@ void fold_columns(const Eigen::MatrixX<T>& local,
 }
 
 /**
- * @brief Cells around an element of a grid: the element itself and, with
- *        the faces coupled, its neighbours across each of its faces
+ * @brief Cells around each element of a grid: the element itself and, with
+ *        the faces coupled, the elements across each of its interior faces
  *
- * @param element Element index, in the numbering of the grid
- * @param counts Number of elements of the grid in each direction
+ * @param grid Grid, a tensor or a hierarchical one, whose interior faces
+ *        pair the neighbours
  * @param couple_faces Whether to add the neighbours across the faces
- * @param cells Output, overwritten
+ * @return The cells around each element, the element itself first
  */
-template<std::size_t d>
-void cells_around(int element, const std::array<int, d>& counts,
-                  bool couple_faces, std::vector<int>& cells)
+template<typename Grid>
+std::vector<std::vector<int>> cells_around(const Grid& grid,
+                                           bool couple_faces)
 {
-    cells.assign(1, element);
+    std::vector<std::vector<int>> cells(
+        static_cast<std::size_t>(grid.num_elements()));
+
+    for (std::size_t element = 0; element < cells.size(); ++element)
+        cells[element].assign(1, static_cast<int>(element));
 
     if (!couple_faces)
-        return;
+        return cells;
 
-    const std::array<int, d> index = unflatten(element, counts);
-
-    for (std::size_t direction = 0; direction < d; ++direction) {
-        for (const int step : {-1, 1}) {
-            std::array<int, d> neighbour = index;
-            neighbour[direction] += step;
-
-            if (neighbour[direction] >= 0
-                && neighbour[direction] < counts[direction])
-                cells.push_back(flatten(neighbour, counts));
-        }
+    for (int face = 0; face < grid.num_faces(); ++face) {
+        const std::array<int, 2> elements = grid.face_elements(face);
+        cells[static_cast<std::size_t>(elements[0])].push_back(elements[1]);
+        cells[static_cast<std::size_t>(elements[1])].push_back(elements[0]);
     }
-}
 
-/**
- * @brief Number of elements of each direction of a tensor grid, across
- *        whose faces the neighbours couple
- */
-template<std::floating_point T, std::size_t d>
-std::array<int, d> face_counts(const TensorGrid<T, d>& grid)
-{
-    std::array<int, d> counts{};
-
-    for (std::size_t direction = 0; direction < d; ++direction)
-        counts[direction] = grid.knots(direction).num_elements();
-
-    return counts;
-}
-
-/**
- * @brief Neighbours across the faces of a hierarchical grid, which has no
- *        faces yet
- *
- * @throws std::invalid_argument Always
- */
-template<std::floating_point T, std::size_t d>
-std::array<int, d> face_counts(const HierarchicalGrid<T, d>&)
-{
-    throw std::invalid_argument("Assembler: "
-                                "coupling faces needs a tensor-product grid");
+    return cells;
 }
 
 /**
@@ -502,11 +473,10 @@ void sparsity_pattern(const MixedFunctionSpace<Basis>& space,
                                     "the space must have the elements of the "
                                     "patch");
 
-    // The neighbours across faces take the tensor numbering of the grid
-    std::array<int, Basis::dimension> counts{};
-
-    if (couple_faces)
-        counts = face_counts(patch.basis().grid());
+    // The neighbours across the faces of the grid, of every level on a
+    // hierarchical one
+    const std::vector<std::vector<int>> neighbourhoods =
+        cells_around(patch.basis().grid(), couple_faces);
 
     const int num_elements = space.num_elements();
     const int num_dofs = space.num_dofs();
@@ -526,15 +496,12 @@ void sparsity_pattern(const MixedFunctionSpace<Basis>& space,
     // The last row that took each column, which marks the columns a row
     // already holds without clearing anything between rows
     std::vector<int> last_row(num_dofs, -1);
-    std::vector<int> cells;
     offsets.assign(1, 0);
     columns.clear();
 
     for (int row = 0; row < num_dofs; ++row) {
         for (const int element : dof_elements[row]) {
-            cells_around(element, counts, couple_faces, cells);
-
-            for (const int cell : cells) {
+            for (const int cell : neighbourhoods[element]) {
                 for (const int col : element_dofs[cell]) {
                     if (last_row[col] == row)
                         continue;
