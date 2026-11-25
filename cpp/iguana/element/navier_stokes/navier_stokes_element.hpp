@@ -31,10 +31,11 @@ namespace iguana
  *          test functions convected by the velocity test the residual r_M
  *          of the momentum equation. The spaces of the velocity and the
  *          pressure must be inf-sup stable, as those of a
- *          divergence-conforming space. The residual is not affine in the
- *          coefficients, and the tangent is its exact derivative, that of
- *          τ_M with the velocity included, for Newton's method. Its unknowns,
- *          source, traces and fluxes are those of StokesElement
+ *          divergence-conforming space, while NavierStokesStabilizedElement
+ *          lets them take functions of one basis. The residual is not affine
+ *          in the coefficients, and the tangent is its exact derivative,
+ *          that of τ_M with the velocity included, for Newton's method. Its
+ *          unknowns, source, traces and fluxes are those of StokesElement
  *
  * @tparam Basis Basis of the patch, TensorBSpline, TensorNURBS or
  *         THBSpline
@@ -117,6 +118,38 @@ protected:
     Flow flow(const ElementValues<Basis, n>& values,
               const Eigen::MatrixX<Scalar>& source,
               const Eigen::VectorX<Scalar>& coefficients) const;
+
+    /**
+     * @brief Functions convected by the velocity, u · ∇N_i at each point
+     *
+     * @param grads Physical gradients of the functions, one matrix per
+     *        direction with a row per function and a column per point
+     * @param state Flow at the points
+     * @return A row per function and a column per point
+     */
+    static Eigen::MatrixX<Scalar> convected(
+        const std::array<Eigen::MatrixX<Scalar>, n>& grads, const Flow& state);
+
+    /**
+     * @brief Derivatives of a component of the residual of the momentum
+     *        equation by the coefficients of a component of the velocity, at
+     *        each point
+     *
+     *     ∂r_a / ∂c_j = N_j ∂_b u_a + δ_ab u · ∇N_j
+     *                   − μ (∂_a ∂_b N_j + δ_ab ΔN_j)
+     *
+     * @details With c_j the coefficient of N_j e_b
+     *
+     * @param values Values at the points, with their physical gradients and
+     *        Hessians
+     * @param state Flow at the points
+     * @param a Component of the residual
+     * @param b Component of the velocity
+     * @return A row per function of component b and a column per point
+     */
+    Eigen::MatrixX<Scalar> momentum_derivative(
+        const ElementValues<Basis, n>& values, const Flow& state,
+        std::size_t a, std::size_t b) const;
 
 private:
     /// @brief Galerkin element, whose forms the convection adds to

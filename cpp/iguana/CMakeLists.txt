@@ -36,6 +36,7 @@ add_library(iguana
     assembly/element_values.cpp
     element/elasticity/elasticity_element.cpp
     element/navier_stokes/navier_stokes_element.cpp
+    element/navier_stokes/navier_stokes_stabilized_element.cpp
     element/poisson/poisson_element.cpp
     element/poisson/poisson_shift.cpp
     element/stokes/stokes_element.cpp

@@ -41,7 +41,6 @@ void NavierStokesElement<Basis, n>::local_tangent(
     const Flow state = flow(values, source, coefficients);
     const Eigen::ArrayX<Scalar> w = weights.array();
     const Eigen::ArrayX<Scalar> h = values.sizes().array();
-    const Scalar viscosity = this->viscosity();
 
     const std::array<Eigen::MatrixX<Scalar>, n>& pressure_grads =
         values.physical_gradients(Base::field_of(num_fields, n));
@@ -59,42 +58,17 @@ void NavierStokesElement<Basis, n>::local_tangent(
             values.values(test_field);
         const std::array<Eigen::MatrixX<Scalar>, n>& test_grads =
             values.physical_gradients(test_field);
+        const Eigen::MatrixX<Scalar> test_convected =
+            convected(test_grads, state);
         const Eigen::Index row = Base::first_row(values, a);
         const Eigen::Index rows = test_functions.rows();
-
-        // u · ∇N_i at each point, the test functions convected
-        Eigen::MatrixX<Scalar> convected =
-            Eigen::MatrixX<Scalar>::Zero(rows, w.size());
-
-        for (std::size_t k = 0; k < n; ++k)
-            convected +=
-                test_grads[k] * state.velocity[k].matrix().asDiagonal();
 
         for (std::size_t b = 0; b < n; ++b) {
             const std::size_t trial_field = Base::field_of(num_fields, b);
             const Eigen::MatrixX<Scalar>& trial_functions =
                 values.values(trial_field);
-            const std::array<Eigen::MatrixX<Scalar>, n>& trial_grads =
-                values.physical_gradients(trial_field);
-            const std::array<Eigen::MatrixX<Scalar>, n * (n + 1) / 2>&
-                hessians = values.physical_hessians(trial_field);
-            const Eigen::Index col = Base::first_row(values, b);
-            const Eigen::Index cols = trial_functions.rows();
-
-            // ∂r_a / ∂c_j at each point, the coefficient c_j of N_j e_b:
-            // N_j ∂_b u_a + δ_ab u · ∇N_j − μ (∂_a ∂_b N_j + δ_ab ΔN_j)
-            Eigen::MatrixX<Scalar> strong =
-                trial_functions * state.gradient[a][b].matrix().asDiagonal()
-                - viscosity * hessians[pair_index<n>(a, b)];
-
-            if (a == b) {
-                for (std::size_t k = 0; k < n; ++k)
-                    strong += trial_grads[k]
-                                  * state.velocity[k].matrix().asDiagonal()
-                              - viscosity * hessians[pair_index<n>(k, k)];
-            }
-
-            auto block = tangent.block(row, col, rows, cols);
+            auto block = tangent.block(row, Base::first_row(values, b), rows,
+                                       trial_functions.rows());
 
             // K_ij = ( (u · ∇)(N_j e_b) + (N_j e_b · ∇)u, N_i e_a )_Ω
             //      ≈ Σ_q w_q (δ_ab u · ∇N_j + N_j ∂_b u_a) N_i
@@ -103,22 +77,16 @@ void NavierStokesElement<Basis, n>::local_tangent(
                      * trial_functions.transpose();
 
             if (a == b) {
-                Eigen::MatrixX<Scalar> trial_convected =
-                    Eigen::MatrixX<Scalar>::Zero(cols, w.size());
-
-                for (std::size_t k = 0; k < n; ++k)
-                    trial_convected += trial_grads[k]
-                                       * state.velocity[k].matrix()
-                                             .asDiagonal();
-
                 block += test_functions * w.matrix().asDiagonal()
-                         * trial_convected.transpose();
+                         * convected(values.physical_gradients(trial_field),
+                                     state)
+                               .transpose();
             }
 
             // K_ij = ( τ_M (u · ∇)N_i, ∂r_a / ∂c_j )_Ω
             //      ≈ Σ_q w_q τ_M (u · ∇N_i) ∂r_a / ∂c_j
-            block += convected * (w * state.tau).matrix().asDiagonal()
-                     * strong.transpose();
+            block += test_convected * (w * state.tau).matrix().asDiagonal()
+                     * momentum_derivative(values, state, a, b).transpose();
 
             // K_ij = ( τ_M (N_j e_b · ∇)N_i, r_a )_Ω
             //      ≈ Σ_q w_q τ_M N_j ∂_b N_i r_a
@@ -129,7 +97,7 @@ void NavierStokesElement<Basis, n>::local_tangent(
 
             // K_ij = ( δτ_M (u · ∇)N_i, r_a )_Ω
             //      ≈ − Σ_q w_q τ_M² (2 / (h |u|)) u_b N_j (u · ∇N_i) r_a
-            block += convected
+            block += test_convected
                      * (tau_change * state.velocity[b] * state.momentum[a])
                            .matrix().asDiagonal()
                      * trial_functions.transpose();
@@ -138,7 +106,7 @@ void NavierStokesElement<Basis, n>::local_tangent(
         // K_ij = ( τ_M (u · ∇)N_i, ∂_a N_j )_Ω
         //      ≈ Σ_q w_q τ_M (u · ∇N_i) ∂_a N_j
         tangent.block(row, pressure_row, rows, pressure_rows) +=
-            convected * (w * state.tau).matrix().asDiagonal()
+            test_convected * (w * state.tau).matrix().asDiagonal()
             * pressure_grads[a].transpose();
     }
 }
@@ -257,6 +225,45 @@ NavierStokesElement<Basis, n>::flow(
     result.speed = squared.sqrt();
     result.tau = 1 / (stabilization_ * viscosity / h.square()
                       + 2 * result.speed / h);
+
+    return result;
+}
+
+template<typename Basis, std::size_t n>
+Eigen::MatrixX<typename Basis::Scalar> NavierStokesElement<Basis, n>::convected(
+    const std::array<Eigen::MatrixX<Scalar>, n>& grads, const Flow& state)
+{
+    Eigen::MatrixX<Scalar> result =
+        Eigen::MatrixX<Scalar>::Zero(grads[0].rows(), grads[0].cols());
+
+    for (std::size_t k = 0; k < n; ++k)
+        result += grads[k] * state.velocity[k].matrix().asDiagonal();
+
+    return result;
+}
+
+template<typename Basis, std::size_t n>
+Eigen::MatrixX<typename Basis::Scalar>
+NavierStokesElement<Basis, n>::momentum_derivative(
+    const ElementValues<Basis, n>& values, const Flow& state, std::size_t a,
+    std::size_t b) const
+{
+    const std::size_t field = Base::field_of(values.num_fields(), b);
+    const std::array<Eigen::MatrixX<Scalar>, n * (n + 1) / 2>& hessians =
+        values.physical_hessians(field);
+    const Scalar viscosity = this->viscosity();
+
+    // N_j ∂_b u_a − μ ∂_a ∂_b N_j, and for a = b also u · ∇N_j − μ ΔN_j
+    Eigen::MatrixX<Scalar> result =
+        values.values(field) * state.gradient[a][b].matrix().asDiagonal()
+        - viscosity * hessians[pair_index<n>(a, b)];
+
+    if (a == b) {
+        result += convected(values.physical_gradients(field), state);
+
+        for (std::size_t k = 0; k < n; ++k)
+            result -= viscosity * hessians[pair_index<n>(k, k)];
+    }
 
     return result;
 }
