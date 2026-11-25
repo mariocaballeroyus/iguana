@@ -276,30 +276,6 @@ void differentiate_values(
 }
 
 /**
- * @brief Knot vector of a direction of a tensor grid, whose faces the terms
- *        on faces are integrated over
- */
-template<std::floating_point T, std::size_t d>
-const KnotVector<T>& knots_of(const TensorGrid<T, d>& grid,
-                              std::size_t direction)
-{
-    return grid.knots(direction);
-}
-
-/**
- * @brief Knot vector of a direction of a hierarchical grid, which has no
- *        faces yet
- *
- * @throws std::invalid_argument Always
- */
-template<std::floating_point T, std::size_t d>
-const KnotVector<T>& knots_of(const HierarchicalGrid<T, d>&, std::size_t)
-{
-    throw std::invalid_argument("Assembler: "
-                                "terms on faces need a tensor-product grid");
-}
-
-/**
  * @brief Whether every interior knot of a knot vector is simple, so that
  *        its splines have maximal continuity and only their derivatives of
  *        the order of the degree jump between its elements
@@ -317,6 +293,30 @@ bool simple_interior_knots(const KnotVector<T>& knot_vector)
     }
 
     return true;
+}
+
+/// @brief Whether every interior knot of every direction of a tensor grid
+///        is simple
+template<std::floating_point T, std::size_t d>
+bool simple_interior_knots(const TensorGrid<T, d>& grid)
+{
+    for (std::size_t direction = 0; direction < d; ++direction) {
+        if (!simple_interior_knots(grid.knots(direction)))
+            return false;
+    }
+
+    return true;
+}
+
+/**
+ * @brief Whether every interior knot of a hierarchical grid is simple, as
+ *        those of its coarsest level are: each level halves the elements
+ *        of the one before, which adds simple knots alone
+ */
+template<std::floating_point T, std::size_t d>
+bool simple_interior_knots(const HierarchicalGrid<T, d>& grid)
+{
+    return simple_interior_knots(grid.level(0));
 }
 
 /**
@@ -894,7 +894,7 @@ void visit_ghost_faces(
         const int cell_after = quadrature.cells()(face, 1);
         const std::size_t direction =
             static_cast<std::size_t>(quadrature.directions()(face));
-        const int degree = knots_of(basis.grid(), direction).degree();
+        const int degree = basis.degrees()[direction];
 
         // The values of each cell, with its own polynomial, differentiated
         // across the face at the same points
@@ -952,7 +952,7 @@ void visit_mixed_ghost_faces(
         const int cell_after = quadrature.cells()(face, 1);
         const std::size_t direction =
             static_cast<std::size_t>(quadrature.directions()(face));
-        const int degree = knots_of(pressure.grid(), direction).degree();
+        const int degree = pressure.degrees()[direction];
 
         // ∂ₙᵏ ∂_c u_c of each component c, its term of ∂ₙᵏ div u, then ∂ₙᵏ p
         for (std::size_t field = 0; field <= n; ++field) {
@@ -1146,13 +1146,10 @@ const Basis& ghost_basis(bool couple_faces, const Patch<Basis, n>& patch,
 
     // A repeated knot of the field would let lower derivatives of its
     // functions jump unpenalized
-    for (std::size_t direction = 0; direction < Basis::dimension;
-         ++direction) {
-        if (!simple_interior_knots(knots_of(basis.grid(), direction)))
-            throw std::invalid_argument("Assembler: "
-                                        "a ghost penalty needs simple "
-                                        "interior knots");
-    }
+    if (!simple_interior_knots(basis.grid()))
+        throw std::invalid_argument("Assembler: "
+                                    "a ghost penalty needs simple interior "
+                                    "knots");
 
     return basis;
 }
@@ -1218,15 +1215,10 @@ const Basis& mixed_ghost_basis(bool couple_faces,
 
     // A repeated knot would let lower derivatives jump unpenalized
     for (std::size_t field = 0; field <= n; ++field) {
-        const Basis& basis = space.field(field).basis();
-
-        for (std::size_t direction = 0; direction < Basis::dimension;
-             ++direction) {
-            if (!simple_interior_knots(knots_of(basis.grid(), direction)))
-                throw std::invalid_argument("Assembler: "
-                                            "a ghost penalty needs simple "
-                                            "interior knots");
-        }
+        if (!simple_interior_knots(space.field(field).basis().grid()))
+            throw std::invalid_argument("Assembler: "
+                                        "a ghost penalty needs simple "
+                                        "interior knots");
     }
 
     return space.field(n).basis();
