@@ -16,8 +16,8 @@ import iguana
 from iguana import (Boundary, CellType, Derivatives, ElasticityElement,
                     FunctionSpace, GhostPenalty, HierarchicalGrid,
                     LagrangeMultiplierCondition, MixedFunctionSpace,
-                    MixedGhostPenalty, NeumannCondition, NitscheCondition,
-                    PenaltyCondition,
+                    MixedGhostPenalty, NavierStokesElement,
+                    NeumannCondition, NitscheCondition, PenaltyCondition,
                     PoissonElement, QuadratureBoundary, QuadratureDomain,
                     SkeletonMultiplierCondition, SkeletonNitscheCondition,
                     StokesElement, SurrogateBoundary, classify_cells,
@@ -519,6 +519,62 @@ def test_stokes_flow_by_the_generalized_shifted_boundary_method():
                   - (exact[:, 2] - exact[:, 2].mean())).max() < 1e-9
 
 
+@pytest.mark.parametrize('stabilized', [False, True],
+                         ids=['divergence_conforming', 'stabilized'])
+def test_navier_stokes_flow_by_the_generalized_shifted_boundary_method(
+        stabilized):
+    """Inside a square, the flow u = (x, −y) with p = −(x² + y²) / 2 solves
+    the Navier-Stokes equations without a force, the pressure gradient
+    balancing its convection (x, y). Newton's method finds it exactly, by
+    multipliers on the faces where the weights jump on a
+    divergence-conforming space, or by Nitsche's method there with the
+    pressure stabilized on equal orders, with ghost penalties on the
+    velocity and the pressure."""
+    patch = iguana.create_rectangle(lengths=(2., 3.), elements=(6, 6))
+    boundary = square()
+    cell_types, fractions = classify_cells(patch, boundary)
+    element = NavierStokesElement(1.5, pressure_stabilization=stabilized)
+
+    def velocity(points):
+        return points * [1., -1.]
+
+    quadrature = QuadratureDomain(patch, cell_types)
+
+    for cell_type in (CellType.inside, CellType.cut, CellType.outside):
+        quadrature.fill_gauss_legendre(cell_type, 4)
+
+    penalty = 40. * element.viscosity
+
+    if stabilized:
+        space = FunctionSpace(patch, block_size=3)
+        condition = SkeletonNitscheCondition(element.u, patch, cell_types,
+                                             boundary, velocity, penalty)
+    else:
+        space = MixedFunctionSpace.divergence_conforming(patch)
+        condition = SkeletonMultiplierCondition(element.u, patch, cell_types,
+                                                boundary, velocity, penalty)
+
+    ghosts = [GhostPenalty(trace, patch, cell_types, .1)
+              for trace in (element.u, element.p)]
+    problem = NonlinearProblem(
+        element, space, quadrature, np.zeros((quadrature.num_points, 2)),
+        cell_weights=fractions, conditions=[condition],
+        stabilizations=ghosts, pressure_reference=(1., 1.75),
+        petsc_options_prefix=f'navier_stokes_gsbm_{int(stabilized)}_')
+    solution = problem.solve()
+
+    # Points of the square, where the flow is physical
+    points = np.array(list(itertools.product(np.linspace(.55, 1.45, 7),
+                                             np.linspace(1.3, 2.2, 7))))
+    p = trace_at_points(element.p, space, solution, points)
+    exact = -(points ** 2).sum(axis=1) / 2.
+
+    assert problem.solver.getIterationNumber() > 1
+    assert np.abs(trace_at_points(element.u, space, solution, points)
+                  - velocity(points)).max() < 1e-9
+    assert np.abs((p - p[0]) - (exact - exact[0])).max() < 1e-9
+
+
 def test_stokes_at_high_degree_by_the_generalized_shifted_boundary_method():
     """Inside a parallelogram, with the volume fractions weighting the cells
     of a cubic space that keeps every function, Nitsche's condition on the
@@ -828,6 +884,31 @@ def test_problem_chooses_the_theory_of_a_solid():
         difference = np.abs(small - large).max() / np.abs(large).max()
 
         assert difference < 1e-5 if agree else difference > 1e-2
+
+
+def test_invalid_navier_stokes():
+    """A Navier-Stokes element needs a positive viscosity and
+    stabilization, and a nonlinear problem, as a linear one takes it at
+    rest. A condition shifted with the equation refuses it, the shift
+    holding the Stokes equation."""
+    for arguments in ((0.,), (1., 0.)):
+        with pytest.raises(ValueError):
+            NavierStokesElement(*arguments)
+
+    patch = rectangle()
+    element = NavierStokesElement(1.5)
+
+    with pytest.raises(TypeError, match='nonlinear'):
+        LinearProblem(element, FunctionSpace(patch, block_size=3),
+                      gauss_quadrature(patch), np.zeros((1, 2)),
+                      petsc_options_prefix='invalid_navier_stokes_')
+
+    cell_types, _ = classify_cells(patch, square())
+
+    with pytest.raises(ValueError, match='Navier-Stokes'):
+        SkeletonNitscheCondition(element.u, patch, cell_types, square(),
+                                 [0., 0.], 40.,
+                                 source=lambda x: np.zeros((len(x), 2)))
 
 
 def test_invalid_elasticity():
@@ -1437,15 +1518,18 @@ def test_velocity_on_a_refined_patch_is_divergence_free():
     assert np.abs(divergence).max() < 1e-12
 
 
-@pytest.mark.parametrize('kind', ['poisson', 'stabilized', 'elasticity'])
+@pytest.mark.parametrize('kind', ['poisson', 'stabilized', 'navier_stokes',
+                                  'elasticity'])
 def test_elements_on_a_refined_patch_hold_linear_fields(kind):
     """Each element assembles over the cells of a refined patch. With the
     values of a linear field held on the boundary, the Poisson element finds
     u = x + y without a source, the stabilized Stokes element of equal
     orders the flow u = (x, −y) with the pressure x + y of the body force
-    (1, 1), and the elasticity element the displacement u = (x, y) without a
-    load. Linear on the affine map, each field takes the control points of
-    the patch as its coefficients."""
+    (1, 1), the stabilized Navier-Stokes element the same flow with the
+    force (1 + x, 1 + y) its convection adds, by Newton's method, and the
+    elasticity element the displacement u = (x, y) without a load. Linear on
+    the affine map, each field takes the control points of the patch as its
+    coefficients."""
     patch = refined_rectangle()
     quadrature = QuadratureDomain(patch)
     quadrature.fill_gauss_legendre(CellType.inside, 4)
@@ -1460,12 +1544,17 @@ def test_elements_on_a_refined_patch_hold_linear_fields(kind):
         fixed = (dofs, x + y)
         source = np.zeros(quadrature.num_points)
         exact = points.sum(axis=1)
-    elif kind == 'stabilized':
-        element = StokesElement(1.5, 3.)
+    elif kind in ('stabilized', 'navier_stokes'):
+        if kind == 'stabilized':
+            element = StokesElement(1.5, 3.)
+            source = np.ones((quadrature.num_points, 2))
+        else:
+            element = NavierStokesElement(1.5, pressure_stabilization=True)
+            source = 1. + quadrature.positions
+
         space = MixedFunctionSpace([FunctionSpace(patch) for _ in range(3)])
         fixed = (np.concatenate([dofs, space.offsets[1] + dofs]),
                  np.concatenate([x, -y]))
-        source = np.ones((quadrature.num_points, 2))
         exact = points * [1., -1.]
         keywords['pressure_reference'] = (0., 0.)
     else:
@@ -1476,15 +1565,17 @@ def test_elements_on_a_refined_patch_hold_linear_fields(kind):
         source = np.zeros((quadrature.num_points, 2))
         exact = points
 
-    problem = LinearProblem(element, space, quadrature, source, fixed=fixed,
-                            petsc_options_prefix=f'refined_{kind}_',
-                            **keywords)
+    problem_type = (NonlinearProblem if kind == 'navier_stokes'
+                    else LinearProblem)
+    problem = problem_type(element, space, quadrature, source, fixed=fixed,
+                           petsc_options_prefix=f'refined_{kind}_',
+                           **keywords)
     solution = problem.solve()
 
     assert np.allclose(trace_at_points(element.u, space, solution, points),
                        exact, rtol=0., atol=1e-10)
 
-    if kind == 'stabilized':
+    if kind in ('stabilized', 'navier_stokes'):
         p = trace_at_points(element.p, space, solution, points)
         sums = points.sum(axis=1)
 
