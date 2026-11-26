@@ -30,6 +30,7 @@ add_executable(iguana_tests
     quadrature/xiao_gimbutas/test_xiao_gimbutas.cpp
     assembly/test_element_values.cpp
     element/elasticity/test_elasticity_element.cpp
+    element/navier_stokes/test_navier_stokes_element.cpp
     element/poisson/test_poisson_element.cpp
     element/poisson/test_poisson_shift.cpp
     element/poisson/test_poisson_traces.cpp
