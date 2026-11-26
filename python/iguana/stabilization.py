@@ -19,7 +19,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from iguana import cpp as _cpp
-from iguana.element import PoissonElement, StokesElement
+from iguana.element import (NavierStokesElement, PoissonElement,
+                            StokesElement)
 from iguana.embedding import CellType
 from iguana.patch import PlanarPatch
 from iguana.quadrature import QuadratureDomain
@@ -306,7 +307,7 @@ class MixedGhostPenalty:
 
     def __init__(
         self,
-        element: StokesElement,
+        element: StokesElement | NavierStokesElement,
         patch: PlanarPatch,
         cell_types: Sequence[CellType],
         penalty: float,
@@ -340,8 +341,8 @@ class MixedGhostPenalty:
         problem rejects when it solves.
 
         Args:
-            element: The Stokes element of the fluid, whose velocity u and
-                pressure p the penalty pairs.
+            element: The Stokes or Navier-Stokes element of the fluid,
+                whose velocity u and pressure p the penalty pairs.
             patch: The background patch, a planar patch with an affine map
                 whose linear part is diagonal, whose elements are the cells.
             cell_types: The type of each element of the patch, with the
@@ -353,14 +354,15 @@ class MixedGhostPenalty:
                 `'global'`, every interior face.
 
         Raises:
-            TypeError: If the element is not a Stokes element, or if the
-                patch is not a planar patch.
+            TypeError: If the element is neither a Stokes nor a
+                Navier-Stokes element, or if the patch is not a planar patch.
             ValueError: If there is not one cell type per element, if the
                 penalty is not positive, or if the faces are not all, cut,
                 outside or global.
         """
-        if not isinstance(element, StokesElement):
-            raise TypeError('the element must be a Stokes element')
+        if not isinstance(element, (StokesElement, NavierStokesElement)):
+            raise TypeError('the element must be a Stokes or a Navier-Stokes '
+                            'element')
 
         selected = _ghost_faces(element.p, patch, cell_types, penalty, faces)
 
@@ -378,8 +380,8 @@ class MixedGhostPenalty:
             num_points=max(patch.degrees) + 2)
 
     @property
-    def element(self) -> StokesElement:
-        """The Stokes element of the fluid."""
+    def element(self) -> StokesElement | NavierStokesElement:
+        """The Stokes or Navier-Stokes element of the fluid."""
         return self._element
 
     @property

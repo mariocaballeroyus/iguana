@@ -27,7 +27,8 @@ import numpy.typing as npt
 
 from iguana import cpp as _cpp
 from iguana.boundary import Boundary
-from iguana.element import ElasticityElement, PoissonElement, StokesElement
+from iguana.element import (ElasticityElement, NavierStokesElement,
+                            PoissonElement, StokesElement)
 from iguana.embedding import CellType, SurrogateBoundary
 from iguana.patch import PlanarPatch, _uniform_knots
 from iguana.quadrature import QuadratureBoundary
@@ -790,7 +791,8 @@ class SkeletonNitscheCondition:
                 the center is neither the boundary nor the surrogate, if the
                 number of points is not positive, if a trace other than the
                 velocity of a fluid leaves out the pressure, or, with a
-                source, if the trace is that of a solid, if it does not
+                source, if the trace is that of a solid or of a
+                Navier-Stokes element, if it does not
                 give each point the values of the source, its derivatives
                 one per term of their order, or if an interpolated source
                 needs derivatives above the degree of the patch.
@@ -824,6 +826,11 @@ class SkeletonNitscheCondition:
             # The equation rewrites the shift of these traces alone
             if not isinstance(trace, (PoissonElement.U, StokesElement.U)):
                 raise ValueError('a solid has no shift with the equation')
+
+            # The shift holds the Stokes equation, without the convection
+            if isinstance(trace, NavierStokesElement.U):
+                raise ValueError('a Navier-Stokes element has no shift with '
+                                 'the equation so far')
 
             if not (isinstance(source, Derivatives) or callable(source)):
                 raise TypeError('the source must be derivatives or a function '

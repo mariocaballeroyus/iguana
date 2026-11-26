@@ -14,7 +14,8 @@ from iguana.condition import (Derivatives, LagrangeMultiplierCondition,
                               NeumannCondition, NitscheCondition,
                               PenaltyCondition, SkeletonMultiplierCondition,
                               SkeletonNitscheCondition)
-from iguana.element import ElasticityElement, PoissonElement, StokesElement
+from iguana.element import (ElasticityElement, NavierStokesElement,
+                            PoissonElement, StokesElement)
 from iguana.embedding import CellType, SurrogateBoundary, classify_cells
 from iguana.evaluation import flux_at_points, trace_at_points
 from iguana.fspace import FunctionSpace, MixedFunctionSpace
@@ -31,11 +32,12 @@ __version__ = cpp.__version__
 __all__ = ['Boundary', 'CellType', 'CurvePatch', 'Derivatives',
            'ElasticityElement', 'FunctionSpace', 'GhostPenalty',
            'HierarchicalGrid', 'LagrangeMultiplierCondition',
-           'MixedFunctionSpace', 'MixedGhostPenalty', 'NeumannCondition',
-           'NitscheCondition', 'PenaltyCondition', 'PlanarPatch',
-           'PoissonElement', 'QuadratureBoundary', 'QuadratureDomain',
-           'SkeletonMultiplierCondition', 'SkeletonNitscheCondition',
-           'StokesElement', 'SurfacePatch', 'SurrogateBoundary',
+           'MixedFunctionSpace', 'MixedGhostPenalty', 'NavierStokesElement',
+           'NeumannCondition', 'NitscheCondition', 'PenaltyCondition',
+           'PlanarPatch', 'PoissonElement', 'QuadratureBoundary',
+           'QuadratureDomain', 'SkeletonMultiplierCondition',
+           'SkeletonNitscheCondition', 'StokesElement', 'SurfacePatch',
+           'SurrogateBoundary',
            'VolumeGhostPenalty', 'VolumePatch', 'classify_cells',
            'create_box', 'create_curve', 'create_rectangle', 'create_surface',
            'flux_at_points', 'trace_at_points']

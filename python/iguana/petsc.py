@@ -29,7 +29,8 @@ from iguana.condition import (LagrangeMultiplierCondition, NeumannCondition,
                               NitscheCondition, PenaltyCondition,
                               SkeletonMultiplierCondition,
                               SkeletonNitscheCondition)
-from iguana.element import ElasticityElement, PoissonElement, StokesElement
+from iguana.element import (ElasticityElement, NavierStokesElement,
+                            PoissonElement, StokesElement)
 from iguana.fspace import FunctionSpace, MixedFunctionSpace
 from iguana.patch import PlanarPatch
 from iguana.quadrature import QuadratureDomain
@@ -69,9 +70,9 @@ class _Problem:
         _free_discarded()
 
         if not isinstance(element, (PoissonElement, StokesElement,
-                                    ElasticityElement)):
-            raise TypeError('the element must be a Poisson, a Stokes or an '
-                            'elasticity element')
+                                    NavierStokesElement, ElasticityElement)):
+            raise TypeError('the element must be a Poisson, a Stokes, a '
+                            'Navier-Stokes or an elasticity element')
 
         if not isinstance(space, (FunctionSpace, MixedFunctionSpace)):
             raise TypeError('the space must be a function space or a mixed '
@@ -318,7 +319,8 @@ class LinearProblem(_Problem):
 
         Raises:
             TypeError: If the element is not a Poisson, a Stokes or an
-                elasticity element, if the space is neither a
+                elasticity element, such as a Navier-Stokes element, which
+                needs a nonlinear problem, if the space is neither a
                 function space nor a mixed space on a planar patch, if the
                 quadrature is not a domain quadrature, if a condition is
                 neither a penalty, a Nitsche, a Lagrange multiplier, a
@@ -340,6 +342,11 @@ class LinearProblem(_Problem):
                 the plane, or if the fixed entries are not a pair of indices
                 inside the system, each once, and one value each.
         """
+        # Taken at rest, where its convection vanishes
+        if isinstance(element, NavierStokesElement):
+            raise TypeError('a Navier-Stokes element needs a nonlinear '
+                            'problem')
+
         conditions = list(conditions)
         super().__init__(element, space, quadrature, source,
                          cell_weights=cell_weights, conditions=conditions,
@@ -495,7 +502,8 @@ class NonlinearProblem(_Problem):
 
     def __init__(
         self,
-        element: PoissonElement | StokesElement | ElasticityElement,
+        element: (PoissonElement | StokesElement | NavierStokesElement
+                  | ElasticityElement),
         space: FunctionSpace | MixedFunctionSpace,
         quadrature: QuadratureDomain,
         source: (npt.ArrayLike
@@ -535,8 +543,9 @@ class NonlinearProblem(_Problem):
         rows and columns of the tangent those of the identity.
 
         Args:
-            element: The element stating the problem, a Poisson, a Stokes
-                or an elasticity element, the last under large displacements.
+            element: The element stating the problem, a Poisson, a
+                Stokes, a Navier-Stokes or an elasticity element, the last
+                under large displacements.
             space: The space of the solution, on a planar patch, as for a
                 linear problem.
             quadrature: A quadrature over the elements of the patch of the
@@ -570,8 +579,9 @@ class NonlinearProblem(_Problem):
                 with MUMPS when PETSc has it.
 
         Raises:
-            TypeError: If the element is not a Poisson, a Stokes or an
-                elasticity element, if the space is neither a
+            TypeError: If the element is not a Poisson, a Stokes, a
+                Navier-Stokes or an elasticity element, if the space is
+                neither a
                 function space nor a mixed space on a planar patch, if the
                 quadrature is not a domain quadrature, if a condition is
                 neither a penalty, a Nitsche, a Lagrange multiplier, a
@@ -708,8 +718,9 @@ def _check_terms(
     kinds it assembles, act on traces of its element and lie on the patch of
     its space."""
     # The pressure of a fluid has a ghost penalty, but no condition
-    traces = ((StokesElement.U, StokesElement.P)
-              if isinstance(element, StokesElement) else type(element).U)
+    traces = ((type(element).U, type(element).P)
+              if isinstance(element, (StokesElement, NavierStokesElement))
+              else type(element).U)
 
     for condition in conditions:
         if not isinstance(condition, (PenaltyCondition, NitscheCondition,
@@ -738,9 +749,10 @@ def _check_terms(
 
         # A mixed ghost penalty acts on the velocity and the pressure at once
         if isinstance(stabilization, MixedGhostPenalty):
-            if not isinstance(element, StokesElement):
-                raise ValueError('a mixed ghost penalty needs a Stokes '
-                                 'element')
+            if not isinstance(element, (StokesElement,
+                                        NavierStokesElement)):
+                raise ValueError('a mixed ghost penalty needs a Stokes or a '
+                                 'Navier-Stokes element')
         elif not isinstance(stabilization.trace, traces):
             raise ValueError('the trace of a stabilization must be one of '
                              'the element')

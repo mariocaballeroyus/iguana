@@ -247,6 +247,123 @@ class StokesElement:
                 f'stabilization={self._stabilization})')
 
 
+class NavierStokesElement:
+    """Element of the steady Navier-Stokes problem of an incompressible
+    viscous fluid of unit density on a planar patch,
+    (u · ∇)u − div(2μ ε(u)) + ∇p = f and div u = 0, which a
+    `NonlinearProblem` solves by Newton's method. Its unknowns, source and
+    traces are those of `StokesElement`. A streamline-upwind term
+    stabilizes its convection, and its velocity and pressure need a stable
+    pair of spaces, such as the divergence-conforming space of
+    `MixedFunctionSpace`, unless its pressure is stabilized too, when they
+    may share the functions of one space."""
+
+    # The velocity and the pressure, its last unknown, with a body force of
+    # two values per point
+    _num_unknowns = 3
+    _source_shape: tuple[int, ...] = (2,)
+    _pressure_component: int | None = 2
+
+    class U(StokesElement.U):
+        """Trace of the velocity u of the Navier-Stokes problem, that of the
+        Stokes problem, on which a condition imposes values such as no
+        slip, two per point."""
+
+        def __repr__(self) -> str:
+            return 'NavierStokesElement.U()'
+
+    class P(StokesElement.P):
+        """Trace of the pressure p of the Navier-Stokes problem, that of the
+        Stokes problem, which a ghost penalty extends beyond the fluid, one
+        value per point."""
+
+        def __repr__(self) -> str:
+            return 'NavierStokesElement.P()'
+
+    def __init__(self, viscosity: float, stabilization: float = 3.,
+                 pressure_stabilization: bool = False) -> None:
+        """Initialize the element of a fluid.
+
+        The streamline-upwind term tests the residual of the momentum
+        equation with the test functions convected by the velocity, by
+        τ_M = 1 / (c μ / h² + 2 |u| / h), with h the size of the elements,
+        |u| the speed, c the stabilization and μ the viscosity, so a larger
+        stabilization stabilizes less. With the pressure stabilized, the
+        gradients of the pressure test functions test that residual too,
+        and a grad-div term the continuity equation, by τ_C = h² / (c τ_M).
+        At rest, these are the stabilization of `StokesElement`.
+
+        With the velocity imposed on the whole boundary, the pressure is
+        only determined up to a constant, which the system leaves free and
+        a problem fixes by its `pressure_reference`.
+
+        Args:
+            viscosity: The dynamic viscosity μ of the fluid, positive.
+            stabilization: The constant c of the stabilization, positive.
+            pressure_stabilization: Whether to stabilize the pressure and
+                the divergence too, so that the velocity and the pressure
+                may share the functions of one space.
+
+        Raises:
+            ValueError: If the viscosity or the stabilization is not
+                positive.
+        """
+        if not viscosity > 0.:
+            raise ValueError('the viscosity must be positive')
+
+        if not stabilization > 0.:
+            raise ValueError('the stabilization must be positive')
+
+        self._viscosity = float(viscosity)
+        self._stabilization = float(stabilization)
+        self._pressure_stabilization = bool(pressure_stabilization)
+
+    @property
+    def viscosity(self) -> float:
+        """The dynamic viscosity of the fluid."""
+        return self._viscosity
+
+    @property
+    def stabilization(self) -> float:
+        """The constant of the stabilization."""
+        return self._stabilization
+
+    @property
+    def pressure_stabilization(self) -> bool:
+        """Whether the pressure and the divergence are stabilized too."""
+        return self._pressure_stabilization
+
+    @property
+    def u(self) -> NavierStokesElement.U:
+        """Trace of the velocity u, on which a condition imposes values."""
+        return NavierStokesElement.U(self)
+
+    @property
+    def p(self) -> NavierStokesElement.P:
+        """Trace of the pressure p, which a ghost penalty extends."""
+        return NavierStokesElement.P(self)
+
+    def _cpp_element(
+        self,
+        patch: PlanarPatch,
+    ) -> (_cpp.NavierStokesElement2d | _cpp.NavierStokesStabilizedElement2d
+          | _cpp.THBNavierStokesElement2d
+          | _cpp.THBNavierStokesStabilizedElement2d):
+        """The compiled element on a planar patch, the only one problems
+        lie on so far."""
+        name = ('NavierStokesStabilizedElement2d'
+                if self._pressure_stabilization else 'NavierStokesElement2d')
+
+        return patch._cpp_class(name)(self._viscosity, self._stabilization)
+
+    def __repr__(self) -> str:
+        pressure = (', pressure_stabilization=True'
+                    if self._pressure_stabilization else '')
+
+        return (f'NavierStokesElement(viscosity={self._viscosity}, '
+                f'stabilization={self._stabilization}{pressure})')
+
+
 class ElasticityElement:
     """Element of an isotropic elastic solid on a planar patch, which maps its
     reference configuration. The problem chooses the theory. A `LinearProblem`

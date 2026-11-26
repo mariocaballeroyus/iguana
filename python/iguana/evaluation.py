@@ -18,7 +18,8 @@ import numpy as np
 import numpy.typing as npt
 
 from iguana import cpp as _cpp
-from iguana.element import ElasticityElement, PoissonElement, StokesElement
+from iguana.element import (ElasticityElement, NavierStokesElement,
+                            PoissonElement, StokesElement)
 from iguana.fspace import FunctionSpace, MixedFunctionSpace
 from iguana.patch import PlanarPatch
 
@@ -26,6 +27,8 @@ from iguana.patch import PlanarPatch
 _ELEMENTS = {PoissonElement.U: PoissonElement,
              StokesElement.U: StokesElement,
              StokesElement.P: StokesElement,
+             NavierStokesElement.U: NavierStokesElement,
+             NavierStokesElement.P: NavierStokesElement,
              ElasticityElement.U: ElasticityElement}
 
 
