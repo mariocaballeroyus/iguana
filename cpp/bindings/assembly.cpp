@@ -29,6 +29,10 @@ using PoissonElement2d = PoissonElement<TensorBSpline<double, 2>, 2>;
 using StokesElement2d = StokesElement<TensorBSpline<double, 2>, 2>;
 using StokesStabilizedElement2d =
     StokesStabilizedElement<TensorBSpline<double, 2>, 2>;
+using NavierStokesElement2d =
+    NavierStokesElement<TensorBSpline<double, 2>, 2>;
+using NavierStokesStabilizedElement2d =
+    NavierStokesStabilizedElement<TensorBSpline<double, 2>, 2>;
 using ElasticityElement2d = ElasticityElement<TensorBSpline<double, 2>, 2>;
 using PenaltyCondition2d = PenaltyCondition<TensorBSpline<double, 2>, 2>;
 using NeumannCondition2d = NeumannCondition<TensorBSpline<double, 2>, 2>;
@@ -61,6 +65,9 @@ using THBFlux2d = Flux<THBBasis2d, 2>;
 using THBPoissonElement2d = PoissonElement<THBBasis2d, 2>;
 using THBStokesElement2d = StokesElement<THBBasis2d, 2>;
 using THBStokesStabilizedElement2d = StokesStabilizedElement<THBBasis2d, 2>;
+using THBNavierStokesElement2d = NavierStokesElement<THBBasis2d, 2>;
+using THBNavierStokesStabilizedElement2d =
+    NavierStokesStabilizedElement<THBBasis2d, 2>;
 using THBElasticityElement2d = ElasticityElement<THBBasis2d, 2>;
 using THBAssembler2d = Assembler<THBBasis2d, 2>;
 using THBForm2d = Form<THBBasis2d, 2>;
@@ -125,6 +132,19 @@ void assembly(py::module_& module)
 
     py::class_<StokesStabilizedElement2d, StokesElement2d>(
         module, "StokesStabilizedElement2d")
+        .def(py::init<double, double>(), py::arg("viscosity"),
+             py::arg("stabilization"));
+
+    // The Navier-Stokes elements take the traces and fluxes of the Stokes
+    // one, their base
+    py::class_<NavierStokesElement2d, StokesElement2d>(
+        module, "NavierStokesElement2d")
+        .def(py::init<double, double>(), py::arg("viscosity"),
+             py::arg("stabilization"));
+
+    py::class_<NavierStokesStabilizedElement2d,
+               NavierStokesElement2d>(
+        module, "NavierStokesStabilizedElement2d")
         .def(py::init<double, double>(), py::arg("viscosity"),
              py::arg("stabilization"));
 
@@ -276,12 +296,29 @@ void assembly(py::module_& module)
     // A form keeps references to what its integrals read, which Python keeps
     // alive with it. Its data are the arrays themselves, never copies, so
     // that the problems of iguana.petsc change them in place between
-    // assemblies. The stabilized Stokes element comes before the Galerkin
-    // one, its base, as pybind takes the first overload that matches
+    // assemblies. Each element comes before the ones it derives from, the
+    // Navier-Stokes ones before the Stokes ones, as pybind takes the first
+    // overload that matches
     py::class_<Form2d>(module, "Form2d")
         .def(py::init<>())
         .def("add_domain_integral",
              &Form2d::add_domain_integral<PoissonElement2d>,
+             py::arg("element"), py::arg("quadrature"),
+             py::arg("source").noconvert(),
+             py::arg("cell_weights").noconvert(), py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>(),
+             py::keep_alive<1, 5>())
+        .def("add_domain_integral",
+             &Form2d::add_domain_integral<
+                 NavierStokesStabilizedElement2d>,
+             py::arg("element"), py::arg("quadrature"),
+             py::arg("source").noconvert(),
+             py::arg("cell_weights").noconvert(), py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>(),
+             py::keep_alive<1, 5>())
+        .def("add_domain_integral",
+             &Form2d::add_domain_integral<
+                 NavierStokesElement2d>,
              py::arg("element"), py::arg("quadrature"),
              py::arg("source").noconvert(),
              py::arg("cell_weights").noconvert(), py::keep_alive<1, 2>(),
@@ -434,6 +471,19 @@ void assembly(py::module_& module)
         .def(py::init<double, double>(), py::arg("viscosity"),
              py::arg("stabilization"));
 
+    // The Navier-Stokes elements take the traces and fluxes of the Stokes
+    // one, their base
+    py::class_<THBNavierStokesElement2d, THBStokesElement2d>(
+        module, "THBNavierStokesElement2d")
+        .def(py::init<double, double>(), py::arg("viscosity"),
+             py::arg("stabilization"));
+
+    py::class_<THBNavierStokesStabilizedElement2d,
+               THBNavierStokesElement2d>(
+        module, "THBNavierStokesStabilizedElement2d")
+        .def(py::init<double, double>(), py::arg("viscosity"),
+             py::arg("stabilization"));
+
     py::class_<THBStokesElement2d::U, THBTrace2d>(thb_stokes_element_2d, "U")
         .def(py::init<std::size_t, bool>(), py::arg("component"),
              py::arg("pressure") = true);
@@ -578,12 +628,28 @@ void assembly(py::module_& module)
         .def_property_readonly("mass", &THBAssembler2d::mass)
         .def_property_readonly("residual", &THBAssembler2d::residual);
 
-    // The stabilized element before the Galerkin one it derives from, so
-    // that each takes its own overload
+    // Each element before the ones it derives from, so that each takes its
+    // own overload
     py::class_<THBForm2d>(module, "THBForm2d")
         .def(py::init<>())
         .def("add_domain_integral",
              &THBForm2d::add_domain_integral<THBPoissonElement2d>,
+             py::arg("element"), py::arg("quadrature"),
+             py::arg("source").noconvert(),
+             py::arg("cell_weights").noconvert(), py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>(),
+             py::keep_alive<1, 5>())
+        .def("add_domain_integral",
+             &THBForm2d::add_domain_integral<
+                 THBNavierStokesStabilizedElement2d>,
+             py::arg("element"), py::arg("quadrature"),
+             py::arg("source").noconvert(),
+             py::arg("cell_weights").noconvert(), py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(), py::keep_alive<1, 4>(),
+             py::keep_alive<1, 5>())
+        .def("add_domain_integral",
+             &THBForm2d::add_domain_integral<
+                 THBNavierStokesElement2d>,
              py::arg("element"), py::arg("quadrature"),
              py::arg("source").noconvert(),
              py::arg("cell_weights").noconvert(), py::keep_alive<1, 2>(),
